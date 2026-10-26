@@ -5,11 +5,13 @@ import type { ReferenceSession } from './sessionService'
 import { useRestTimerStore } from './restTimerStore'
 import { useSettingsStore } from '../settings/settingsStore'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
-import { groupSetLogs, cascadeDeleteOrder, headsOnly } from './setGroupLogic'
+import { headsOnly } from './setGroupLogic'
 import { lastTimeSession, lastTimeSetAt } from './lastTimeSet'
 import { resolveRestTarget, type StageChainInput, type SupersetChainInput } from './restChain'
-import { lockDecision, type AddedSet, type LockDecision, type ResolvedRow, type SwapRecord } from './workoutRules'
+import { deleteEffects, lockDecision, type AddedSet, type LockDecision, type ResolvedRow, type SwapRecord } from './workoutRules'
 import type { WorkoutRows } from './useWorkoutRows'
+import { runDelete, type SessionWriters } from './setDelete'
+import { deleteConfirm, loggedNumbersText, plannedNumbersText } from './setOptionsView'
 import { canMove, planSkipRest, planSwap, type SkipItem } from './exerciseOptions'
 
 // Chunk 58a — the card's writers and what its rows need, over the session's rows (`useWorkoutRows`, chunk 46r's `resolveRows`).
@@ -72,6 +74,8 @@ export interface ExerciseCardProps {
   onLog: (params: LogRequest) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
+  /** Chunk 61: what a delete writes besides the logs (its change rows, the renumber, a head's stage kind), and the run and week CUES writes to. */
+  writers: SessionWriters
   /**
    * Chunk 59: the swap for today, saved: the swap's row with its record (DECISIONS 200: online, before any set is skipped), then the
    * moved sets' entries on the card the swap made. Rejects with the reason when the row isn't saved, and then nothing else is written.
@@ -118,6 +122,7 @@ export function useExerciseCardState({
   onLog,
   onUpdateSet,
   onDeleteSet,
+  writers,
   onSwap,
   swappedFrom,
   slotSwapped,
@@ -139,10 +144,11 @@ export function useExerciseCardState({
   // session), once the reference has loaded; while it loads or has failed the line says so instead (boards W3b, W2).
   const lastSession = referenceLoading || referenceIsError ? null : lastTimeSession(today, referenceScheduleType, referenceSessions)
 
-  // Heads currently mid-cascade-delete — guards handleDeleteHead against a second concurrent invocation for the same head.
-  const [deletingHeadIds, setDeletingHeadIds] = useState<Set<string>>(new Set())
   const [isSkippingExercise, setIsSkippingExercise] = useState(false)
   const [showSwapSheet, setShowSwapSheet] = useState(false)
+  // W9, asked of one row (chunk 61): kept here, with the words it was asked with, because the row it names leaves the screen as soon as its delete
+  // starts (its change row is held), and a confirm that lived in that row would go with it, with the reason a delete failed.
+  const [confirmDelete, setConfirmDelete] = useState<{ row: ResolvedRow; eyebrow: string; title: string; body: string } | null>(null)
 
   // ─── Rest chain (chunk 16 — SPEC "Rest") ─────────────────────────────────────────────────────────
   const programSetById = new Map(programSets.map((set) => [set.id, set]))
@@ -354,43 +360,42 @@ export function useExerciseCardState({
     })
   }
 
-  // Client-side cascade guard (TASKS.md §2.1): deletes stage rows first, in descending stage_index order, then the head last — stages-first
-  // fails into a head with fewer stages, which is visible, harmless, and re-deletable. The renumber below sends only `setNumber`, not
-  // the head's captured weight/reps/rir/note, so it can't clobber a concurrent edit.
-  async function handleDeleteHead(headRow: ResolvedRow) {
-    const headLog = logOf(headRow)
-    if (headLog === null || deletingHeadIds.has(headLog.id)) return // nothing to delete, or already in progress
-    const group = { head: headLog, stages: logs.filter((log) => log.parentSetId === headLog.id) }
-    setDeletingHeadIds((prev) => new Set(prev).add(headLog.id))
-    // The screen's number corrections wait for the whole cascade, renumber included (`workout.track`).
-    await workout.track(
-      (async () => {
-        try {
-          for (const log of cascadeDeleteOrder(group, (l) => l.stageIndex)) await onDeleteSet(log.id)
-        } catch (err) {
-          // Fails safe: whatever didn't get deleted stays put, and no renumbering happens for a delete that didn't complete.
-          console.error('Failed to delete set group', err)
-          return
-        } finally {
-          setDeletingHeadIds((prev) => {
-            const next = new Set(prev)
-            next.delete(headLog.id)
-            return next
-          })
-        }
-        // Scoped to the deleted head's own exerciseId: setNumber is per-exercise.
-        groupSetLogs(logs.filter((log) => !log.isWarmup && log.exerciseId === headLog.exerciseId))
-          .filter((g) => g.head.id !== headLog.id && g.head.setNumber > headLog.setNumber)
-          .sort((a, b) => a.head.setNumber - b.head.setNumber)
-          .forEach((g, i) => onUpdateSet(g.head.id, { setNumber: headLog.setNumber + i }))
-      })(),
-    )
+  // ─── DELETE (chunk 61; boards W7, W8, W9, W2b; SPEC [1.2] "Delete set (18b)") ────────────────────────────────────────────────────
+  // `deleteEffects` (46r) says everything a delete does, for a logged set, an open one, a skipped one and a drop alike; `runDelete` sends it in its
+  // order (setDelete.ts). The card adds what only it knows: what it draws from the first tap, and its own list of the sets added in the session.
+  //   - The change rows are held (`workout.holdChanges`) from before the first request until they are in the session's cache, so a planned set
+  //     whose log has gone and whose change row has not landed yet is never drawn as an open row.
+  //   - A set added in the session leaves the card's list, logged or not, before its logs go (DECISIONS 170: "DELETE: the entry goes"): an entry
+  //     left naming a log that is gone would be drawn as an open set. A drop deleted on its own changes no entry: a drop can only be deleted
+  //     once its head is logged, and a logged head's drops are its `pending_stages` row's (the written row, held at once like the others).
+  //   - `workout.track` holds the screen's own number corrections back until the whole delete, its renumber included, is done.
+  // Rejects with the reason when something wasn't written (the confirm says so). Every delete works offline (G47): what it writes is queued.
+  async function handleDeleteRow(row: ResolvedRow): Promise<void> {
+    const effects = deleteEffects(row, { rows: workout.rows, logs, changes: workout.changes })
+    const release = effects.changes.length > 0 ? workout.holdChanges(effects.changes.map((write) => write.change)) : null
+    if (row.kind !== 'stage' && row.added && row.localId !== null) workout.removeAdded(cardKey, row.localId)
+    try {
+      await workout.track(runDelete(effects, { deleteLog: (log) => onDeleteSet(log.id), writers }))
+    } finally {
+      release?.()
+    }
   }
 
-  // A lone stage has no descendants — a plain delete is safe, no cascade, no renumbering.
-  function handleDeleteStage(stageRow: ResolvedRow) {
-    if (stageRow.logId === null) return
-    onDeleteSet(stageRow.logId).catch((err) => console.error('Failed to delete stage', err))
+  /** DELETE in a row's ⋯ or edit panel: W9, with the numbers the row has now (a delete in progress changes what the row can say). */
+  function askDelete(row: ResolvedRow) {
+    const log = logOf(row)
+    const numbers = log !== null ? loggedNumbersText(log, resolvedWeightUnit) : plannedNumbersText(targetsOf(row), resolvedWeightUnit)
+    setConfirmDelete({ row, ...deleteConfirm(row, numbers) })
+  }
+
+  /** The CUES row of a set's ⋯ and the sheet it opens (board W7 → 8): only a planned working set has one (DECISIONS 165 (a): none for a set with no planned set). */
+  function cuesOf(row: ResolvedRow): { planned: WeekPlanSet; heads: WeekPlanSet[] } | null {
+    if (row.kind !== 'working' || row.weekPlanSetId === null) return null
+    const planned = plannedById.get(row.weekPlanSetId)
+    if (planned === undefined) return null
+    // "Use for all" applies to the exercise's working heads that this workout still has (a deleted set is not counted, and is not written to).
+    const heads = cardRows.flatMap((r) => (r.kind === 'working' && r.weekPlanSetId !== null ? [plannedById.get(r.weekPlanSetId)].filter((set): set is WeekPlanSet => set !== undefined) : []))
+    return { planned, heads }
   }
 
   // ─── The exercise ⋯ (chunk 59; boards W10, W11) ──────────────────────────────────────────────────
@@ -504,7 +509,6 @@ export function useExerciseCardState({
     onUpdateSet,
     onDeleteSet,
     cardRows,
-    deletingHeadIds,
     isSkippingExercise,
     showSwapSheet,
     setShowSwapSheet,
@@ -526,8 +530,12 @@ export function useExerciseCardState({
     logStage,
     logAdHocStage,
     logWarmup,
-    handleDeleteHead,
-    handleDeleteStage,
+    handleDeleteRow,
+    confirmDelete,
+    askDelete,
+    closeDeleteConfirm: () => setConfirmDelete(null),
+    cuesOf,
+    writers,
     handleConfirmSkip,
     handleConfirmSwap,
     handleAddSet: () => workout.addSet(cardKey),

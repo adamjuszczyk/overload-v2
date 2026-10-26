@@ -1,0 +1,23 @@
+Bench Press
+CHEST
+FIRST TIME
+01
+lbs
+×
+RIR
+LOG
+ADD SET
+BENCH PRESS · SET 01
+Set options
+SET TYPE
+Normal
+CUES
+FORM
+RUSHED
+NORMAL
+CONTROLLED
+EXTRA CONTROLLED
+Log this set in lbs
+This exercise is in kg.
+SKIP THIS SET
+DELETE SET

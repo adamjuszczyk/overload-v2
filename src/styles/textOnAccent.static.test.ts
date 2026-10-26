@@ -91,6 +91,7 @@ const NOTHING_TO_READ: Record<string, number> = {
   'components/pickers/SetTypePicker.tsx': 1, // the picked row's radio dot
   'features/gym/RestBar.tsx': 1, // the bar (over time it turns to the accent)
   'features/gym/RestDayScreen.tsx': 1, // the week's dots
+  'features/gym/SetOptionsSheet.tsx': 1, // the "Log this set in lbs" switch's track (its knob is a shape; chunk 61)
   'features/plan/CopySheet.tsx': 1, // the overwrite switch's track (its knob is a shape)
   'features/plan/planMenu.tsx': 1, // DiffDot
   'features/planner/StepExercises.tsx': 1, // the rail's line that joins a superset's rows

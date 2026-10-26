@@ -29,7 +29,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 interface QueueItem {
   id: number
   table: string
-  operation: 'upsert' | 'delete'
+  operation: 'upsert' | 'delete' | 'patch'
   payload: Record<string, unknown>
   createdAt: string
   attempts?: number
@@ -59,6 +59,9 @@ let startedWhenSent = new Map<string, boolean>()
 let queueWhenSent = new Map<string, QueueItem[]>()
 // The device's own copies of logs (Dexie `set_logs`), by id.
 let deviceLogs = new Set<string>()
+// Chunk 61's review 1 (F1): the heads whose stage kind was cleared while a drop log still stood under them. DECISIONS 147 (a) makes a head with no drop
+// a normal set; a normal head with a drop log under it is the state a patch sent ahead of its drop's delete would leave on the server until the retry.
+let normalHeadWithDrop: string[] = []
 // The upsert tags whose reply never comes back: the row reaches the server, the
 // client sees an error.
 let lostReplies = new Set<string>()
@@ -148,6 +151,24 @@ vi.mock('../../lib/supabase', () => ({
         if (lostReplies.delete(tag)) return { error: { message: 'Failed to fetch' } }
         return { error: null }
       },
+      // `update(patch).eq('id', id)`: a queued patch. The rows matching are changed; none matching is no error.
+      update: (patch: Record<string, unknown>) => ({
+        eq: async (column: string, value: string) => {
+          if (column !== 'id') throw new Error(`a queued patch filters on id only, not ${column}`)
+          const left = failures.get(`patch:${value}`) ?? 0
+          if (left > 0) {
+            failures.set(`patch:${value}`, left - 1)
+            return { error: { message: 'Failed to fetch' } }
+          }
+          requests.push(`patch ${table}:${value} ${JSON.stringify(patch)}`)
+          const row = server.get(`${table}:${value}`)
+          if (row) {
+            server.set(`${table}:${value}`, { ...row, ...patch })
+            if (patch.stage_kind === null && [...server.values()].some((other) => other.parent_set_id === value)) normalHeadWithDrop.push(value)
+          }
+          return { error: null }
+        },
+      }),
       delete: () => ({
         eq: async (column: string, value: string) => {
           // The call shape of a queued delete: the id, and nothing else.
@@ -185,6 +206,11 @@ function enqueueDelete(table: string, id: string, extra: Partial<QueueItem> = {}
   const n = nextId++
   queue.push({ id: n, table, operation: 'delete', payload: { id }, createdAt: stamp(n), ...extra })
 }
+// A patch item as `queueSetLogPatch` / `queueSetLogStageKindClear` queue it: the payload is { id } and one column, the session beside it.
+function enqueuePatch(table: string, payload: Record<string, unknown>, extra: Partial<QueueItem> = {}) {
+  const n = nextId++
+  queue.push({ id: n, table, operation: 'patch', payload, createdAt: stamp(n), ...extra })
+}
 const setEdit = (tag: string, weight: number, extra: Record<string, unknown> = {}) =>
   enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight, tag, ...extra })
 
@@ -209,6 +235,7 @@ beforeEach(() => {
   startedWhenSent = new Map()
   queueWhenSent = new Map()
   deviceLogs = new Set()
+  normalHeadWithDrop = []
   lostReplies = new Set()
   heldReply = null
   releaseHeldReply = null
@@ -654,6 +681,137 @@ describe('flushSyncQueue — a head’s delete waits for its stages (G47)', () =
 
     expect(requests).toEqual(['delete v2_set_logs:h1'])
     expect(queue.map((q) => q.payload.id)).toEqual(['st9'])
+  })
+})
+
+// Chunk 61's review 1 (F1; SPEC G47: delete set works offline; DECISIONS 147 (a): the last drop deleted makes the head a normal set). The head's log loses its
+// stage kind through 58a's patch item, `{ id, stage_kind: null }`, queued after the drop's delete. Like a head's own delete, it must not go ahead of the
+// writes to its drops: sent when the drop's delete failed in the pass, it would leave the server a normal head with a drop log under it until the retry
+// (`normalHeadWithDrop`). With nothing failing the queue replays in `createdAt` order whatever the dependency keys say (RULES: "A queue's ordering rule is
+// proven with the earlier write failing in the pass that would send the later one"), so every hold below fails the earlier write in the pass.
+describe('flushSyncQueue — a head’s stage-kind patch waits for its drops (G47; 61’s review 1, F1)', () => {
+  const kind = (id = 'h1', extra: Partial<QueueItem> = {}) => enqueuePatch('v2_set_logs', { id, stage_kind: null }, { sessionId: 's1', ...extra })
+  beforeEach(() => {
+    // A dropset head and its one drop are on the server already.
+    server.set('v2_set_logs:h1', { id: 'h1', stage_kind: 'dropset', weight: 80 })
+    server.set('v2_set_logs:d1', { id: 'd1', parent_set_id: 'h1' })
+  })
+
+  it('with nothing failing: the drop’s delete, then the head’s patch; the server ends with a normal head and no drop, and was never in between', async () => {
+    enqueueDelete('v2_set_logs', 'd1', { sessionId: 's1', parentSetId: 'h1' })
+    kind()
+    await flushSyncQueue()
+    expect(requests).toEqual(['delete v2_set_logs:d1', 'patch v2_set_logs:h1 {"stage_kind":null}'])
+    expect(server.get('v2_set_logs:h1')).toEqual({ id: 'h1', stage_kind: null, weight: 80 })
+    expect(server.has('v2_set_logs:d1')).toBe(false)
+    expect(normalHeadWithDrop).toEqual([])
+    expect(queue).toEqual([])
+  })
+
+  it('behind the drop’s delete when that delete fails in the pass that would send the patch: the patch is held, and the retry sends both in order', async () => {
+    enqueueDelete('v2_set_logs', 'd1', { sessionId: 's1', parentSetId: 'h1' })
+    kind()
+    failures.set('del:d1', 1)
+
+    await flushSyncQueue()
+    expect(requests).toEqual([]) // the patch did not go ahead of the drop's delete
+    expect(server.get('v2_set_logs:h1')).toMatchObject({ stage_kind: 'dropset' })
+    expect(normalHeadWithDrop).toEqual([])
+    expect(queue.map((q) => q.operation)).toEqual(['delete', 'patch'])
+
+    await flushSyncQueue()
+    expect(requests).toEqual(['delete v2_set_logs:d1', 'patch v2_set_logs:h1 {"stage_kind":null}'])
+    expect(normalHeadWithDrop).toEqual([])
+    expect(queue).toEqual([])
+  })
+
+  it.each([
+    ['first', 'd2', 'd1'],
+    ['second', 'd1', 'd2'],
+  ])('with two drops deleted, behind the %s one’s delete when that one fails (the other has gone)', async (_which, failing, other) => {
+    server.set('v2_set_logs:d2', { id: 'd2', parent_set_id: 'h1' })
+    enqueueDelete('v2_set_logs', 'd2', { sessionId: 's1', parentSetId: 'h1' })
+    enqueueDelete('v2_set_logs', 'd1', { sessionId: 's1', parentSetId: 'h1' })
+    kind()
+    failures.set(`del:${failing}`, 1)
+
+    await flushSyncQueue()
+    expect(requests).toEqual([`delete v2_set_logs:${other}`])
+    expect(normalHeadWithDrop).toEqual([])
+
+    await flushSyncQueue()
+    expect(requests).toEqual([`delete v2_set_logs:${other}`, `delete v2_set_logs:${failing}`, 'patch v2_set_logs:h1 {"stage_kind":null}'])
+    expect(normalHeadWithDrop).toEqual([])
+    expect(queue).toEqual([])
+  })
+
+  it('behind a drop’s upsert that failed (the drop is still to be created under the head)', async () => {
+    enqueue('v2_set_logs', { id: 'd2', session_id: 's1', parent_set_id: 'h1', tag: 'drop' }, { attempts: 1 })
+    kind()
+    failures.set('drop', 1)
+
+    await flushSyncQueue()
+    expect(requests).toEqual([])
+    expect(queue).toHaveLength(2)
+
+    await flushSyncQueue()
+    expect(requests).toEqual(['upsert drop', 'patch v2_set_logs:h1 {"stage_kind":null}'])
+  })
+
+  it('and is reported with a drop delete that gave up, both under their session; retry sends them in order', async () => {
+    enqueueDelete('v2_set_logs', 'd1', { sessionId: 's1', parentSetId: 'h1' })
+    kind()
+    failures.set('del:d1', MAX_SYNC_ATTEMPTS)
+
+    for (let i = 0; i < MAX_SYNC_ATTEMPTS; i++) await flushSyncQueue()
+
+    expect(requests).toEqual([])
+    expect(useOfflineStore.getState().syncFailures.map((f) => [f.recordId, f.sessionId])).toEqual([['d1', 's1'], ['h1', 's1']])
+
+    await retrySyncFailures()
+
+    expect(requests).toEqual(['delete v2_set_logs:d1', 'patch v2_set_logs:h1 {"stage_kind":null}'])
+    expect(useOfflineStore.getState().syncFailures).toEqual([])
+    expect(queue).toEqual([])
+  })
+
+  it('but not behind the failed delete of a drop of another head', async () => {
+    server.set('v2_set_logs:h9', { id: 'h9', stage_kind: 'dropset' })
+    server.set('v2_set_logs:d9', { id: 'd9', parent_set_id: 'h9' })
+    enqueueDelete('v2_set_logs', 'd9', { sessionId: 's1', parentSetId: 'h9' })
+    kind('h1')
+    failures.set('del:d9', 1)
+
+    await flushSyncQueue()
+
+    expect(requests).toEqual(['patch v2_set_logs:h1 {"stage_kind":null}'])
+    expect(queue.map((q) => q.payload.id)).toEqual(['d9'])
+  })
+
+  it('behind the head’s own earlier write, too: an upsert of the head that fails in the pass holds the patch (a patch first would match no row, and the upsert would then leave the kind)', async () => {
+    server.delete('v2_set_logs:h1')
+    server.delete('v2_set_logs:d1')
+    enqueue('v2_set_logs', { id: 'h1', session_id: 's1', stage_kind: 'dropset', tag: 'head' })
+    kind()
+    failures.set('head', 1)
+
+    await flushSyncQueue()
+    expect(requests).toEqual([])
+
+    await flushSyncQueue()
+    expect(requests).toEqual(['upsert head', 'patch v2_set_logs:h1 {"stage_kind":null}'])
+    expect(server.get('v2_set_logs:h1')).toMatchObject({ stage_kind: null })
+  })
+
+  // The control for "the hold is the stage-kind patch's alone": a head's number patch (58a's shape) is a different column and has never waited for its drops.
+  it('a head’s number patch is not held behind its drops’ failed delete', async () => {
+    enqueueDelete('v2_set_logs', 'd1', { sessionId: 's1', parentSetId: 'h1' })
+    enqueuePatch('v2_set_logs', { id: 'h1', set_number: 2 }, { sessionId: 's1' })
+    failures.set('del:d1', 1)
+
+    await flushSyncQueue()
+
+    expect(requests).toEqual(['patch v2_set_logs:h1 {"set_number":2}'])
   })
 })
 

@@ -7,6 +7,7 @@ import { useWorkoutRows } from './useWorkoutRows'
 import { useRestTimerStore } from './restTimerStore'
 import type { ProgramExercise, WeekPlanSet, SetLog } from '../../types'
 import type { LogRequest } from './useExerciseCardState'
+import { spyWriters } from './setWriters.testutil'
 
 // Chunk 15's review fix, as chunk 58a's rows draw it: a superset member's own planned warmup is a real, loggable row ("W", board W1),
 // drawn with the member above the rounds and never inside one (a warmup takes no part in the rounds or the current set: G54).
@@ -60,7 +61,7 @@ function Harness({ ms, onLog }: { ms: SupersetMember[]; onLog: (params: LogReque
       <SupersetBlock
         blockId="block-1" letter="A" members={ms} workout={workout} logs={logs} sessionId="session-1" referenceLoading={false}
         referenceMesocycleId={null} referenceIsError={false} referenceIsFromCache={false} onRetryReference={() => {}} today="2026-01-05"
-        onLog={onLog} onUpdateSet={() => {}} onDeleteSet={async () => {}} onSwap={async () => {}}
+        onLog={onLog} onUpdateSet={() => {}} onDeleteSet={async () => {}} writers={spyWriters()} onSwap={async () => {}}
       />
     </MemoryRouter>
   )

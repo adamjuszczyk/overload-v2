@@ -15,6 +15,7 @@ import { groupSetLogs, type SetGroup } from './setGroupLogic'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
 import { parseSwapRecord } from './exerciseSwapLogic'
 import type { SwapRecord } from './workoutRules'
+import { toSessionSetChangeRecords, type DbSessionSetChange } from './sessionSetChangesService'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
@@ -76,6 +77,8 @@ export type DbSession = {
   completed_at: string | null
   created_at: string
   v2_set_logs?: DbSetLog[]
+  // Chunk 61 (migration 042): the session's change rows, embedded by `fetchSession` (and by REVIEW's reads, which map them their own way).
+  v2_session_set_changes?: DbSessionSetChange[] | null
   // Absent until migration 016 has been applied.
   energy_rating?: string | null
   pump_rating?: string | null
@@ -152,6 +155,8 @@ export function toSession(row: DbSession): Session {
     completedAt: row.completed_at,
     createdAt: row.created_at,
     setLogs: row.v2_set_logs?.map(toSetLog).sort((a, b) => a.loggedAt.localeCompare(b.loggedAt)),
+    // Chunk 61: what the session did to its sets that a log can't say (042). Absent when the select didn't ask for it.
+    ...(row.v2_session_set_changes != null ? { setChanges: toSessionSetChangeRecords(row.v2_session_set_changes) } : {}),
     // Same "column may not exist yet" fallback as toSetLog's formRating.
     energyRating: (row.energy_rating ?? null) as EnergyRating | null,
     pumpRating: (row.pump_rating ?? null) as PumpRating | null,
@@ -201,9 +206,12 @@ export async function fetchLastDoneOrSkippedSession(mesoId: string): Promise<Ses
 }
 
 export async function fetchSession(id: string): Promise<Session> {
+  // Chunk 61: the session's change rows come with its logs, so the workout draws both as the database held them at one instant (a deleted
+  // planned set is a change row, and a read of the logs alone would bring it back as an open row). `v2_session_set_changes.session_id` is
+  // its only FK to `v2_sessions`; `check-embeds-local.sh` resolves the embed in CI.
   const { data, error } = await supabase
     .from('v2_sessions')
-    .select('*, v2_set_logs(*, exercises(*))')
+    .select('*, v2_set_logs(*, exercises(*)), v2_session_set_changes(*)')
     .eq('id', id)
     .single()
   if (error) throw error
@@ -642,6 +650,9 @@ export async function updateSetLog(
     rir?: number | null
     setNumber?: number
     formRating?: FormRating | null
+    // Chunk 61 (DECISIONS 147 (a)): the last drop of a logged set deleted makes it a normal set, so its log loses its stage kind. Chunk 62
+    // extends this with the log's warmup flag and the rest of what a type change patches.
+    stageKind?: StageKind | null
   },
 ): Promise<void> {
   const patch: Record<string, unknown> = {}
@@ -653,6 +664,7 @@ export async function updateSetLog(
   // — form must be too, or two controls that sit side by side behave
   // inconsistently for no reason (TASKS.md §4 item 4).
   if ('formRating' in changes) patch.form_rating = changes.formRating
+  if ('stageKind' in changes) patch.stage_kind = changes.stageKind
 
   const { error } = await supabase.from('v2_set_logs').update(patch).eq('id', id)
   if (error) throw error

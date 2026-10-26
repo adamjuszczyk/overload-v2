@@ -18,6 +18,7 @@ import { useOfflineStore } from '../offline/offlineStore'
 import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import { useSettingsStore, DEFAULT_SETTINGS } from '../settings/settingsStore'
+import { spyWriters } from './setWriters.testutil'
 
 afterEach(() => {
   cleanup()
@@ -177,7 +178,7 @@ function Frame({ caption, plannedSets, logs, lastLogs = [], lastLogsLoading = fa
     cardKey: programExercise.id, programExercise, plannedSets, workout, logs,
     referenceSessions: lastLogs.length > 0 ? [referenceSessionOf('prev', '2025-12-31', lastLogs)] : [], referenceLoading: lastLogsLoading,
     referenceMesocycleId: null, referenceIsError: false, referenceIsFromCache: false, onRetryReference: () => {}, today: '2026-01-05',
-    onLog: () => Promise.resolve({} as SetLog), onUpdateSet: () => {}, onDeleteSet: async () => {}, onSwap: async () => {},
+    onLog: () => Promise.resolve({} as SetLog), onUpdateSet: () => {}, onDeleteSet: async () => {}, writers: spyWriters(), onSwap: async () => {},
   })
   return (
     <section data-frame={caption} style={{ margin: '0 16px 18px' }}>

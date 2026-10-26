@@ -9,6 +9,7 @@ import { referenceSessionOf } from './cardHarness.testutil'
 import { useRestTimerStore } from './restTimerStore'
 import { useSetTimerStore } from './setTimerStore'
 import type { ProgramExercise, WeekPlanSet, SetLog, Exercise } from '../../types'
+import { spyWriters } from './setWriters.testutil'
 
 // Chunk 58a: the block draws the rounds the session's rules form (`resolveRows`), through `useWorkoutRows`, which the harness below
 // stands in for (GymSession calls it once for the whole session). The rows are found by what they say: `data-row-key` names a row and
@@ -95,6 +96,7 @@ function Harness({ ms, logs, overrides }: { ms: SupersetMember[]; logs: SetLog[]
         onLog={() => Promise.resolve({} as SetLog)}
         onUpdateSet={() => {}}
         onDeleteSet={async () => {}}
+        writers={spyWriters()}
         onSwap={async () => {}}
         {...overrides}
       />
@@ -237,6 +239,25 @@ describe('SupersetBlock — full per-exercise behaviour inside a block (chunk 13
     expect([...container.querySelectorAll('p')].some((p) => p.textContent === 'ROUND 5')).toBe(false)
     expect(rowLabels(container).filter((l) => l?.startsWith('A'))).toEqual(['A1', 'A2', 'A3', 'A4'])
     expect(rowLabels(container).filter((l) => l?.startsWith('B'))).toEqual(['B1', 'B2', 'B3', 'B4'])
+  })
+})
+
+describe('SupersetBlock — DELETE SET (chunk 61, board W7b\'s member names)', () => {
+  it('a member\'s open set: its ⋯ asks W9 in the block, naming the member and the round, and DELETE SET writes that planned set\'s `deleted` change row', async () => {
+    const writers = spyWriters()
+    const { container } = renderBlock(members(), { writers })
+    const second = container.querySelectorAll('[data-row-key]')[1] as HTMLElement // B1: the second row of the zigzag
+    expect(second.getAttribute('data-row-key')).toBe('set:pe-b-set-1')
+    fireEvent.click(within(second).getByLabelText('Set options'))
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('DELETE SET'))
+    const confirm = screen.getByRole('alertdialog')
+    expect(confirm.textContent).toContain('BARBELL ROW · B1')
+    expect(writers.writeChanges).not.toHaveBeenCalled() // asked first
+    await act(async () => {
+      fireEvent.click(within(confirm).getByText('DELETE SET'))
+      for (let i = 0; i < 16; i++) await Promise.resolve()
+    })
+    expect(writers.writeChanges).toHaveBeenCalledWith([{ change: { kind: 'deleted', weekPlanSetId: 'pe-b-set-1' }, id: null }])
   })
 })
 

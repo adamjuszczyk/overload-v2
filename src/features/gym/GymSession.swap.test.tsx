@@ -380,6 +380,28 @@ describe('after the swap: the cards of W5', () => {
     expect(cards(container)[1].textContent).toContain('DROPSET · 1 DROP')
   })
 
+  // Chunk 61's review 1, M2 (DECISIONS 165 (a): "No CUES row in the ⋯ of a set with no planned set"; its second case is a set a swap moved, which the replacement's
+  // card holds as an added set, with no planned set of its own). The control is the same set's ⋯ before the swap, where CUES is there.
+  it('the ⋯ of a set a swap moved has no CUES row, though the same set\'s ⋯ had one on the card it left (DECISIONS 165 (a); break: CUES offered on every working set)', async () => {
+    current = plan([planSet('set-1', 1), planSet('set-2', 2, { targetWeight: 52.5, repMin: 8, repMax: 10, targetRir: 1 })])
+    const before = render(jsx())
+    fireEvent.click(within(before.container.querySelector('[data-current-set]') as HTMLElement).getByLabelText('Set options'))
+    expect(within(screen.getByRole('dialog')).getByText('CUES')).toBeTruthy() // the planned set on the original card
+    before.unmount()
+
+    const { container, rerender } = render(jsx())
+    await swapCard(container)
+    rerender(jsx())
+    await settle()
+    const moved = container.querySelector('[data-current-set]') as HTMLElement
+    expect(moved.closest('.rounded-xl')!.textContent).toContain('SWAPPED FROM BENCH PRESS')
+    fireEvent.click(within(moved).getByLabelText('Set options'))
+    const sheet = within(screen.getByRole('dialog'))
+    expect(sheet.getByText('SKIP THIS SET')).toBeTruthy() // the set's own sheet, not an empty one
+    expect(sheet.getByText('DELETE SET')).toBeTruthy()
+    expect(sheet.queryByText('CUES')).toBeNull()
+  })
+
   it('the moved set shows the targets it had on the card it left (DECISIONS 164: "with their numbers, type, drops and targets, as W5 draws"; break: an empty row)', async () => {
     current = plan([planSet('set-1', 1), planSet('set-2', 2, { targetWeight: 52.5, repMin: 8, repMax: 10, targetRir: 1 })])
     const { container, rerender } = render(jsx())

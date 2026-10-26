@@ -35,7 +35,10 @@ import { useAutoFinishSession } from './useAutoFinishSession'
 import { useSessionDuration } from './useSessionDuration'
 import { useScrollToCurrentSet } from './useScrollToCurrentSet'
 import { useWorkoutRows, type WorkoutCard, type WorkoutRows } from './useWorkoutRows'
-import { useSetNumberCorrections } from './useSetNumberCorrections'
+import { patchSetNumbers, useSetNumberCorrections } from './useSetNumberCorrections'
+import { changesOf, writeSetChanges } from './useSessionSetChanges'
+import type { SessionWriters } from './setDelete'
+import { clearStageKind } from './clearStageKind'
 import { formatClock, jumpLabelText } from './workoutRowView'
 import WorkoutHeader, { OfflineStrip } from './WorkoutHeader'
 import { headerEyebrow, setsLabel, setsProgress } from './workoutHeaderLogic'
@@ -79,6 +82,7 @@ function ExerciseSection({
   onLog,
   onUpdateSet,
   onDeleteSet,
+  writers,
   onSwap,
 }: {
   card: WorkoutCard
@@ -104,6 +108,7 @@ function ExerciseSection({
   onLog: (params: LogRequest) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
+  writers: SessionWriters
   onSwap: (input: SwapInput) => Promise<void>
 }) {
   return (
@@ -125,6 +130,7 @@ function ExerciseSection({
       onLog={onLog}
       onUpdateSet={onUpdateSet}
       onDeleteSet={onDeleteSet}
+      writers={writers}
       onSwap={onSwap}
       swappedFrom={swappedFrom}
       slotSwapped={slotSwapped}
@@ -166,7 +172,6 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   const updateSetLog = useUpdateSetLog(sessionId)
   const deleteSetLog = useDeleteSetLog(sessionId)
 
-  useAutoFinishSession(session, weekPlan)
   const duration = useSessionDuration(session)
 
   // Prime the Dexie cache once exercises are loaded and we're online. Keyed off fallbackProgramExercises (the PROGRAM's own list),
@@ -306,7 +311,8 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   })
   const cardByKey = new Map(cards.map((card) => [card.key, card]))
 
-  const workout = useWorkoutRows({ cards, blocks, logs: allCurrentLogs })
+  // The session's change rows (chunk 61) are read with it: a planned set deleted in the session is a row here, and is out of the order.
+  const workout = useWorkoutRows({ cards, blocks, logs: allCurrentLogs, changes: changesOf(session) })
   // DECISIONS 178, 185 (c), 197: the screen writes the corrected numbers of an in-progress session's logged sets, and only there.
   useSetNumberCorrections({
     sessionId,
@@ -315,6 +321,10 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     logs: allCurrentLogs,
     busy: workout.busy,
   })
+  // DECISIONS 166 (a): auto-finish waits for what the workout's rows say is left: the finish warning's planned working sets AND the open drops of
+  // planned sets and open planned warmups it leaves out (`nothingLeft`, 61's review 1, F2), so a planned set deleted during the workout no
+  // longer keeps the session from finishing, and an open planned drop or warmup still does.
+  useAutoFinishSession(session, weekPlan, workout.nothingLeft)
 
   const { containerRef: exercisesContainerRef, direction: scrollToCurrentSetDirection, scrollToCurrentSet } = useScrollToCurrentSet()
 
@@ -355,8 +365,21 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   function handleUpdateSet(id: string, changes: Parameters<typeof updateSetLog.mutate>[0]['changes']) {
     updateSetLog.mutate({ id, changes })
   }
+  // One log (the card deletes a set's logs one by one, the drops first). Offline the delete is queued (G47); a drop's names its head, which the queue
+  // needs so that the head's own delete waits for it.
   function handleDeleteSet(id: string) {
-    return deleteSetLog.mutateAsync(id)
+    return deleteSetLog.mutateAsync({ id, parentSetId: allCurrentLogs.find((log) => log.id === id)?.parentSetId ?? null })
+  }
+  // What a delete writes besides the logs (chunk 61), and the run and week CUES writes to.
+  const writers: SessionWriters = {
+    mesocycleId: session?.mesocycleId ?? null,
+    weekNumber,
+    isCycle: scheduleType === 'sequence',
+    online: isOnline,
+    writeChanges: (writes) => writeSetChanges({ sessionId, userId: user!.id, writes, online: isOnline }),
+    patchNumbers: (patches) => patchSetNumbers({ sessionId, patches, logs: allCurrentLogs, flush: isOnline }),
+    clearStageKind: (logId) =>
+      clearStageKind({ sessionId, logId, online: isOnline, update: (id) => updateSetLog.mutateAsync({ id, changes: { stageKind: null } }) }),
   }
   // Swap exercise for this session only (SPEC v1.1 "Part C"), chunk 59: the swap's row is saved FIRST, with the record of which sets moved
   // (migration 047; DECISIONS 200 (a): "the swap row is saved before any set is skipped"), and it fails with the real reason when it can't
@@ -403,6 +426,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     onLog: handleLog,
     onUpdateSet: handleUpdateSet,
     onDeleteSet: handleDeleteSet,
+    writers,
     onSwap: handleSwap,
     excludeExerciseIds: activeExerciseIds,
   }

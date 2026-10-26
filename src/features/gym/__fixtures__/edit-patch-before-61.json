@@ -1,0 +1,121 @@
+{
+  "reps 8 to 9": [
+    [
+      "log-1",
+      {
+        "weight": 80,
+        "reps": 9,
+        "rir": 2,
+        "formRating": null
+      }
+    ]
+  ],
+  "RIR cleared": [
+    [
+      "log-1",
+      {
+        "weight": 80,
+        "reps": 8,
+        "rir": null,
+        "formRating": null
+      }
+    ]
+  ],
+  "RIR typed on a set that had none": [
+    [
+      "log-1",
+      {
+        "weight": 80,
+        "reps": 8,
+        "rir": 1,
+        "formRating": null
+      }
+    ]
+  ],
+  "FORM controlled": [
+    [
+      "log-1",
+      {
+        "weight": 80,
+        "reps": 8,
+        "rir": 2,
+        "formRating": "controlled"
+      }
+    ]
+  ],
+  "FORM cleared again": [
+    [
+      "log-1",
+      {
+        "weight": 80,
+        "reps": 8,
+        "rir": 2,
+        "formRating": null
+      }
+    ]
+  ],
+  "weight with a comma": [
+    [
+      "log-1",
+      {
+        "weight": 82.5,
+        "reps": 8,
+        "rir": 2,
+        "formRating": null
+      }
+    ]
+  ],
+  "weight, reps and RIR together": [
+    [
+      "log-1",
+      {
+        "weight": 85,
+        "reps": 6,
+        "rir": 0,
+        "formRating": null
+      }
+    ]
+  ],
+  "lbs set saved untouched keeps the stored kg": [
+    [
+      "log-1",
+      {
+        "weight": 9,
+        "reps": 8,
+        "rir": 2,
+        "formRating": null
+      }
+    ]
+  ],
+  "lbs set, a new weight": [
+    [
+      "log-1",
+      {
+        "weight": 9.07,
+        "reps": 8,
+        "rir": 2,
+        "formRating": null
+      }
+    ]
+  ],
+  "a drop, reps changed": [
+    [
+      "drop-1",
+      {
+        "weight": 40,
+        "reps": 7,
+        "rir": 0,
+        "formRating": null
+      }
+    ]
+  ],
+  "a warmup, reps changed": [
+    [
+      "log-1",
+      {
+        "weight": 20,
+        "reps": 10
+      }
+    ]
+  ]
+}

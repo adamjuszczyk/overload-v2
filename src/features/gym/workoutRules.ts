@@ -1796,6 +1796,19 @@ export function finishWarning(order: SessionOrder, logs: readonly LoggedSet[], c
   return { count, groups, text, firstKey: open[0].key }
 }
 
+/**
+ * DECISIONS 166 (a) (Adam, 2026-10-16): "Auto-finish waits until no row of `resolveRows` is open. That covers working sets, drops and planned
+ * warmups, with deleted sets out and retyped drops in. A set added in the session and never logged doesn't hold it, as today." `finishWarning`
+ * lists the planned working sets only (above), so auto-finish also waits for what the warning leaves out, and this is that: an open drop of a
+ * planned set (one the plan has, or one a retyped planned set got) and an open planned warmup. A row holds it when it is `unlogged` and the plan
+ * is behind it, which is what staging's hook asked of every planned set id ("a log on every planned set id"). What does not hold it: a set
+ * added in the session, its drops and its warmups (no plan behind them); a deleted set and its drops (not in the rows); a skipped set (settled)
+ * and a skipped set's drops (the rows leave them out). Both warmup displays are these rows (the tick list ticks the same planned warmups).
+ */
+export function holdsAutoFinish(row: ResolvedRow): boolean {
+  return row.state === 'unlogged' && !row.added && (row.kind === 'stage' || row.kind === 'warmup')
+}
+
 // ─── Adding sets: the place a new set takes (DECISIONS 173, 174, 179, 183) ──────────────────────
 
 /**

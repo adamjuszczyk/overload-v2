@@ -79,7 +79,9 @@ async function withFinishDerivedFromServer(payload: Record<string, unknown>) {
 // held behind the earlier writes to its own record and to the records that
 // hang under it (a head's delete behind its stages': the client's cascade
 // deletes the stages first, and a stage still waiting to be created must
-// exist before its head goes). Writes to any other record still go.
+// exist before its head goes). A patch that clears a head's stage kind (chunk
+// 61's review 1, F1) is held the same way: behind the writes to its own log and
+// to its drops'. Writes to any other record still go.
 function payloadOf(item: SyncQueueItem) {
   return (item.payload ?? {}) as { id?: string; session_id?: string | null; parent_set_id?: string | null }
 }
@@ -91,7 +93,7 @@ function recordKey(item: SyncQueueItem): string | null {
 
 // The head a stage log hangs under, for an item that writes one. An upsert
 // says so in its payload; a delete's payload is only { id } and a patch's only
-// { id, set_number }, so they say so beside it (`queueSetLogDelete`, `queueSetLogPatch`).
+// { id } and one column, so they say so beside it (`queueSetLogDelete`, `queueSetLogPatch`).
 function headIdOf(item: SyncQueueItem): string | null {
   if (item.table !== 'v2_set_logs') return null
   return (item.operation === 'delete' || item.operation === 'patch' ? item.parentSetId : payloadOf(item).parent_set_id) ?? null
@@ -120,6 +122,9 @@ function dependencyKeys(item: SyncQueueItem, stages: Map<string, string[]>): str
     if (own) keys.push(...(stages.get(own) ?? []))
     return keys
   }
+  // A head losing its stage kind (its last drop was deleted, 147 (a)) waits for its drops' writes as its delete would: sent ahead of a
+  // drop's delete that failed in the pass, it would leave the server a normal head with a drop log under it until the retry.
+  if (item.operation === 'patch' && own && 'stage_kind' in p) keys.push(...(stages.get(own) ?? []))
   if (p.session_id) keys.push(`v2_sessions:${p.session_id}`)
   if (item.table === 'v2_set_logs' && p.parent_set_id) keys.push(`v2_set_logs:${p.parent_set_id}`)
   return keys
@@ -190,14 +195,17 @@ async function dropNeverSentPairs(items: SyncQueueItem[]): Promise<SyncQueueItem
   return items.filter((item) => !cancelled.has(item.id!))
 }
 
-// A queued patch is `{ id, set_number }`: nothing else is ever sent for it (chunk 58a; the queue refuses any other shape).
-function setNumberPatchOf(payload: unknown): { id: string; set_number: number } {
-  const p = payload as { id?: unknown; set_number?: unknown } | null
+// A queued patch is one of two shapes and nothing else is ever sent for it: `{ id, set_number }` (chunk 58a, DECISIONS 197) or
+// `{ id, stage_kind: null }` (chunk 61's review 1, F1: a head whose last drop was deleted is a normal set; only `null`, only that column).
+// Anything else is refused here, at the point of sending: the queue never writes a whole row of a log through a patch.
+function patchOf(payload: unknown): { id: string; changes: { set_number: number } | { stage_kind: null } } {
+  const p = payload as { id?: unknown; set_number?: unknown; stage_kind?: unknown } | null
   const keys = p ? Object.keys(p).sort().join(',') : ''
-  if (!p || keys !== 'id,set_number' || typeof p.id !== 'string' || typeof p.set_number !== 'number') {
-    throw new Error('a queued patch is { id, set_number } and nothing else')
+  if (p && typeof p.id === 'string') {
+    if (keys === 'id,set_number' && typeof p.set_number === 'number') return { id: p.id, changes: { set_number: p.set_number } }
+    if (keys === 'id,stage_kind' && p.stage_kind === null) return { id: p.id, changes: { stage_kind: null } }
   }
-  return { id: p.id, set_number: p.set_number }
+  throw new Error('a queued patch is { id, set_number } or { id, stage_kind: null } and nothing else')
 }
 
 async function flushOnce() {
@@ -223,11 +231,11 @@ async function flushOnce() {
         const { error } = await supabase.from(item.table).upsert(row)
         if (error) throw error
       } else if (item.operation === 'patch') {
-        // Chunk 58a (DECISIONS 197): the whole request is `update({ set_number }).eq('id', id)`. An update of a log another
-        // phone has deleted matches no row, so it can never bring the log back, and it names no column but the number, so it
-        // can't write this phone's copy of the weight or reps over another phone's edit.
-        const patch = setNumberPatchOf(item.payload)
-        const { error } = await supabase.from(item.table).update({ set_number: patch.set_number }).eq('id', patch.id)
+        // Chunk 58a (DECISIONS 197): the whole request is `update({ set_number }).eq('id', id)`, or (chunk 61's review 1) `update({ stage_kind:
+        // null }).eq('id', id)`. An update of a log another phone has deleted matches no row, so it can never bring the log back, and it
+        // names no column but the one, so it can't write this phone's copy of the weight or reps over another phone's edit.
+        const patch = patchOf(item.payload)
+        const { error } = await supabase.from(item.table).update(patch.changes).eq('id', patch.id)
         if (error) throw error
       } else {
         // The whole request is `delete().eq('id', id)`: a delete naming no row
@@ -323,7 +331,8 @@ export async function hasQueuedWritesFor(sessionId: string): Promise<boolean> {
 // sees it; the queue comes first, so a failure in between leaves a stale copy,
 // never a delete that was lost. The caller removes the log from the screen's
 // cache; a log that was never sent leaves the queue with its upsert on the
-// next pass (`dropNeverSentPairs`). Nothing calls this before chunks 61 and 63.
+// next pass (`dropNeverSentPairs`). Chunk 61's DELETE calls this offline (through `useDeleteSetLog`, the drops first and the head last);
+// chunk 63's unlog will.
 export async function queueSetLogDelete(log: { id: string; sessionId: string; parentSetId?: string | null }): Promise<void> {
   await db.sync_queue.add({
     table: 'v2_set_logs',
@@ -363,6 +372,23 @@ export async function queueSetLogPatch(
   })
   await db.set_logs.update(log.id, { setNumber })
   return true
+}
+
+// Chunk 61's review 1 (F1; G47: delete set "work[s] offline and sync[s] later through the sync queue"; DECISIONS 146 (a), 147 (a), 197): the last
+// drop of a logged head is deleted and the head is a normal set from then on, so its log loses its stage kind. That is a change to one column
+// of a log, so it is a `patch` item (`{ id, stage_kind: null }`, sent as `update({ stage_kind: null }).eq('id', id)`), never a whole-row save,
+// which could bring back a log another phone deleted and write this phone's weight and reps over another's edit. It is queued after the drop's
+// `delete` item and waits behind its drops' writes (`dependencyKeys`). The device's own copy of the log changes at once (the queue first, as
+// above); the caller changes the screen's cache.
+export async function queueSetLogStageKindClear(log: { id: string; sessionId: string }): Promise<void> {
+  await db.sync_queue.add({
+    table: 'v2_set_logs',
+    operation: 'patch',
+    payload: { id: log.id, stage_kind: null },
+    createdAt: new Date().toISOString(),
+    sessionId: log.sessionId,
+  })
+  await db.set_logs.update(log.id, { stageKind: null })
 }
 
 async function lastQueuedWriteIsPatch(logId: string, setNumber: number): Promise<boolean> {

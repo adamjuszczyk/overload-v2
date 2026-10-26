@@ -514,6 +514,10 @@ export interface Session {
   completedAt: string | null
   createdAt: string
   setLogs?: SetLog[]         // populated on full session load
+  // The session's v2_session_set_changes rows, read with it (chunk 61; migration 042): what this session did to a set that its log can't
+  // say — a planned set deleted or given another type, a logged head's pending drops. Populated on full session load, like `setLogs`;
+  // absent reads as none. The workout's rules take them as `HeldChange`s.
+  setChanges?: SessionSetChangeRecord[]
 
   // Optional, once per completed session (COACH-PERSONALIZATION-SPEC §4/§5)
   // — required keys, nullable types, same "absence is data too" reasoning as
@@ -741,8 +745,9 @@ export type SessionSetChangeType =
 // the session and never on the plan. One variant per `kind`, each carrying
 // only the key and fields its row may have (the table's checks refuse the
 // rest), so an impossible row can't be built:
-//   deleted         a planned set removed before it was logged
-//   retyped         a planned set given another type before it was logged
+//   deleted         a planned set removed during the session, logged or not
+//   retyped         a planned set given another type during the session, whether or not it is logged
+//                   (Adam's data-model rule: one change row per planned set per session; a later delete turns it into `deleted`)
 //   pending_stages  a logged head whose pending drops still need their count
 export type SessionSetChange =
   | { kind: 'deleted'; weekPlanSetId: string }
