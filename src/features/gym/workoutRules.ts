@@ -1781,7 +1781,8 @@ function joinNumbers(numbers: number[]): string {
  * DECISIONS 201 (a) (Adam, 2026-10-20: "198, 200, 201: build as recommended"): a set a swap for today moved is an added set of the new card (179), so its row has no
  * planned set, yet the plan is still behind it when the swap's record names a planned set for it (`from.weekPlanSetId`). One moved from an added set
  * (`from.addedPlace`) and one added to the card by hand have no plan behind them. The record is the swap's own row (`OrderExercise.swappedFrom`), so this reads the
- * same after a reload and on another phone; the moved set is found in it by the place it took (179), which no other set of its exercise holds.
+ * same after a reload and on another phone; the moved set is found in it by the place it took (179). Two sets of one exercise hold one place only when two
+ * phones added at once (173); a set of that place on the swap's card would then be read as the moved one (a reading, in chunk 64's report).
  */
 function movedFromPlan(cards: readonly OrderExercise[], row: Pick<ResolvedRow, 'exerciseKey' | 'added' | 'addedPlace'>): boolean {
   if (!row.added || row.addedPlace === null) return false

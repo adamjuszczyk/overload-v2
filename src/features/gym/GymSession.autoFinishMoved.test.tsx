@@ -88,7 +88,7 @@ const SWAP_SKIPS = [skipped(log('s3', 'lat-3', 3, 'ex-lat')), skipped(log('s4', 
 
 describe('auto-finish and the sets a swap for today moved (DECISIONS 201 (a))', () => {
   it('the control: the moved sets logged on the new card, every other set logged, the session completes after the threshold', async () => {
-    await mount([...EZ_DONE, ...LAT_1_2, ...SWAP_SKIPS, log('m-1', null, 3, 'ex-machine', { addedPlace: 1 }), log('m-2', null, 4, 'ex-machine', { addedPlace: 2 })], { swaps: [PLANNED_MOVED] })
+    await mount([...EZ_DONE, ...LAT_1_2, ...SWAP_SKIPS, log('mv1', null, 3, 'ex-machine', { addedPlace: 1 }), log('mv2', null, 4, 'ex-machine', { addedPlace: 2 })], { swaps: [PLANNED_MOVED] })
     await advance(5)
     expect(complete.mutate).not.toHaveBeenCalled() // the grace window since the screen opened
     await advance(6)
@@ -103,7 +103,7 @@ describe('auto-finish and the sets a swap for today moved (DECISIONS 201 (a))', 
   })
 
   it('one of the two moved planned sets still open holds it too', async () => {
-    await mount([...EZ_DONE, ...LAT_1_2, ...SWAP_SKIPS, log('m-1', null, 3, 'ex-machine', { addedPlace: 1 })], { swaps: [PLANNED_MOVED], lists: { [card]: TWO_MOVED } })
+    await mount([...EZ_DONE, ...LAT_1_2, ...SWAP_SKIPS, log('mv1', null, 3, 'ex-machine', { addedPlace: 1 })], { swaps: [PLANNED_MOVED], lists: { [card]: TWO_MOVED } })
     await advance(60)
     expect(complete.mutate).not.toHaveBeenCalled()
   })
