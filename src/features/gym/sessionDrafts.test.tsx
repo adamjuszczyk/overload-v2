@@ -184,6 +184,22 @@ describe('the card\'s list is read back by `useWorkoutRows` (chunk 63; board W5:
     expect(world.lists).toEqual({ 'pe-1:replacement': moved })
   })
 
+  it('every card of an exercise is handed all the session\'s drafts: an exercise on two cards draws the draft of its added set once, on the card the rules name (break: the drafts handed to the last card only)', async () => {
+    const world = newDraftWorld()
+    const key = { sessionId: 'session-1', localId: 'a1', exerciseId: 'ex-1', position: 2 }
+    world.drafts.set('session-1|a:a1', {
+      id: 'session-1|a:a1', sessionId: 'session-1', key,
+      values: { weight: 50, reps: 10, rir: null, formRating: null, enteredUnit: null, type: NORMAL, place: 1, loggedAt: '2026-01-05T10:00:00Z' },
+    })
+    const twoCards: WorkoutCard[] = [
+      { key: 'pe-1', programExercise: exerciseOf(), plannedSets: [] },
+      { key: 'extra-ex-1', programExercise: exerciseOf({ id: 'extra-ex-1' }), plannedSets: [] },
+    ]
+    const view = renderHook(() => useWorkoutRows({ cards: twoCards, blocks: [], logs: [], store: fakeDraftStore(world) }))
+    await settle()
+    expect(view.result.current.rows.map((r) => r.key)).toEqual(['added:pe-1:a1'])
+  })
+
   it('a session that is not in progress writes no list (persist off)', async () => {
     const world = newDraftWorld()
     const store = fakeDraftStore(world)
