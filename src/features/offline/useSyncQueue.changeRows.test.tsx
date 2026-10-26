@@ -11,7 +11,7 @@ import { renderHook, act } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import type { Session, SetLog } from '../../types'
-import { addedLog, card, headLog, orderOf, pending, rowKeyed, staged, viewOf } from '../gym/workoutRules.testutil'
+import { addedLog, card, dropLog, headLog, orderOf, pending, rowKeyed, staged, viewOf } from '../gym/workoutRules.testutil'
 
 interface QueueItem {
   id: number
@@ -400,6 +400,30 @@ describe('227 (iii): DELETE online of a log whose change row is still queued', (
     await deleteOnline('log.bench.added1')
 
     expect(queue()).toEqual([])
+    expect(useOfflineStore.getState().syncFailures).toEqual([])
+    expect(await hasQueuedWritesFor('s1')).toBe(false)
+  })
+
+  it('1.1’s shape: a stage logged offline under a head the server holds, its first send failed; the head is deleted online (the drop first, the head last): the stage’s queued upsert goes with it', async () => {
+    const head = headLog('bench', 2, { stageKind: 'dropset' })
+    const drop = dropLog(head, 1)
+    seedSession([headLog('bench', 1), head])
+    const log = renderHook(() => useLogSet('s1'), { wrapper })
+    await act(async () => {
+      await log.result.current.mutateAsync(logParams(drop, { parentSetId: head.id, stageIndex: 1, isDropset: true }))
+    })
+    world.failing.set(`upsert v2_set_logs:${drop.id}`, 1)
+    world.online = true
+    await flushSyncQueue() // the reconnect flush: the stage's first send fails
+    expect(queue().map((q) => [q.payload.id, q.attempts])).toEqual([[drop.id, 1]])
+
+    await deleteOnline(drop.id)
+    await deleteOnline(head.id)
+    expect(queue()).toEqual([])
+    await flushSyncQueue()
+
+    expect(world.refused).toEqual([])
+    expect(serverLogs()).toEqual(['log.bench.1'])
     expect(useOfflineStore.getState().syncFailures).toEqual([])
     expect(await hasQueuedWritesFor('s1')).toBe(false)
   })

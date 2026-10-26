@@ -429,13 +429,15 @@ export async function queueSetLogStageKindClear(log: { id: string; sessionId: st
   await db.set_logs.update(log.id, { stageKind: null })
 }
 
-// DECISIONS 227 (iii). An online delete of a log (`useDeleteSetLog`'s direct request) has gone through. The server's foreign key took the change rows that
-// named the log with it (042: `set_log_id`, ON DELETE CASCADE), and a queued upsert of one of them would be refused `23503` for ever: they leave the queue,
-// and only they, the upserts of change rows whose `set_log_id` is this log's. Every other queued write stays, however it is related (another log's rows, the
-// session's other rows, the log's own writes, a finish). Called after the request has been answered, never before: a delete that fails leaves the rows, and
-// the log, in place. A row that had given up was on the "couldn't sync" notice, which is made again from what is left. Returns how many rows left.
+// DECISIONS 227 (iii). An online delete of a log (`useDeleteSetLog`'s direct request) has gone through. The server's foreign keys took everything that named the
+// log with it (042: a change row's `set_log_id`, ON DELETE CASCADE; 010: a stage log's `parent_set_id`, ON DELETE CASCADE), and a queued upsert of one of those would
+// be refused `23503` for ever: they leave the queue, and only they, the upserts of change rows whose `set_log_id` is this log's and the upserts of stage logs whose
+// `parent_set_id` is this log's (1.1 has the defect in this second shape: a stage logged offline under a head that is then deleted online). Every other queued write
+// stays, however it is related (another log's rows or stages, the session's other rows, the log's own writes, a stage's queued delete or patch, which match no row and
+// are never refused, a finish). Called after the request has been answered, never before: a delete that fails leaves the writes, and the log, in place. A write that had
+// given up was on the "couldn't sync" notice, which is made again from what is left. Returns how many writes left.
 export async function dropQueuedWritesNamingLog(logId: string): Promise<number> {
-  const named = (await db.sync_queue.toArray()).filter((item) => namedLogIdOf(item) === logId)
+  const named = (await db.sync_queue.toArray()).filter((item) => namedLogIdOf(item) === logId || (item.operation === 'upsert' && headIdOf(item) === logId))
   const { removePending } = useOfflineStore.getState()
   for (const item of named) {
     await db.sync_queue.delete(item.id!)

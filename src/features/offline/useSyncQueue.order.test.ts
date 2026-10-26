@@ -1231,13 +1231,26 @@ describe('dropQueuedWritesNamingLog — an online delete of a log drops the chan
     enqueueRow('r3', 'l3', 'row3', {}, 's2') // another session
     enqueue('v2_session_set_changes', { id: 'r4', session_id: 's1', kind: 'retyped', week_plan_set_id: 'p1', set_log_id: null, tag: 'retyped' })
     enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' }) // the log's own upsert is not a row that names it
-    enqueue('v2_set_logs', { id: 'l5', session_id: 's1', parent_set_id: 'l1', weight: 80, tag: 'stage' }) // nor is a stage under it (a log write)
+    enqueue('v2_set_logs', { id: 'l5', session_id: 's1', parent_set_id: 'l1', weight: 80, tag: 'stage' }) // a stage under it is dropped too (1.1's shape)
     enqueue('v2_sessions', { id: 's1', status: 'completed', tag: 'finish' })
+
+    expect(await dropQueuedWritesNamingLog('l1')).toBe(3)
+
+    expect(queue.map((q) => q.payload.tag)).toEqual(['row2', 'row3', 'retyped', 'log1', 'finish'])
+    expect(useOfflineStore.getState().pendingIds.has('r1')).toBe(false)
+  })
+
+  it('and the upserts of the stage logs under that log (1.1’s shape of the defect), not those of another head, not the log’s own upsert, not a stage’s queued delete or patch', async () => {
+    enqueue('v2_set_logs', { id: 'st1', session_id: 's1', parent_set_id: 'l1', tag: 'stage1' })
+    enqueue('v2_set_logs', { id: 'st2', session_id: 's1', parent_set_id: 'l1', tag: 'stage2' }, { attempts: 1 })
+    enqueue('v2_set_logs', { id: 'st9', session_id: 's1', parent_set_id: 'l9', tag: 'stage9' })
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', tag: 'log1' })
+    enqueueDelete('v2_set_logs', 'st3', { sessionId: 's1', parentSetId: 'l1' })
+    enqueuePatch('v2_set_logs', { id: 'st4', set_number: 3 }, { sessionId: 's1', parentSetId: 'l1' })
 
     expect(await dropQueuedWritesNamingLog('l1')).toBe(2)
 
-    expect(queue.map((q) => q.payload.tag)).toEqual(['row2', 'row3', 'retyped', 'log1', 'stage', 'finish'])
-    expect(useOfflineStore.getState().pendingIds.has('r1')).toBe(false)
+    expect(queue.map((q) => q.payload.tag ?? q.payload.id)).toEqual(['stage9', 'log1', 'st3', 'st4'])
   })
 
   it('a delete or a patch of a log, queued, is not a row that names it', async () => {
