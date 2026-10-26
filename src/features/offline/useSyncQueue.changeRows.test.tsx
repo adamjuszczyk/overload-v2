@@ -476,3 +476,104 @@ describe('227 (iii): DELETE online of a log whose change row is still queued', (
     expect(changeRows().map((r) => r.set_log_id)).toEqual(['log.bench.added2'])
   })
 })
+
+// ─── 63: UNLOG deletes a log that a change row can name (the third way to reach 227, chunk 62's review) ─────────────────────────────────────────────
+// Chunk 63's unlog sends `unlogEffects`' change rows (`writeSetChanges`) and then deletes its logs one by one through `useDeleteSetLog`, stages first: the writes DELETE makes to the
+// queue, with no `deleted` row. These are the 62 review's probes P1 (offline, the pair never sent), P2 (the row failing twice, a queued delete in the second pass) and P3
+// (online) with UNLOG in place of DELETE (DECISIONS 227's evidence): no row is left refused and the queue is empty after the passes.
+const { unlogEffects } = await import('../gym/workoutRules')
+
+describe('227 on 63’s writes: LOG of a staged added head, then UNLOG of it', () => {
+  const ADDED = { localId: 'a1', logId: 'log.bench.added1', type: staged('dropset', 2), place: 1 }
+  const cards = () => [card('bench', 'n', { added: [ADDED] })]
+  const addedHead = () => addedLog('bench', 1, { stageKind: 'dropset', place: 1 })
+  const stagedLogParams = () => logParams(addedHead(), { setNumber: 2, weight: 50, addedPlace: 1 })
+
+  async function logStagedAdded(): Promise<string> {
+    seedSession([headLog('bench', 1)])
+    const log = renderHook(() => useLogSet('s1'), { wrapper })
+    await act(async () => {
+      await log.result.current.mutateAsync(stagedLogParams())
+      await queueSetChanges({ sessionId: 's1', userId: 'u1', writes: [{ change: pending(addedHead(), 'dropset', 2), id: null }], flush: false })
+    })
+    return stuck()[0].payload.id as string
+  }
+
+  /** What the card does for one UNLOG: `unlogEffects` over the view, its change rows, then its logs through `useDeleteSetLog` (`handleUnlogRow`). */
+  async function runUnlogOf(key: string, logs: SetLog[], cardList: ReturnType<typeof card>[]) {
+    const cached = queryClient.getQueryData(['v2_session', 's1']) as Session
+    const view = viewOf(orderOf(cardList), logs, [...changesOf(cached)])
+    const effects = unlogEffects(rowKeyed(view, key), view as Parameters<typeof unlogEffects>[1])
+    const del = renderHook(() => useDeleteSetLog('s1'), { wrapper })
+    await act(async () => {
+      if (effects.changes.length > 0) await writeSetChanges({ sessionId: 's1', userId: 'u1', writes: effects.changes, online: world.online })
+      for (const log of effects.deleteOrder) await del.result.current.mutateAsync({ id: log.id, parentSetId: log.parentSetId })
+    })
+    return effects
+  }
+
+  it('P1, offline: the pass cancels the log, its row and its delete together; nothing is sent, nothing is refused, no notice, and a later log of the session still goes', async () => {
+    await logStagedAdded()
+    const effects = await runUnlogOf('added:bench:a1', [headLog('bench', 1), addedHead()], cards())
+    expect(effects.deleteOrder.map((l) => l.id)).toEqual(['log.bench.added1'])
+    expect(inQueueOrder()).toEqual(['upsert v2_set_logs:log.bench.added1', 'upsert v2_session_set_changes pending_stages log.bench.added1', 'delete v2_set_logs:log.bench.added1'])
+    world.online = true
+
+    await flushSyncQueue()
+
+    expect(requests()).toEqual([])
+    expect(world.refused).toEqual([])
+    expect(queue()).toEqual([])
+    expect(serverLogs()).toEqual(['log.bench.1'])
+    expect(changeRows()).toEqual([])
+    expect(useOfflineStore.getState().syncFailures).toEqual([])
+    expect(await hasQueuedWritesFor('s1')).toBe(false)
+    await laterLogLands()
+  })
+
+  it('P2, the row fails twice and a QUEUED unlog of its logged head goes in the second pass: the delete waits behind the row, which lands, and the delete takes it', async () => {
+    const rowId = await logStagedAdded()
+    world.failing.set(`upsert v2_session_set_changes:${rowId}`, 2)
+    world.online = true
+    await flushSyncQueue() // the log lands; the row fails
+    expect(serverLogs()).toContain('log.bench.added1')
+    expect(stuck()[0].attempts).toBe(1)
+
+    world.online = false
+    await runUnlogOf('added:bench:a1', [headLog('bench', 1), addedHead()], cards())
+    world.online = true
+    await flushSyncQueue() // the row fails again; the delete must not go ahead of it
+    expect(requests()).toEqual(['upsert v2_set_logs:log.bench.added1'])
+    expect(inQueueOrder()).toEqual(['upsert v2_session_set_changes pending_stages log.bench.added1', 'delete v2_set_logs:log.bench.added1'])
+
+    await flushSyncQueue() // the row lands, then the delete
+    expect(requests()).toEqual(['upsert v2_set_logs:log.bench.added1', 'upsert v2_session_set_changes:<id>', 'delete v2_set_logs:log.bench.added1'])
+    expect(world.refused).toEqual([])
+    expect(serverLogs()).toEqual(['log.bench.1'])
+    expect(changeRows()).toEqual([]) // the cascade took the row
+    expect(queue()).toEqual([])
+    expect(useOfflineStore.getState().syncFailures).toEqual([])
+    expect(await hasQueuedWritesFor('s1')).toBe(false)
+  })
+
+  it('P3, online: the request goes first, then the row still queued for that log leaves the queue; the next pass sends nothing refused', async () => {
+    const rowId = await logStagedAdded()
+    world.failing.set(`upsert v2_session_set_changes:${rowId}`, 1)
+    world.online = true
+    await flushSyncQueue() // the log lands, the row fails once
+    expect(stuck().map((q) => q.payload.set_log_id)).toEqual(['log.bench.added1'])
+
+    await runUnlogOf('added:bench:a1', [headLog('bench', 1), addedHead()], cards())
+    expect(world.requests[world.requests.length - 1]).toBe('delete v2_set_logs:log.bench.added1')
+    expect(stuck()).toEqual([])
+
+    await flushSyncQueue()
+
+    expect(world.refused).toEqual([])
+    expect(queue()).toEqual([])
+    expect(serverLogs()).toEqual(['log.bench.1'])
+    expect(changeRows()).toEqual([])
+    expect(useOfflineStore.getState().syncFailures).toEqual([])
+    expect(await hasQueuedWritesFor('s1')).toBe(false)
+  })
+})

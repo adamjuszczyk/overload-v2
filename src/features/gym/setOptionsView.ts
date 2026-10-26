@@ -72,3 +72,6 @@ export function deleteConfirm(row: NamedRow & Pick<ResolvedRow, 'type'>, numbers
     body: said === '' ? DELETE_NOTE : `${said}. ${DELETE_NOTE}`,
   }
 }
+
+/** Chunk 63 (TASKS 63: 'disabled with "Log its drops first"'; SPEC 18c: "UNLOG is disabled and says so"): the words under the edit panel's UNLOG while a later drop of the set is logged. D31: TASKS' words, as written. */
+export const UNLOG_BLOCKED_NOTE = 'Log its drops first'

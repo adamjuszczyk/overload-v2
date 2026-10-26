@@ -14,8 +14,9 @@ import { RowLabel, boxStyle } from './setRowParts'
 // `{ weight, reps }`), never a note, and an unchanged weight typed again keeps the stored kg (`resolveEditedWeightKg`: 9 kg shows as 19.8 lbs).
 //
 // Editing a logged set needs a connection (G47: "the edit panel's SAVE ... stay online-only"): offline SAVE is off and the panel says "Requires a
-// connection"; nothing is sent. DELETE asks the caller, which asks W9 before it deletes. UNLOG is chunk 63's: the panel draws it as the board does and
-// it does nothing (disabled) until the caller passes `onUnlog`.
+// connection"; nothing is sent. DELETE asks the caller, which asks W9 before it deletes. UNLOG (chunk 63, SPEC 18c: no confirm, and it works offline) calls `onUnlog`;
+// with `unlogNote` set the button is disabled and the note says why, under the buttons ("Log its drops first": TASKS 63's words), and left out of the props it is disabled
+// and says nothing.
 // Chunk 62 (SPEC 19, G47: "A set type change on a logged set ... need[s] a connection"): the SET TYPE row opens the type picker through `onSetType` and, like
 // SAVE, is off with no connection (the panel says "Requires a connection" once, under the buttons). A warmup logged with no weight or reps that is made a
 // working set asks for both here first (DECISIONS 152 (a)): the caller holds the picked type (`typeText` shows it) and passes `numbersRequired`, so SAVE
@@ -47,6 +48,8 @@ export interface SetEditPanelProps {
   /** A warmup waiting for the numbers its new type needs (152): SAVE asks for weight and reps as it does for a working set, the box layout stays a warmup's. */
   numbersRequired?: boolean
   onUnlog?: () => void
+  /** Words under a disabled UNLOG (a later drop of the set is logged); null or left out when UNLOG is offered. */
+  unlogNote?: string | null
   /** SAVE: the patch, in the shape `updateSetLog` takes (a warmup's has no `rir` and no `formRating`). */
   onSave: (changes: SetEditChanges | Pick<SetEditChanges, 'weight' | 'reps'>) => void
   onCancel: () => void
@@ -80,7 +83,7 @@ const BUTTON_STYLE: CSSProperties = {
   cursor: 'pointer',
 }
 
-export default function SetEditPanel({ label, log, resolvedUnit, isWarmup, typeText, onSetType, numbersRequired = false, onUnlog, onSave, onCancel, onDelete }: SetEditPanelProps) {
+export default function SetEditPanel({ label, log, resolvedUnit, isWarmup, typeText, onSetType, numbersRequired = false, onUnlog, unlogNote = null, onSave, onCancel, onDelete }: SetEditPanelProps) {
   const online = useOnlineStatus()
   // The unit this set was logged in (v3 §2.4); a log from before that column reads the exercise's own.
   const unit = log.enteredUnit ?? resolvedUnit
@@ -237,8 +240,8 @@ export default function SetEditPanel({ label, log, resolvedUnit, isWarmup, typeT
         <button
           type="button"
           onClick={onUnlog}
-          disabled={onUnlog === undefined}
-          style={{ ...BUTTON_STYLE, ...hairline('var(--border-strong)'), background: 'var(--surface)', color: 'var(--text-primary)', opacity: onUnlog === undefined ? 0.5 : 1, cursor: onUnlog === undefined ? 'default' : 'pointer' }}
+          disabled={onUnlog === undefined || unlogNote !== null}
+          style={{ ...BUTTON_STYLE, ...hairline('var(--border-strong)'), background: 'var(--surface)', color: 'var(--text-primary)', opacity: onUnlog === undefined || unlogNote !== null ? 0.5 : 1, cursor: onUnlog === undefined || unlogNote !== null ? 'default' : 'pointer' }}
         >
           UNLOG
         </button>
@@ -257,6 +260,11 @@ export default function SetEditPanel({ label, log, resolvedUnit, isWarmup, typeT
           SAVE
         </button>
       </div>
+      {unlogNote !== null && (
+        <span role="status" data-unlog-note style={{ textAlign: 'right', fontSize: 12, color: 'var(--text-muted)' }}>
+          {unlogNote}
+        </span>
+      )}
       {!online && (
         <span role="status" style={{ textAlign: 'right', fontSize: 12, color: 'var(--text-muted)' }}>
           Requires a connection

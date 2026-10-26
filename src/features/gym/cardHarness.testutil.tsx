@@ -10,6 +10,7 @@ import { groupSetLogs } from './setGroupLogic'
 import type { ReferenceSession } from './sessionService'
 import type { ProgramExercise, ProgramSet, SetLog, WeekPlanSet } from '../../types'
 import { spyWriters } from './setWriters.testutil'
+import type { DraftStore } from './sessionDrafts'
 
 export const exerciseOf = (over: Partial<ProgramExercise> = {}): ProgramExercise => ({
   id: 'pe-1', workoutDayId: 'wd-1', userId: 'u1', exerciseId: 'ex-1', position: 0, weightUnit: null,
@@ -55,9 +56,11 @@ interface HarnessProps {
   props?: CardProps
   /** The card's list of the sets added in the session as it stands when the screen mounts (chunk 59's tests: sets of a type the screen can't make yet). */
   initialAdded?: readonly AddedSet[]
+  /** Chunk 63: where the card's list and the unlog's drafts are kept (`draftStore.testutil.ts`); mounting again over the same world is a reload. Left out, they live in memory. */
+  store?: DraftStore
 }
 
-function Harness({ plannedSets, logs, changes, programSets = [], props = {}, initialAdded }: HarnessProps) {
+function Harness({ plannedSets, logs, changes, programSets = [], props = {}, initialAdded, store }: HarnessProps) {
   const programExercise = props.programExercise ?? exerciseOf()
   const workout = useWorkoutRows({
     cards: [{ key: programExercise.id, programExercise, plannedSets }],
@@ -65,6 +68,7 @@ function Harness({ plannedSets, logs, changes, programSets = [], props = {}, ini
     logs,
     ...(changes === undefined ? {} : { changes }),
     ...(initialAdded === undefined ? {} : { initialAdded: { [programExercise.id]: initialAdded } }),
+    ...(store === undefined ? {} : { store }),
   })
   return (
     <MemoryRouter>
@@ -93,8 +97,8 @@ function Harness({ plannedSets, logs, changes, programSets = [], props = {}, ini
   )
 }
 
-export function renderCard(input: { plannedSets: WeekPlanSet[]; logs?: SetLog[]; changes?: HeldChange[]; programSets?: ProgramSet[]; props?: CardProps; initialAdded?: readonly AddedSet[] }) {
-  const base = { plannedSets: input.plannedSets, programSets: input.programSets, props: input.props, initialAdded: input.initialAdded }
+export function renderCard(input: { plannedSets: WeekPlanSet[]; logs?: SetLog[]; changes?: HeldChange[]; programSets?: ProgramSet[]; props?: CardProps; initialAdded?: readonly AddedSet[]; store?: DraftStore }) {
+  const base = { plannedSets: input.plannedSets, programSets: input.programSets, props: input.props, initialAdded: input.initialAdded, store: input.store }
   const view = render(<Harness {...base} logs={input.logs ?? []} changes={input.changes} />)
   let latest = { logs: input.logs ?? [], changes: input.changes }
   return {
