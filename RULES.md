@@ -8,6 +8,7 @@
   - **ALWAYS** Verification and process: proofs, reviews, worktrees, PR/merge/docs mechanics.
 - **ALWAYS** — The 1.2 usage rules (2026-10-16): quiet test output, who reads what.
 - **ALWAYS** — Usage rules from 58b's breakdown (2026-10-22): narrow reads, affected tests, index, cost.
+- **ALWAYS** — Break proofs for the remaining chunks (2026-10-26): no mutation sweeps; one break per place that writes, or per call pattern.
 - **ALWAYS** — The 1.2 cost rule (2026-10-20): which chunks get full review.
 - **ALWAYS** — The 1.2 tests-owed rule (2026-10-20): missing tests logged, not bounced.
 
@@ -103,6 +104,10 @@ Each of these gave a false result. Treat the check as insufficient on its own.
   - Prove it with a value stored behind the client's back (Checks that lied #23): the app loads the row, the API changes the column, the app writes, and the column must still hold the API's value.
   - On staging the deployed pre-49 bundle, the control, put its cached `copy` back over `empty` at its first write; the 49 bundle kept `empty` through two writes.
 - **A change to one column of a log goes out as a `patch` queue item, never as a whole-row save** (chunk 58a, DECISIONS 197; executed by its builder and in its review). `queueSetLogPatch` queues `{ id, set_number }` (the queue refuses any other shape) with the session and a stage's head beside it, and the flush sends `update({ set_number }).eq('id', id)` after every earlier write to that log. A whole-row upsert of the log re-creates a log another phone deleted and writes this phone's cached weight and reps over another phone's edit (PostgREST writes the payload's columns: the rule above); `useSyncQueue.patch.test.ts` runs both, and its break that sends the patch as an upsert fails 10 of 15. On staging the request answered 204 through RLS and pg-safeupdate. 61's delete renumber and 62's Warmup switch renumber use it.
+
+- **A queued change row that names a log (`pending_stages`' `set_log_id`, a foreign key with a cascade) is refused for ever (`23503`) when the queue cancels or deletes that log before the row lands** (chunk 62's builder; executed in its review on staging's tree and on the branch, DECISIONS 227). 57's rules treat only a record's own writes and a head's drops as hanging under a log: `dropNeverSentPairs` cancels a never-sent log with its delete and leaves the row's upsert, a queued delete of the log doesn't wait behind the row, and an online delete doesn't look at the queue. 61's offline drop delete and 62's LOG of a staged added head each queue such a row (63's unlog will delete a log under one). The row gives up after five passes into a "couldn't sync" notice RETRY can't clear, and keeps `hasQueuedWritesFor` true, so a finish of that session waits for the next pass. A new producer of a row that names another record is probed with that record deleted offline, online, and after the row failed once.
+- **A change sent as several requests holds its change rows on the screen from before the first request until they are in the session's cache** (chunk 62's builder: 61's `workout.holdChanges`, for a type change and for LOG's `pending_stages` row; breaks W36 and W37 re-run in its review). A read of the session between two requests otherwise draws a half-written type: a log patched to a stage kind whose `pending_stages` row isn't there yet reads as a Normal set.
+- **A change of several requests sends the one the table can refuse first, and every destructive one after it** (chunk 62's builder; W07 re-run in its review): a logged head's type change patches the log (152's `23514` can refuse it) before it deletes the drops 19c's answer gave up, so a refused patch deletes nothing; a change cut short is finished by pressing the same pick again.
 
 **Database / migrations**
 - **Production runs pg-safeupdate:** DELETE/UPDATE without WHERE fails via the API, inside functions too; use `where true` (041).
@@ -392,6 +397,8 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 - **The device's Dexie `set_logs` holds only the logs this phone wrote and the completed sessions' logs it primed for "last time"** (chunk 61's review 2; its own over-strict check). A log written on another phone or by API is not in it, so a producer's `db.set_logs.update` changes nothing there, which is right. A check that a producer changed the device copy first checks that the copy exists.
 - **Once staging's in-progress session is down to its last open planned set, the smoke's LOG goes to a set added with + ADD SET** (chunk 61's review 2). With nothing open, the session completes by itself after the auto-finish threshold (166 (a)), and the next smoke finds no in-progress session.
 
+- **A card test that plays the session back derives it from what the writer was asked, never from the fixture** (chunk 62's builder: its first draft, caught by its own breaks W11 and W38). A hand-fed `retyped` row hid a dropped `pending_stages` write, because a planned set's drops are drawn from the `retyped` row alone; played back from the writes, the test fails without the row.
+
 ## The 1.2 usage rules (Adam, 2026-10-16) — cut tokens per chunk without changing what is checked
 - Test output: run vitest with a quiet reporter that prints failures only (e.g. `--reporter=dot`), and pipe long script output through a filter that keeps failures and summary lines. Never paste a full passing test log into context.
 - Builders: run the chunk's own tests while working; the full suite and every script once, at the end, before the report. The reviewer runs them all again anyway. **Tightened 2026-10-22: while working, only the affected test files; break proofs against the specific test file (see "Usage rules from 58b's breakdown", point 2, below).**
@@ -406,6 +413,9 @@ Adam, 2026-10-22, from chunk 58b's breakdown, for the rest of 1.2:
 3. Keep every command under 5 minutes where possible, so the cache doesn't expire mid-wait. Split long runs.
 4. RULES.md gets a short index at the top. Each reviewer brief names the sections that chunk needs; reviewers read only those.
 5. Chunk reports add a cost-weighted total next to the context figure (re-reads 0.1, writes 2, output 5), and Adam will note the weekly % before and after each chunk so we can calibrate.
+
+### Break proofs for the remaining chunks (Adam, 2026-10-26)
+Adam, 2026-10-26 (after 61's overrun): "Break proofs for all remaining chunks (62–64, 67–69, tests-owed run): no mutation sweeps. DATA chunks: one break per place that writes data. LIGHT chunks: one break per call pattern. Add this to RULES.md's usage section and every builder brief." It overrides the sweep rules in this file and any sweep a TASKS line asks for: a builder breaks each place that writes (DATA) or each call pattern (LIGHT) once, and a reviewer re-runs the builder's breaks and adds its own only for a place or pattern that has none (chunk 62's review: 38 builder breaks re-run, one of its own).
 
 ## The 1.2 cost rule (Adam, 2026-10-20)
 Usage is the constraint now. From the next chunk on:
