@@ -121,7 +121,7 @@ describe('SetRowWarmup — a logged warmup can be corrected and removed (chunk 1
     fireEvent.change(screen.getByLabelText('Weight'), { target: { value: 'abc' } })
     fireEvent.click(screen.getByText('SAVE'))
     expect(onUpdate).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('Enter a valid weight')).toBeTruthy()
+    expect(screen.getByText('Enter a valid weight.')).toBeTruthy() // the panel's own words (board W2b)
   })
 
   it('CANCEL closes the edit without calling onUpdate', () => {
@@ -141,6 +141,21 @@ describe('SetRowWarmup — a logged warmup can be corrected and removed (chunk 1
     fireEvent.click(screen.getByLabelText('Delete set'))
     fireEvent.click(screen.getByText('DELETE'))
     expect(onDelete).toHaveBeenCalledTimes(1)
+  })
+
+  it('the panel (board W2b "EDITING A WARMUP"): its DELETE asks W9 through onAskDelete and deletes nothing itself; SET TYPE says Warmup and UNLOG is not wired yet', () => {
+    const { onDelete } = mount({ log: logged() })
+    const onAskDelete = vi.fn()
+    cleanup()
+    const props = { onLog: vi.fn(), onUpdate: vi.fn(), onDelete, onAskDelete }
+    render(<SetRowWarmup row={row} planned={planned} log={logged()} unit="kg" display="rows" restElapsed={() => 41} {...props} />)
+    fireEvent.click(screen.getByLabelText('Edit set'))
+    expect(screen.getByText('SET TYPE')).toBeTruthy()
+    expect(screen.getByText('Warmup')).toBeTruthy()
+    expect((screen.getByText('UNLOG') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByText('DELETE'))
+    expect(onAskDelete).toHaveBeenCalledTimes(1)
+    expect(onDelete).not.toHaveBeenCalled()
   })
 
   it('a warmup logged with no values (ticked) can still be edited in rows mode, the boxes starting blank', () => {

@@ -4,7 +4,7 @@ import type { ReferenceSession } from './sessionService'
 import type { ScheduleType } from './referenceByExercise'
 import WorkoutExerciseHeader from './WorkoutExerciseHeader'
 import { cardOptions, SwapPickerSheet } from './cardOptions'
-import { CardRows } from './WorkoutRow'
+import { CardDeleteConfirm, CardRows } from './WorkoutRow'
 import { useExerciseCardState, type ExerciseCardProps } from './useExerciseCardState'
 import type { SupersetChainInput } from './restChain'
 import type { ResolvedRow } from './workoutRules'
@@ -199,6 +199,10 @@ export default function SupersetBlock({
           ADD ROUND
         </button>
       </div>
+
+      {members.map((member, i) => (
+        <CardDeleteConfirm key={`delete-${member.cardKey}`} state={memberStates[i]} />
+      ))}
 
       {members.map((member, i) => {
         const state = memberStates[i]

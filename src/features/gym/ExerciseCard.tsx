@@ -1,6 +1,6 @@
 import { Plus } from 'lucide-react'
 import WorkoutExerciseHeader from './WorkoutExerciseHeader'
-import { CardRows } from './WorkoutRow'
+import { CardDeleteConfirm, CardRows } from './WorkoutRow'
 import { cardOptions, SwapPickerSheet } from './cardOptions'
 import { useExerciseCardState, type ExerciseCardProps } from './useExerciseCardState'
 
@@ -62,6 +62,7 @@ export default function ExerciseCard(props: ExerciseCardProps) {
       </div>
 
       {state.showSwapSheet && <SwapPickerSheet state={state} programExercise={programExercise} excludeExerciseIds={excludeExerciseIds} />}
+      <CardDeleteConfirm state={state} />
     </div>
   )
 }

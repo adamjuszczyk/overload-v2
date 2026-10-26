@@ -11,6 +11,7 @@ import { resolveRestTarget, type StageChainInput, type SupersetChainInput } from
 import { deleteEffects, lockDecision, type AddedSet, type LockDecision, type ResolvedRow, type SwapRecord } from './workoutRules'
 import type { WorkoutRows } from './useWorkoutRows'
 import { NeedsConnectionError, runDelete, type SessionWriters } from './setDelete'
+import { deleteConfirm, loggedNumbersText, plannedNumbersText } from './setOptionsView'
 import { canMove, planSkipRest, planSwap, type SkipItem } from './exerciseOptions'
 
 // Chunk 58a — the card's writers and what its rows need, over the session's rows (`useWorkoutRows`, chunk 46r's `resolveRows`).
@@ -145,6 +146,9 @@ export function useExerciseCardState({
 
   const [isSkippingExercise, setIsSkippingExercise] = useState(false)
   const [showSwapSheet, setShowSwapSheet] = useState(false)
+  // W9, asked of one row (chunk 61): kept here, with the words it was asked with, because the row it names leaves the screen as soon as its delete
+  // starts (its change row is held), and a confirm that lived in that row would go with it, with the reason a delete failed.
+  const [confirmDelete, setConfirmDelete] = useState<{ row: ResolvedRow; eyebrow: string; title: string; body: string } | null>(null)
 
   // ─── Rest chain (chunk 16 — SPEC "Rest") ─────────────────────────────────────────────────────────
   const programSetById = new Map(programSets.map((set) => [set.id, set]))
@@ -383,6 +387,13 @@ export function useExerciseCardState({
     }
   }
 
+  /** DELETE in a row's ⋯ or edit panel: W9, with the numbers the row has now (a delete in progress changes what the row can say). */
+  function askDelete(row: ResolvedRow) {
+    const log = logOf(row)
+    const numbers = log !== null ? loggedNumbersText(log, resolvedWeightUnit) : plannedNumbersText(targetsOf(row), resolvedWeightUnit)
+    setConfirmDelete({ row, ...deleteConfirm(row, numbers) })
+  }
+
   /** The CUES row of a set's ⋯ and the sheet it opens (board W7 → 8): only a planned working set has one (DECISIONS 165 (a): none for a set with no planned set). */
   function cuesOf(row: ResolvedRow): { planned: WeekPlanSet; heads: WeekPlanSet[] } | null {
     if (row.kind !== 'working' || row.weekPlanSetId === null) return null
@@ -526,6 +537,9 @@ export function useExerciseCardState({
     logAdHocStage,
     logWarmup,
     handleDeleteRow,
+    confirmDelete,
+    askDelete,
+    closeDeleteConfirm: () => setConfirmDelete(null),
     cuesOf,
     writers,
     handleConfirmSkip,

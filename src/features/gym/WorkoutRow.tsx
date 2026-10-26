@@ -18,7 +18,7 @@ import { resolveStageCarryWeightKg } from './stageCarryLogic'
 import LogOrderPrompt, { type LogOrderQuestion } from './LogOrderPrompt'
 import DeleteSetConfirm from './DeleteSetConfirm'
 import SetCuesSheet from './SetCuesSheet'
-import { deleteConfirm, loggedNumbersText, plannedNumbersText, typeRowText } from './setOptionsView'
+import { typeRowText } from './setOptionsView'
 import SetRowCurrent, { type RowMenu } from './SetRowCurrent'
 import SetRowLogged from './SetRowLogged'
 import SetRowWarmup from './SetRowWarmup'
@@ -47,15 +47,14 @@ export default function WorkoutRow(props: WorkoutRowProps) {
     if (decision === 'log') log()
     else setAsking({ question: decision, log })
   }
-  // Chunk 61: the set's ⋯ (CUES, DELETE) and its edit panel (DELETE) reach two sheets of this row's own: the cues sheet and W9's confirm. They are
-  // mounted here, outside the row's own frames, so a sheet's events never bubble through a row.
-  const [confirming, setConfirming] = useState(false)
+  // Chunk 61: the set's ⋯ (CUES, DELETE) and its edit panel (DELETE) reach the cues sheet, which this row owns and mounts outside its own frames (a
+  // sheet's events never bubble through a row), and W9's confirm, which the card owns (`CardDeleteConfirm`).
   const [cuesOpen, setCuesOpen] = useState(false)
   const cues = state.cuesOf(row)
   const menu: RowMenu = {
     cuesText: cues === null ? null : cuesSummary(cues.planned.tags ?? []),
     openCues: () => setCuesOpen(true),
-    askDelete: () => setConfirming(true),
+    askDelete: () => state.askDelete(row),
   }
   return (
     <>
@@ -71,7 +70,6 @@ export default function WorkoutRow(props: WorkoutRowProps) {
           onCancel={() => setAsking(null)}
         />
       )}
-      {confirming && <RowDeleteConfirm state={state} row={row} onClose={() => setConfirming(false)} />}
       {cuesOpen && cues !== null && (
         <SetCuesSheet
           exerciseName={row.exerciseName}
@@ -88,16 +86,20 @@ export default function WorkoutRow(props: WorkoutRowProps) {
   )
 }
 
-/** W9 over a row: the numbers it would delete, and the delete itself, which says why when it didn't happen. */
-function RowDeleteConfirm({ state, row, onClose }: { state: ExerciseCardState; row: ResolvedRow; onClose: () => void }) {
+/**
+ * W9 for a card: asked by a row's ⋯ or edit panel (`state.askDelete`), answered here. It is mounted by the card, not by the row, so it outlives the row
+ * it names (the row is out of the order as soon as its delete starts); it says why a delete didn't happen and can be answered again.
+ */
+export function CardDeleteConfirm({ state }: { state: ExerciseCardState }) {
+  const open = state.confirmDelete
+  return open === null ? null : <DeleteConfirmDialog key={open.row.key} state={state} open={open} />
+}
+
+function DeleteConfirmDialog({ state, open }: { state: ExerciseCardState; open: NonNullable<ExerciseCardState['confirmDelete']> }) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<{ headline: string; reason: string } | null>(null)
   // A second press while the delete is out is ignored: a ref, because two presses in one instant both read the state before React draws.
   const inFlight = useRef(false)
-  const log = state.logOf(row)
-  const unit = state.resolvedWeightUnit
-  const numbers = log !== null ? loggedNumbersText(log, unit) : plannedNumbersText(state.targetsOf(row), unit)
-  const text = deleteConfirm(row, numbers)
 
   async function confirm() {
     if (inFlight.current) return
@@ -105,8 +107,8 @@ function RowDeleteConfirm({ state, row, onClose }: { state: ExerciseCardState; r
     setPending(true)
     setError(null)
     try {
-      await state.handleDeleteRow(row)
-      onClose()
+      await state.handleDeleteRow(open.row)
+      state.closeDeleteConfirm()
     } catch (err) {
       console.error('[workout] delete failed', err)
       setError({ headline: "Couldn't delete the set.", reason: errorReason(err, typeof navigator !== 'undefined' && navigator.onLine === false) })
@@ -116,7 +118,7 @@ function RowDeleteConfirm({ state, row, onClose }: { state: ExerciseCardState; r
     }
   }
 
-  return <DeleteSetConfirm {...text} pending={pending} error={error} onConfirm={() => void confirm()} onCancel={onClose} />
+  return <DeleteSetConfirm eyebrow={open.eyebrow} title={open.title} body={open.body} pending={pending} error={error} onConfirm={() => void confirm()} onCancel={state.closeDeleteConfirm} />
 }
 
 function RowBody({ state, row, current, supersetContext, guard, menu }: WorkoutRowProps & { guard: (log: () => void) => void; menu: RowMenu }) {
