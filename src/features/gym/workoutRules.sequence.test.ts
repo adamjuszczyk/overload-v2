@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionSetChangeType, SetLog } from '../../types'
-import { currentSet, finishWarning, lockDecision, numberCorrections, type ResolvedRow } from './workoutRules'
+import { currentSet, finishWarning, holdsAutoFinish, lockDecision, numberCorrections, type ResolvedRow } from './workoutRules'
 import { Session } from './workoutRules.session.testutil'
 import { addedLog, brief, card, headLog, lists, staged } from './workoutRules.testutil'
 
@@ -447,6 +447,11 @@ function check(s: Session, label: string, stale: ReadonlySet<string>): void {
   const warning = finishWarning(s.order(), s.server.logs, s.server.held())
   const openPlanned = rows.filter((r) => r.kind === 'working' && r.state === 'unlogged' && (r.weekPlanSetId !== null || s.movedFromPlan(r)))
   expect(warning?.count ?? 0, `${label}: the finish warning`).toBe(openPlanned.length)
+  // what holds auto-finish besides the warning's working sets (166 (a) with 201 (a); chunk 64's review 1, F1): an open drop or an open warmup with the plan behind it, a planned set's or a set a swap
+  // moved from one (the walk's own record of the swap says which; a drop goes by its head's place, as its own is none)
+  const planBehind = (r: ResolvedRow): boolean => !r.added || s.movedFromPlan(r.kind === 'stage' ? rows.find((h) => h.key === r.headKey)! : r)
+  const holds = rows.filter((r) => r.state === 'unlogged' && (r.kind === 'stage' || r.kind === 'warmup') && planBehind(r)).map((r) => r.key)
+  expect(rows.filter(holdsAutoFinish).map((r) => r.key), `${label}: the rows that hold auto-finish`).toEqual(holds)
 }
 
 /** After `row` (a set) in its slot, the open added sets: how many, and whether one of them keeps a draft. */

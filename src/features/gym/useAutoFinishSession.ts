@@ -7,7 +7,7 @@ import type { Session, WeekPlan } from '../../types'
 const CHECK_INTERVAL_MS = 30_000
 
 // Auto-completes a session once the workout's rows say nothing is left (`nothingLeft`: the finish warning is empty and no open row is a drop of a
-// planned set or a planned warmup, `useWorkoutRows`) and the most recently logged set is older than the user's configured inactivity threshold. Runs entirely client-side — completion goes
+// planned set or a planned warmup, `useWorkoutRows`; a set a swap moved from a planned set counts as planned, DECISIONS 201 (a)) and the most recently logged set is older than the user's configured inactivity threshold. Runs entirely client-side — completion goes
 // through useCompleteSession so it queues offline the same way a manual FINISH SESSION does.
 //
 // Chunk 61 (DECISIONS 166 (a), Adam 2026-10-16): "waits for what the workout's rows say is left (the same view as the finish warning)" instead of a

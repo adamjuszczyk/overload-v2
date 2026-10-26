@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { finishWarning, holdsAutoFinish } from './workoutRules'
 import { Session } from './workoutRules.session.testutil'
-import { brief, card, headLog } from './workoutRules.testutil'
+import { brief, card, headLog, staged } from './workoutRules.testutil'
 
 // Chunk 64, DECISIONS 201 (a) (Adam, 2026-10-20: "198, 200, 201: build as recommended"): "a set a swap moved is an added set of the new exercise (179), so 46r's `finishWarning`
 // never lists it and auto-finish can complete the session with it open" — so the warning also lists a set on a swap's card whose record names a planned set
@@ -91,7 +91,124 @@ describe('finishWarning: the planned sets a swap for today moved (DECISIONS 201 
     const s = world()
     s.swap('lat', 'Machine Pulldown')
     expect(warn(s)).not.toBeNull()
-    // what the warning leaves out is still `holdsAutoFinish`'s: a moved set's drops and warmups are rows of an added set, which don't hold it (a reading, chunk 64's report)
+    // the open rows here are the moved working sets, which are the warning's: `holdsAutoFinish` has no drop and no warmup to add (a moved set's drops and warmups are below)
     expect(s.rows().some(holdsAutoFinish)).toBe(false)
+  })
+})
+
+// Chunk 64's review 1, F1. DECISIONS 166 (a): "Auto-finish waits until no row of `resolveRows` is open. That covers working sets, drops and planned warmups … A set added in the session and
+// never logged doesn't hold it". A set a swap moved from a planned set is still the session's planned work (201 (a)) though its row is an added one (179), so its open drops (the head
+// logged on the swap's card) and a moved planned warmup hold auto-finish as the same sets unmoved do; a set moved from an ADDED set, its drops and an added warmup still don't. The question
+// is asked the way the screen asks it (`useWorkoutRows.nothingLeft`: the warning is empty and no row holds it); the real hook is `GymSession.autoFinishMoved.test.tsx`'s.
+describe('holdsAutoFinish: the open drops and warmups of a set a swap moved (DECISIONS 166 (a) with 201 (a); 64\'s review 1, F1)', () => {
+  const nothingLeft = (s: Session) => warn(s) === null && !s.rows().some(holdsAutoFinish)
+  const holding = (s: Session) => s.rows().filter(holdsAutoFinish).map(brief)
+  const openHead = (s: Session, cardKey: string) => s.rows().find((r) => r.exerciseKey === cardKey && r.kind !== 'stage' && r.state === 'unlogged')!
+  const shape = (s: Session) => s.rows().filter((r) => r.state === 'unlogged').map((r) => [r.kind, r.added, r.weekPlanSetId, r.movedFromPlan])
+  const dropset = () => new Session([card('lat', 'n d1', { name: 'Lat Pulldown' })], [], [headLog('lat', 1)])
+
+  it('the control: the same planned dropset NOT moved, its head logged and its drop open, holds it until the drop is logged', () => {
+    const s = dropset()
+    s.log(openHead(s, 'lat').key)
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 02✓', 'lat 02.1·'])
+    expect(shape(s)).toEqual([['stage', false, null, false]])
+    expect(warn(s)).toBeNull()
+    expect(holding(s)).toEqual(['lat 02.1·'])
+    expect(nothingLeft(s)).toBe(false)
+    s.log(open(s, 'lat')[0].key)
+    expect(nothingLeft(s)).toBe(true)
+  })
+
+  it('a planned dropset a swap moved, its head logged on the swap\'s card, its drop open: it waits for the drop, and finishes once it is logged or skipped (breaks: skip moved planned rows; skip their drops)', () => {
+    const s = dropset()
+    const m = s.swap('lat', 'Machine Pulldown')
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', `${m} 02·`, `${m} 02.1·`])
+    expect(nothingLeft(s)).toBe(false) // the moved head is open: the warning's
+    s.log(openHead(s, m).key)
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', `${m} 02✓`, `${m} 02.1·`])
+    // the open row is a drop of an added row (179) that the swap's record names a planned set for
+    expect(s.card(m).swappedFrom!.moved.map((x) => x.from)).toEqual([{ weekPlanSetId: 'lat.2' }])
+    expect(shape(s)).toEqual([['stage', true, null, true]])
+    expect(warn(s)).toBeNull() // the warning lists working sets only (148)
+    expect(holding(s)).toEqual([`${m} 02.1·`])
+    expect(nothingLeft(s)).toBe(false)
+    const logged = s.copy()
+    logged.log(open(logged, m)[0].key)
+    expect(nothingLeft(logged)).toBe(true)
+    const settled = s.copy()
+    settled.log(open(settled, m)[0].key, undefined, { isSkipped: true, weight: null, reps: null })
+    expect(nothingLeft(settled)).toBe(true)
+  })
+
+  it('a planned warmup a swap moved, open, with every working set logged: it waits for the warmup, and finishes once it is logged or skipped (breaks: skip moved planned rows; skip their warmups)', () => {
+    const s = new Session([card('lat', 'n w n', { name: 'Lat Pulldown' })], [], [headLog('lat', 1)])
+    const m = s.swap('lat', 'Machine Pulldown')
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', `${m} W1·`, `${m} 02·`])
+    s.log(s.rows().find((r) => r.exerciseKey === m && r.kind === 'working' && r.state === 'unlogged')!.key) // the working set; the warmup stays open
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', `${m} W1·`, `${m} 02✓`])
+    expect(s.card(m).swappedFrom!.moved.map((x) => x.from)).toEqual([{ weekPlanSetId: 'lat.2' }, { weekPlanSetId: 'lat.3' }])
+    expect(shape(s)).toEqual([['warmup', true, null, true]])
+    expect(warn(s)).toBeNull()
+    expect(holding(s)).toEqual([`${m} W1·`])
+    expect(nothingLeft(s)).toBe(false)
+    const logged = s.copy()
+    logged.log(open(logged, m)[0].key)
+    expect(nothingLeft(logged)).toBe(true)
+    const settled = s.copy()
+    settled.log(open(settled, m)[0].key, undefined, { isSkipped: true, weight: null, reps: null })
+    expect(nothingLeft(settled)).toBe(true)
+  })
+
+  it('the control: a dropset ADDED in the session and moved, its head logged on the swap\'s card, its drop open, does not hold it (absence: 166 (a), "a set added in the session … doesn\'t hold it")', () => {
+    const s = new Session([card('lat', 'n n', { name: 'Lat Pulldown' })], [], [headLog('lat', 1), headLog('lat', 2)])
+    s.retype(s.add('lat'), staged('dropset', 1))
+    const m = s.swap('lat', 'Machine Pulldown')
+    expect(s.card(m).swappedFrom!.moved.map((x) => x.from)).toEqual([{ addedPlace: 1 }])
+    s.log(openHead(s, m).key)
+    expect(s.rows().map(brief)).toEqual(['lat 01✓', 'lat 02✓', `${m} 03✓`, `${m} 03.1·`])
+    expect(shape(s)).toEqual([['stage', true, null, false]])
+    expect(holding(s)).toEqual([])
+    expect(nothingLeft(s)).toBe(true)
+  })
+
+  it('the control: a warmup ADDED in the session and moved, open, does not hold it either (absence)', () => {
+    const s = new Session([card('lat', 'n n', { name: 'Lat Pulldown' })], [], [headLog('lat', 1), headLog('lat', 2)])
+    s.retype(s.add('lat'), { kind: 'warmup' })
+    const m = s.swap('lat', 'Machine Pulldown')
+    expect(s.card(m).swappedFrom!.moved.map((x) => x.from)).toEqual([{ addedPlace: 1 }])
+    expect(shape(s)).toEqual([['warmup', true, null, false]])
+    expect(holding(s)).toEqual([])
+    expect(nothingLeft(s)).toBe(true)
+  })
+
+  it('a planned set and an added set moved together: the flag is the planned one\'s, with its drop; the added one and the rows left on the old card have none', () => {
+    const s = new Session([card('lat', 'n n d1', { name: 'Lat Pulldown' })], [], [headLog('lat', 1)])
+    s.add('lat')
+    const m = s.swap('lat', 'Machine Pulldown')
+    expect(s.rows().map((r) => [brief(r), r.movedFromPlan])).toEqual([
+      ['lat 01✓', false],
+      [`${m} 02·`, true],
+      [`${m} 03·`, true],
+      [`${m} 03.1·`, true],
+      [`${m} 04·`, false],
+    ])
+  })
+
+  it('a moved planned set stays planned when its type changes: switched to Warmup it is a moved planned warmup (it holds it); a moved warmup switched to Normal is a moved working set (the warning lists it)', () => {
+    const a = new Session([card('lat', 'n n', { name: 'Lat Pulldown' })], [], [headLog('lat', 1)])
+    const ma = a.swap('lat', 'Machine Pulldown')
+    a.retype(openHead(a, ma).key, { kind: 'warmup' })
+    expect(a.rows().map(brief)).toEqual(['lat 01✓', `${ma} W1·`])
+    expect(warn(a)).toBeNull()
+    expect(holding(a)).toEqual([`${ma} W1·`])
+    expect(nothingLeft(a)).toBe(false)
+
+    const b = new Session([card('lat', 'w n', { name: 'Lat Pulldown' })], [], [])
+    const mb = b.swap('lat', 'Machine Pulldown')
+    expect(b.rows().map(brief)).toEqual([`${mb} W1·`, `${mb} 01·`])
+    b.retype(b.rows()[0].key, { kind: 'normal' })
+    expect(b.rows().map(brief)).toEqual([`${mb} 01·`, `${mb} 02·`])
+    expect(warn(b)!.count).toBe(2)
+    expect(holding(b)).toEqual([])
   })
 })

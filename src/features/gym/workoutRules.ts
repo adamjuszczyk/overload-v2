@@ -455,6 +455,13 @@ export interface ResolvedRow {
   /** A set added in the session (no plan behind it). */
   added: boolean
   /**
+   * A set a swap for today moved from a planned set (DECISIONS 201 (a)): an added row (179) of the swap's card whose record names a planned set
+   * (`from.weekPlanSetId`), found by the place it took; a drop has its head's answer. The plan is still behind it, so it counts as planned for the
+   * finish: `finishWarning` lists the moved working set, and `holdsAutoFinish` waits for its open drops and for a moved planned warmup, as for the
+   * same sets unmoved (166 (a); chunk 64's review 1, F1). False on a planned row, on a set added by hand and on a set moved from an added set.
+   */
+  movedFromPlan: boolean
+  /**
    * What the row shows: a working set's rank among its slot's working sets, a warmup's among its warmups (DECISIONS 170, 183
    * (a)), counting the gaps before it on its card (`gapsBefore`); a drop shows its head's.
    */
@@ -1200,6 +1207,8 @@ function rowsOf(head: Head, block: Block | null): ResolvedRow[] {
     exerciseId: head.exercise.exerciseId,
     exerciseName: head.exercise.name,
     added: head.added,
+    // asked once for the head, by its own place; its drops (whose place is null) take the answer, so they follow their head
+    movedFromPlan: head.added && recordNamesPlanned(head.exercise, head.addedPlace),
     number: head.number,
     planIndex: head.planIndex,
     slotKey: head.slotKey,
@@ -1783,23 +1792,24 @@ function joinNumbers(numbers: number[]): string {
  * (`from.addedPlace`) and one added to the card by hand have no plan behind them. The record is the swap's own row (`OrderExercise.swappedFrom`), so this reads the
  * same after a reload and on another phone; the moved set is found in it by the place it took (179). Two sets of one exercise hold one place only when two
  * phones added at once (173); a set of that place on the swap's card would then be read as the moved one (a reading, in chunk 64's report).
+ * This is the one lookup: `rowsOf` asks it for each added head and keeps the answer as `ResolvedRow.movedFromPlan`, which `finishWarning` and
+ * `holdsAutoFinish` read.
  */
-function movedFromPlan(cards: readonly OrderExercise[], row: Pick<ResolvedRow, 'exerciseKey' | 'added' | 'addedPlace'>): boolean {
-  if (!row.added || row.addedPlace === null) return false
-  const moved = cards.find((card) => card.key === row.exerciseKey)?.swappedFrom?.moved
-  return moved?.some((m) => m.place === row.addedPlace && 'weekPlanSetId' in m.from) ?? false
+function recordNamesPlanned(card: OrderExercise, place: number | null): boolean {
+  if (place === null) return false
+  return card.swappedFrom?.moved.some((m) => m.place === place && 'weekPlanSetId' in m.from) ?? false
 }
 
 /**
  * SPEC 11 / C6: the planned sets still unlogged when the session is finished, or null when there are none.
  * A planned set is a working set the plan has (not an added one, not a warmup, not a drop); a deleted one is
- * not in the order and a skipped one is settled. A set a swap moved from a planned set is one too (201 (a): `movedFromPlan`),
- * listed under the new card's name with the number its row shows ("Machine Pulldown 03"); auto-finish waits for the same view.
+ * not in the order and a skipped one is settled. A set a swap moved from a planned set is one too (201 (a): the row's `movedFromPlan`),
+ * listed under the new card's name with the number its row shows ("Machine Pulldown 03"); auto-finish waits for the same view
+ * (and, through `holdsAutoFinish`, for that set's open drops and a moved planned warmup, which the warning, working sets only, leaves out: 148).
  */
 export function finishWarning(order: SessionOrder, logs: readonly LoggedSet[], changes: readonly SessionSetChange[] = []): FinishWarning | null {
-  const cards = cardsOf(order)
   const open = resolveRows(order, logs, changes).filter(
-    (row) => row.kind === 'working' && row.state === 'unlogged' && (row.weekPlanSetId !== null || movedFromPlan(cards, row)),
+    (row) => row.kind === 'working' && row.state === 'unlogged' && (row.weekPlanSetId !== null || row.movedFromPlan),
   )
   if (open.length === 0) return null
   const groups: FinishWarning['groups'] = []
@@ -1819,12 +1829,15 @@ export function finishWarning(order: SessionOrder, logs: readonly LoggedSet[], c
  * warmups, with deleted sets out and retyped drops in. A set added in the session and never logged doesn't hold it, as today." `finishWarning`
  * lists the planned working sets only (above), so auto-finish also waits for what the warning leaves out, and this is that: an open drop of a
  * planned set (one the plan has, or one a retyped planned set got) and an open planned warmup. A row holds it when it is `unlogged` and the plan
- * is behind it, which is what staging's hook asked of every planned set id ("a log on every planned set id"). What does not hold it: a set
- * added in the session, its drops and its warmups (no plan behind them); a deleted set and its drops (not in the rows); a skipped set (settled)
- * and a skipped set's drops (the rows leave them out). Both warmup displays are these rows (the tick list ticks the same planned warmups).
+ * is behind it, which is what staging's hook asked of every planned set id ("a log on every planned set id"). The plan is behind a set a swap
+ * for today moved from a planned set too (201 (a): `ResolvedRow.movedFromPlan`; its row is an added one, 179, but it is still the session's
+ * planned work), so its open drops (its head logged on the swap's card) and a moved planned warmup hold it as the same sets unmoved do (chunk
+ * 64's review 1, F1). What does not hold it: a set added in the session or moved from an added set, its drops and its warmups (no plan behind
+ * them); a deleted set and its drops (not in the rows); a skipped set (settled) and a skipped set's drops (the rows leave them out). Both
+ * warmup displays are these rows (the tick list ticks the same planned warmups).
  */
 export function holdsAutoFinish(row: ResolvedRow): boolean {
-  return row.state === 'unlogged' && !row.added && (row.kind === 'stage' || row.kind === 'warmup')
+  return row.state === 'unlogged' && (!row.added || row.movedFromPlan) && (row.kind === 'stage' || row.kind === 'warmup')
 }
 
 // ─── Adding sets: the place a new set takes (DECISIONS 173, 174, 179, 183) ──────────────────────
