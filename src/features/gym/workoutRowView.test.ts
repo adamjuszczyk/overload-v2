@@ -37,7 +37,7 @@ describe('rowDefaults — an untouched row holds the plan\'s targets (DECISIONS 
 })
 
 describe('what an upcoming, logged and LAST line say', () => {
-  it('an upcoming row shows its targets only: "52.5 kg × 8–10 @ RIR 1–2", leaving out what the plan doesn\'t give', () => {
+  it('a row that shows targets only (a locked drop) says "52.5 kg × 8–10 @ RIR 1–2", leaving out what the plan doesn\'t give', () => {
     expect(targetsText(target({ targetWeight: 52.5, repMin: 8, repMax: 10, targetRir: 1, targetRirMax: 2 }), 'kg')).toBe('52.5 kg × 8–10 @ RIR 1–2')
     expect(targetsText(target({ repMin: 12, repMax: 12 }), 'kg')).toBe('12')
     expect(targetsText(target({ targetRir: 2 }), 'kg')).toBe('@ RIR 2')

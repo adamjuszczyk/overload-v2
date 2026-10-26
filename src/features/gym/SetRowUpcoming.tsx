@@ -1,31 +1,14 @@
-// Chunk 58a — the rows that are neither logged nor current (boards W1, W2, W3, W3b): an upcoming row shows its targets only, with no
-// inputs (SPEC [1.2] "Row states": "upcoming → targets only"; chunk 60 makes every row typable), a drop waits locked until the row
-// before it is logged (board W3: "AFTER SET 03"), and a skipped set is a dashed "SKIPPED" line (board W3b).
+// Chunk 58a — the rows that can't be typed into (boards W3, W3b): a drop waits locked until the row before it is logged (board W3: "AFTER SET
+// 03"), and a skipped set is a dashed "SKIPPED" line. The upcoming row that used to be here, targets only, went in chunk 60: "every row can
+// be typed into" (SPEC [1.2] "Log lock (18a)"; board W1), so every other open row is `SetRowCurrent`'s too.
 import { Lock } from 'lucide-react'
 import type { WeekPlanSet, WeightUnit } from '../../types'
 import type { ResolvedRow } from './workoutRules'
-import { CueLine, LastLine, RowLabel, rowFrame } from './setRowParts'
+import { RowLabel, rowFrame } from './setRowParts'
 import { rowLabelText, targetsText } from './workoutRowView'
 
 const MONO = 'var(--font-mono)'
 const dashed = { borderWidth: 1, borderStyle: 'dashed' as const, borderColor: 'var(--border)' }
-
-export function SetRowUpcoming({ row, planned, unit, lastLine, lastLoading = false }: { row: ResolvedRow; planned: WeekPlanSet | null; unit: WeightUnit; lastLine: string; lastLoading?: boolean }) {
-  const targets = targetsText(planned, unit)
-  const hasCue = (planned?.tags?.length ?? 0) > 0
-  return (
-    <div className="space-y-1" data-row-key={row.key} data-row-state="upcoming">
-      <div style={rowFrame({ backgroundColor: 'var(--surface)', opacity: 0.8 })}>
-        <RowLabel text={rowLabelText(row)} />
-        <span className="flex-1 text-sm" style={{ color: 'var(--text-muted)', fontFamily: MONO }}>
-          {targets === '' ? '—' : targets}
-        </span>
-      </div>
-      <CueLine tags={planned?.tags} compact={hasCue} />
-      <LastLine text={lastLine} loading={lastLoading} />
-    </div>
-  )
-}
 
 /** A drop that waits for the row before it (`lock`: "AFTER SET 03", "AFTER DROP 1"): the same row, nothing in it can fire. */
 export function SetRowLocked({ row, planned, unit, lock }: { row: ResolvedRow; planned: WeekPlanSet | null; unit: WeightUnit; lock: string }) {

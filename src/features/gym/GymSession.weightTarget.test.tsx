@@ -17,7 +17,7 @@
 // weightUnit override (null) and no targetWeight at all, so D30 stays
 // byte-identical regardless of anything in this file.
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, cleanup, screen } from '@testing-library/react'
+import { render, cleanup, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ProgramExercise, WeekPlan, WeekPlanSet, WorkoutDay, Session } from '../../types'
 
@@ -148,8 +148,10 @@ describe('GymSession — weight target unit, real session (superset member)', ()
 
     expect(screen.getByText('Bench Press')).toBeTruthy()
     expect(screen.getByText('Barbell Row')).toBeTruthy()
-    // A1 is the current set: its weight box holds the plan's weight in lbs (B1 has no target and is not typable yet)
-    expect((screen.getByLabelText('Weight') as HTMLInputElement).value).toBe('225')
+    // A1 is the current set: its weight box holds the plan's weight in lbs (B1 has its boxes too since chunk 60, and no target to put in them)
+    const current = document.querySelector('[data-current-set]') as HTMLElement
+    expect((within(current).getByLabelText('Weight') as HTMLInputElement).value).toBe('225')
+    expect(screen.getAllByLabelText('Weight').map((box) => (box as HTMLInputElement).value)).toEqual(['225', ''])
     expect(screen.getByLabelText('Log this set in kg').textContent).toBe('lbs')
     expect(document.body.textContent).not.toMatch(/102\.06/)
   })

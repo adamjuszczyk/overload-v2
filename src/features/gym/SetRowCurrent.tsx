@@ -1,5 +1,9 @@
 // Chunk 58a — the current set's row (boards W1, W2, W3): every field plus LOG (SPEC [1.2] "Row states": "current → every field, plus
-// LOG"). A stage row is the same row with a "↳". The boxes hold the plan's targets (DECISIONS 162 (a)): a number target and a planned
+// LOG"). A stage row is the same row with a "↳". Chunk 60 (SPEC "Log lock (18a)": "every row can be typed into"; board W1) draws every open
+// row of the card this way, and `isCurrent` says whether it is the current set: the current row has the accent frame, the filled LOG and
+// the jump target (`data-current-set`); any other open row has the same boxes in a plain frame with an outlined LOG (marked
+// `data-row-state` "upcoming"). Where LOG is decided is the caller's: `beforeLog` is handed what LOG would do once the boxes are good,
+// and logs it now or asks first (`LogOrderPrompt`). The boxes hold the plan's targets (DECISIONS 162 (a)): a number target and a planned
 // weight are values, a range or AMRAP is a dim placeholder (so LOG needs reps typed), and with no planned weight the weight box is
 // empty and LOG needs it. Last time's numbers show on the LAST line only. LOG hands the card the values; the card says which set
 // it is (`useExerciseCardState`: the number is the row's).
@@ -38,11 +42,32 @@ interface SetRowCurrentProps {
   /** Seconds since the rest timer last started, read when LOG is pressed. */
   restElapsed: () => number | null
   onLog: (params: LogParams) => void
+  /** Whether this is the session's current set (`currentSet()`), the one row with the accent frame, the filled LOG and `data-current-set`. */
+  isCurrent?: boolean
+  /**
+   * The log lock (chunk 60): called when LOG is pressed and the boxes are good, with what LOG would do. The caller logs at once or asks first and
+   * calls `proceed` when the answer is yes; until then nothing was logged and nothing in the row was reset (a running set timer included).
+   * Left out, LOG logs at once.
+   */
+  beforeLog?: (proceed: () => void) => void
 }
 
 const MONO = 'var(--font-mono)'
 
-export default function SetRowCurrent({ row, planned, resolvedUnit, lastLine, lastLoading = false, lastFailed = false, onRetryLast, carryWeightKg = null, restElapsed, onLog }: SetRowCurrentProps) {
+export default function SetRowCurrent({
+  row,
+  planned,
+  resolvedUnit,
+  lastLine,
+  lastLoading = false,
+  lastFailed = false,
+  onRetryLast,
+  carryWeightKg = null,
+  restElapsed,
+  onLog,
+  isCurrent = true,
+  beforeLog,
+}: SetRowCurrentProps) {
   const isStage = row.kind === 'stage'
   const measureSetTime = useSettingsStore((s) => s.measureSetTime)
   const setTimerStartedAt = useSetTimerStore((s) => s.startedAt)
@@ -117,23 +142,29 @@ export default function SetRowCurrent({ row, planned, resolvedUnit, lastLine, la
     }
     setLogError('')
     const rirVal = rir.trim() === '' ? null : parseInt(rir, 10)
-    const { restSeconds, setSeconds } = resolveTiming()
-    // Canonical storage is always kg (v3 §2.4); what was typed is in activeUnit and converted here, once, at the write boundary.
-    // enteredUnit records the override only when one was used.
-    onLog({
-      weekPlanSetId: planned?.id ?? null,
-      setNumber: row.number,
-      weight: toStorageWeight(wEntered, activeUnit),
-      reps: r,
-      rir: rirVal !== null && Number.isNaN(rirVal) ? null : rirVal,
-      isDropset: isStage,
-      isSkipped: false,
-      restSeconds,
-      setSeconds,
-      enteredUnit: activeUnit === resolvedUnit ? null : activeUnit,
-      formRating,
-      stageKind: planned?.stageKind ?? null,
-    })
+    // The numbers are good: now the lock (chunk 60) says whether this LOG goes out or asks first. Everything below runs only when it does, so
+    // a CANCEL leaves the row, and a running set timer, as they were.
+    const proceed = () => {
+      const { restSeconds, setSeconds } = resolveTiming()
+      // Canonical storage is always kg (v3 §2.4); what was typed is in activeUnit and converted here, once, at the write boundary.
+      // enteredUnit records the override only when one was used.
+      onLog({
+        weekPlanSetId: planned?.id ?? null,
+        setNumber: row.number,
+        weight: toStorageWeight(wEntered, activeUnit),
+        reps: r,
+        rir: rirVal !== null && Number.isNaN(rirVal) ? null : rirVal,
+        isDropset: isStage,
+        isSkipped: false,
+        restSeconds,
+        setSeconds,
+        enteredUnit: activeUnit === resolvedUnit ? null : activeUnit,
+        formRating,
+        stageKind: planned?.stageKind ?? null,
+      })
+    }
+    if (beforeLog === undefined) proceed()
+    else beforeLog(proceed)
   }
 
   function handleSkip() {
@@ -155,7 +186,9 @@ export default function SetRowCurrent({ row, planned, resolvedUnit, lastLine, la
     })
   }
 
-  const preStart = measureSetTime && !isTiming
+  // One set timer serves the screen (`useSetTimerStore`), so START SET belongs to the current row; another open row logs like any row with
+  // "measure set time" off (its set time stays empty). A row that is timing keeps its TIMING box whichever row is current by then.
+  const preStart = isCurrent && measureSetTime && !isTiming
   const hidden = isTiming && !editWhileTiming
   const invalid = logError !== ''
   const edited = (setter: (value: string) => void) => (e: { target: { value: string } }) => {
@@ -167,20 +200,21 @@ export default function SetRowCurrent({ row, planned, resolvedUnit, lastLine, la
   const clock = formatClock(setElapsed)
 
   return (
-    <div className="space-y-1" data-current-set="true" data-row-key={row.key}>
+    <div className="space-y-1" data-current-set={isCurrent ? 'true' : undefined} data-row-state={isCurrent ? undefined : 'upcoming'} data-row-key={row.key}>
       <div
         className="flex items-center"
         style={{
           gap: 5,
           padding: '5px 2px 5px 6px',
           borderRadius: 10,
-          backgroundColor: 'var(--accent-muted)',
+          // Board W1: the current row sits in the accent frame; any other open row has the same box and no frame (so the boxes line up).
+          backgroundColor: isCurrent ? 'var(--accent-muted)' : 'transparent',
           borderWidth: 1,
           borderStyle: 'solid',
-          borderColor: 'var(--accent)',
+          borderColor: isCurrent ? 'var(--accent)' : 'transparent',
         }}
       >
-        <RowLabel text={rowLabelText(row)} accent width={22} />
+        <RowLabel text={rowLabelText(row)} accent={isCurrent} width={22} />
 
         {hidden ? (
           <button
@@ -260,8 +294,10 @@ export default function SetRowCurrent({ row, planned, resolvedUnit, lastLine, la
             height: 44,
             padding: '0 8px',
             minWidth: 56,
-            backgroundColor: 'var(--accent)',
-            color: 'var(--on-accent)',
+            // Board W1: LOG is filled on the current row and outlined on any other (an inset line, so the two are one size).
+            backgroundColor: isCurrent ? 'var(--accent)' : 'var(--surface)',
+            color: isCurrent ? 'var(--on-accent)' : 'var(--text-primary)',
+            ...(isCurrent ? {} : { boxShadow: 'inset 0 0 0 1px var(--border-strong)' }),
             fontFamily: MONO,
             fontSize: 12,
             letterSpacing: '0.1em',
@@ -311,7 +347,7 @@ export default function SetRowCurrent({ row, planned, resolvedUnit, lastLine, la
         </div>
       )}
 
-      <CueLine tags={tags} />
+      <CueLine tags={tags} compact={!isCurrent} />
       <LastLine text={lastLine} loading={lastLoading} failed={lastFailed} onRetry={onRetryLast} />
     </div>
   )
