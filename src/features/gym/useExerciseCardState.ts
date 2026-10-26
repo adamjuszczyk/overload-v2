@@ -8,7 +8,7 @@ import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { groupSetLogs, cascadeDeleteOrder, headsOnly } from './setGroupLogic'
 import { lastTimeSession, lastTimeSetAt } from './lastTimeSet'
 import { resolveRestTarget, type StageChainInput, type SupersetChainInput } from './restChain'
-import type { AddedSet, ResolvedRow, SwapRecord } from './workoutRules'
+import { lockDecision, type AddedSet, type LockDecision, type ResolvedRow, type SwapRecord } from './workoutRules'
 import type { WorkoutRows } from './useWorkoutRows'
 import { canMove, planSkipRest, planSwap, type SkipItem } from './exerciseOptions'
 
@@ -128,6 +128,8 @@ export function useExerciseCardState({
   const startedAt = useRestTimerStore((s) => s.startedAt)
   // Chunk 16 (SPEC "Rest") — level 4, the global rest setting; always a real number (settingsStore's own default), never null.
   const globalRestSeconds = useSettingsStore((s) => s.targetRestSeconds)
+  // Chunk 60 (SPEC [1.2] "Log lock (18a)"): Settings' "Log sets in order", read where LOG is decided, never defaulted here.
+  const logInOrder = useSettingsStore((s) => s.logInOrder)
   const { unit: resolvedWeightUnit } = useWeightDisplay(programExercise.weightUnit)
 
   const cardRows = workout.rows.filter((row) => row.exerciseKey === cardKey)
@@ -243,6 +245,12 @@ export function useExerciseCardState({
   const logOf = (row: ResolvedRow): SetLog | null => (row.logId ? (logById.get(row.logId) ?? null) : null)
   /** Last time's set at the row's place, warmups out — only a working head has one (the LAST line). */
   const lastFor = (row: ResolvedRow): SetLog | null => (row.kind === 'working' ? lastTimeSetAt(lastSession, row.number) : null)
+
+  // The log lock (SPEC [1.2] "Log lock (18a)", G54; chunk 60): what LOG on `row` does, by 46r's `lockDecision` over the session's current set
+  // (`workout.current`, the first unlogged working set or drop over every card) and Settings' "Log sets in order". 'log' writes at once (the
+  // current row, every row with the lock off, every warmup); otherwise it is the question to ask first. It decides and writes nothing: the row asks
+  // and then calls the writer below for its own row, so a LOG that is confirmed is the unchanged write path.
+  const lockFor = (row: ResolvedRow): LockDecision => lockDecision({ logInOrder, current: workout.current, tapped: row })
 
   // ─── Writers ─────────────────────────────────────────────────────────────────────────────────────
   // LOG or SKIP of a head (a planned working set, or an added one): the number is the row's.
@@ -513,6 +521,7 @@ export function useExerciseCardState({
     /** + ADD SET and "Add a set" are not offered on the card a swap moved sets from (TASKS 59). */
     canAddSet: setsMoved !== true,
     currentRestElapsed,
+    lockFor,
     logHead,
     logStage,
     logAdHocStage,

@@ -1,5 +1,8 @@
 // Chunk 58a — one row of the workout, whatever state it is in (TASKS-1.2 58a: "one row component per state, `useExerciseCardState.ts`
 // deciding which from `currentSet()`"). ExerciseCard and SupersetBlock draw every row of a card through this.
+// Chunk 60 (SPEC [1.2] "Log lock (18a)", G54; board W1): every open row has its boxes and LOG, and `currentSet()` only says which of them is
+// styled as the current one. LOG on any row goes through the log lock (`useExerciseCardState`'s `lockFor`, 46r's `lockDecision`): it logs at once,
+// or the row's `LogOrderPrompt` asks first, and confirming runs the row's own LOG (the unchanged write path).
 import { Fragment, useState } from 'react'
 import { Plus } from 'lucide-react'
 import type { SetLog } from '../../types'
@@ -10,10 +13,11 @@ import type { ExerciseCardState } from './useExerciseCardState'
 import type { ResolvedRow } from './workoutRules'
 import { canAddStageTo } from './setGroupLogic'
 import { resolveStageCarryWeightKg } from './stageCarryLogic'
+import LogOrderPrompt, { type LogOrderQuestion } from './LogOrderPrompt'
 import SetRowCurrent from './SetRowCurrent'
 import SetRowLogged from './SetRowLogged'
 import SetRowWarmup from './SetRowWarmup'
-import { SetRowLocked, SetRowSkipped, SetRowUpcoming } from './SetRowUpcoming'
+import { SetRowLocked, SetRowSkipped } from './SetRowUpcoming'
 import { lastLineText, stageChipText, stageLock } from './workoutRowView'
 
 const MONO = 'var(--font-mono)'
@@ -27,7 +31,36 @@ interface WorkoutRowProps {
   supersetContext?: SupersetChainInput
 }
 
-export default function WorkoutRow({ state, row, current, supersetContext }: WorkoutRowProps) {
+export default function WorkoutRow(props: WorkoutRowProps) {
+  const { state, row } = props
+  // The log lock (chunk 60): every LOG of this row, a warmup's too, passes `guard` with what it would do. `state.lockFor(row)` says 'log' for the
+  // current row, for every row with "Log sets in order" off and for every warmup (G54), and then it logs at once; otherwise the question is
+  // held, with the LOG it stands for, until it is answered. The sheet is this row's own, so a CANCEL leaves the row's boxes as typed.
+  const [asking, setAsking] = useState<{ question: LogOrderQuestion; log: () => void } | null>(null)
+  function guard(log: () => void) {
+    const decision = state.lockFor(row)
+    if (decision === 'log') log()
+    else setAsking({ question: decision, log })
+  }
+  return (
+    <>
+      <RowBody {...props} guard={guard} />
+      {asking !== null && (
+        <LogOrderPrompt
+          exerciseName={row.exerciseName}
+          question={asking.question}
+          onConfirm={() => {
+            setAsking(null)
+            asking.log()
+          }}
+          onCancel={() => setAsking(null)}
+        />
+      )}
+    </>
+  )
+}
+
+function RowBody({ state, row, current, supersetContext, guard }: WorkoutRowProps & { guard: (log: () => void) => void }) {
   const warmupDisplay = useSettingsStore((s) => s.warmupDisplay)
   const unit = state.resolvedWeightUnit
   // What the row shows is the targets of its plan's set: a set a swap moved here shows the ones it had on the card it left (chunk 59).
@@ -45,7 +78,7 @@ export default function WorkoutRow({ state, row, current, supersetContext }: Wor
         unit={unit}
         display={warmupDisplay === 'tick' ? 'tick' : 'rows'}
         restElapsed={state.currentRestElapsed}
-        onLog={(params) => void state.logWarmup(row, params)}
+        onLog={(params) => guard(() => void state.logWarmup(row, params))}
         onUpdate={(changes) => log && state.onUpdateSet(log.id, changes)}
         onDelete={() => {
           if (log) state.onDeleteSet(log.id).catch((err) => console.error('Failed to delete warmup', err))
@@ -69,27 +102,29 @@ export default function WorkoutRow({ state, row, current, supersetContext }: Wor
   }
   const lock = stageLock(row, state.cardRows)
   if (lock !== null) return <SetRowLocked key={row.key} row={row} planned={planned} unit={unit} lock={lock} />
-  if (current !== null && row.key === current.key) {
-    const headRow = isStage ? state.cardRows.find((r) => r.key === row.headKey) : undefined
-    const headLog = headRow ? state.logOf(headRow) : null
-    const stageLogs = headLog ? stageLogsOf(state.logs, headLog) : []
-    return (
-      <SetRowCurrent
-        key={row.key}
-        row={row}
-        planned={planned}
-        resolvedUnit={unit}
-        lastLine={lastLineText(state.lastFor(row), unit)}
-        lastLoading={row.kind === 'working' && state.lastLoading}
-        lastFailed={row.kind === 'working' && state.lastFailed}
-        onRetryLast={state.retryLast}
-        carryWeightKg={headLog && row.stageKind ? resolveStageCarryWeightKg(row.stageKind, { head: headLog, stages: stageLogs }) : null}
-        restElapsed={state.currentRestElapsed}
-        onLog={(params) => void (isStage ? state.logStage(row, params, supersetContext) : state.logHead(row, params, supersetContext))}
-      />
-    )
-  }
-  return <SetRowUpcoming key={row.key} row={row} planned={planned} unit={unit} lastLine={lastLineText(state.lastFor(row), unit)} lastLoading={row.kind === 'working' && state.lastLoading} />
+  // Every other open row has its boxes too (chunk 60; SPEC "every row can be typed into", board W1); only the current row is styled as it and
+  // draws "couldn't load last week" with its RETRY.
+  const isCurrent = current !== null && row.key === current.key
+  const headRow = isStage ? state.cardRows.find((r) => r.key === row.headKey) : undefined
+  const headLog = headRow ? state.logOf(headRow) : null
+  const stageLogs = headLog ? stageLogsOf(state.logs, headLog) : []
+  return (
+    <SetRowCurrent
+      key={row.key}
+      row={row}
+      planned={planned}
+      resolvedUnit={unit}
+      lastLine={lastLineText(state.lastFor(row), unit)}
+      lastLoading={row.kind === 'working' && state.lastLoading}
+      lastFailed={isCurrent && row.kind === 'working' && state.lastFailed}
+      onRetryLast={state.retryLast}
+      carryWeightKg={headLog && row.stageKind ? resolveStageCarryWeightKg(row.stageKind, { head: headLog, stages: stageLogs }) : null}
+      restElapsed={state.currentRestElapsed}
+      isCurrent={isCurrent}
+      beforeLog={guard}
+      onLog={(params) => void (isStage ? state.logStage(row, params, supersetContext) : state.logHead(row, params, supersetContext))}
+    />
+  )
 }
 
 const stageLogsOf = (logs: readonly SetLog[], head: SetLog): SetLog[] =>

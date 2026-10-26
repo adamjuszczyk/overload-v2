@@ -47,17 +47,23 @@ describe('row states (SPEC [1.2] "Row states", boards W1, W2)', () => {
   const plan = () => [1, 2, 3, 4].map((n) => plannedSet(n, { targetWeight: 55, repMin: 8, repMax: 10, targetRir: 1, targetRirMax: 2 }))
   const logged = () => [headLogOf(1, { weight: 55, reps: 9, rir: 2 }), headLogOf(2, { weight: 55, reps: 8, rir: 1 })]
 
-  it('with sets 1–2 logged, 03 is the current row with its boxes and LOG, and 04 is upcoming with its targets only', () => {
+  it('with sets 1–2 logged, 03 is the current row and 04 is upcoming; both have their boxes and LOG, the logged rows have none (chunk 60: every row can be typed into)', () => {
     const { container } = renderCard({ plannedSets: plan(), logs: logged() })
     expect(rowLabels(container)).toEqual(['01', '02', '03', '04'])
     expect(rowStates(container)).toEqual(['logged', 'logged', 'current', 'upcoming'])
-    // inputs and LOG exist on the current row alone (absence on the others)
-    expect(container.querySelectorAll('input')).toHaveLength(3)
+    // boxes and LOG on every open row (SPEC 18a, board W1: the upcoming row 04 shows the plan's numbers in them), none on a logged row
+    expect(container.querySelectorAll('input')).toHaveLength(6)
     expect(within(current(container)).getByText('LOG')).toBeTruthy()
     const upcoming = rowOf(container, 'set:set-4')
-    expect(upcoming.querySelector('input')).toBeNull()
-    expect(within(upcoming).queryByText('LOG')).toBeNull()
-    expect(upcoming.textContent).toContain('55 kg × 8–10 @ RIR 1–2')
+    expect(upcoming.querySelectorAll('input')).toHaveLength(3)
+    expect(within(upcoming).getByText('LOG')).toBeTruthy()
+    expect((within(upcoming).getByLabelText('Weight') as HTMLInputElement).value).toBe('55')
+    expect((within(upcoming).getByLabelText('Reps') as HTMLInputElement).placeholder).toBe('8–10')
+    expect((within(upcoming).getByLabelText('RIR') as HTMLInputElement).placeholder).toBe('1–2')
+    for (const key of ['set:set-1', 'set:set-2']) expect(rowOf(container, key).querySelector('input')).toBeNull()
+    // the jump target and the accent frame are the current row's alone
+    expect(container.querySelectorAll('[data-current-set]')).toHaveLength(1)
+    expect(upcoming.hasAttribute('data-current-set')).toBe(false)
   })
 
   it('a logged row reads "55 kg × 9 @ RIR 2" with a pen and a tick', () => {
