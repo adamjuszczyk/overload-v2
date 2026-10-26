@@ -37,7 +37,7 @@ export async function queueSetChange(row: Record<string, unknown>, createdAt: st
 }
 
 /**
- * Writes the changes `deleteEffects` (or, from 62, `applySetTypeChange`) returns, in their order, one row each: online as an awaited
+ * Writes the changes `deleteEffects` and `applySetTypeChange` (chunk 62) return, in their order, one row each: online as an awaited
  * upsert (the first refusal stops the rest and is thrown), offline as a queued upsert (G47). Each row is in the session's cache as soon as
  * it is written or queued, so the screen shows it without waiting for a read; online the session is read again once they are all sent.
  */

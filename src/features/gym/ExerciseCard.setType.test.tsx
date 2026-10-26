@@ -364,13 +364,38 @@ describe('a logged set: the pen → SET TYPE patches its log, then the rows, the
     ])
     expect(onDeleteSet).not.toHaveBeenCalled()
     expect(writers.patchNumbers).not.toHaveBeenCalled()
-    // the session's answer: the log patched, the two rows held
+    // the session's answer, played back from what the card wrote: the log patched, the rows it sent held (so a row the card did not send is not drawn)
     setLogs([headLogOf(1), headLogOf(2, { stageKind: 'dropset' })])
-    setChanges([held(retyped(2, staged(1)), 'chg-1'), held({ kind: 'pending_stages', setLogId: 'log-2', stageKind: 'dropset', stageCount: 1 }, 'chg-2')])
+    const written = (writers.writeChanges.mock.calls as Array<[ChangeWrite[]]>).flatMap(([writes]) => writes)
+    setChanges(written.map((write, i) => held(write.change, `chg-${i + 1}`)))
     expect(rowLabels(container)).toEqual(['01', '02', '↳', '03'])
     // (the head's edit panel is still open under the picker: its row has no state of a logged row)
     expect(rowStates(container)).toEqual(['logged', undefined, 'current', 'upcoming'])
     expect(within(rowOf(container, 'set:set-2')).getByText('Dropset · 1 drop')).toBeTruthy()
+  })
+
+  it('Dropset on a logged ADDED set: its drop is drawn from the `pending_stages` row alone (no planned set, so no `retyped` row), read back from what the card wrote', async () => {
+    const { writers } = recorder()
+    const added = logOf({ id: 'added-1', setNumber: 1, addedPlace: 1 })
+    const { container, setLogs, setChanges } = renderCard({ plannedSets: [], logs: [added], props: { writers } })
+    openFromPanel(container, container.querySelector('[data-row-key]')!.getAttribute('data-row-key')!)
+    await pick('Dropset')
+    setLogs([{ ...added, stageKind: 'dropset' }])
+    const written = (writers.writeChanges.mock.calls as Array<[ChangeWrite[]]>).flatMap(([writes]) => writes)
+    setChanges(written.map((write, i) => held(write.change, `chg-${i + 1}`)))
+    expect(rowLabels(container)).toEqual(['01', '↳'])
+  })
+
+  it('the new drop is the current set unless an earlier set is still unlogged: then it follows the lock (SPEC 19)', async () => {
+    const { writers } = recorder()
+    // 01 is open, 02 is logged and becomes a dropset: the current set stays 01, and the drop waits
+    const { container, setLogs, setChanges } = renderCard({ plannedSets: plan(), logs: [headLogOf(2)], props: { writers } })
+    openFromPanel(container, 'set:set-2')
+    await pick('Dropset')
+    setLogs([headLogOf(2, { stageKind: 'dropset' })])
+    setChanges([held(retyped(2, staged(1)), 'chg-1'), held({ kind: 'pending_stages', setLogId: 'log-2', stageKind: 'dropset', stageCount: 1 }, 'chg-2')])
+    expect(rowLabels(container)).toEqual(['01', '02', '↳', '03'])
+    expect(rowStates(container)).toEqual(['current', undefined, 'upcoming', 'upcoming'])
   })
 
   it('the pending drops are keyed by the LOG (042: `pending_stages` names a log, `retyped` a planned set), for an added set too (no `retyped` row at all)', async () => {

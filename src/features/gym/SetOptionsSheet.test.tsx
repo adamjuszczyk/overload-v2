@@ -205,7 +205,7 @@ describe('the sheet itself (props only)', () => {
     expect(names(sheet()).filter((n) => n !== '')).toEqual(['DELETE SET'])
   })
 
-  it('without `onDelete` there is no DELETE SET (the drop ADD STAGE draws until chunk 62: nothing to delete)', () => {
+  it('without `onDelete` there is no DELETE SET (a caller that gives the row no menu has nothing to delete with)', () => {
     render(<SetOptionsSheet {...base} typeText={null} unit={null} onDelete={null} />)
     expect(within(sheet()).queryByText('DELETE SET')).toBeNull()
   })
