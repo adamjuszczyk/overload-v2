@@ -3,7 +3,7 @@ import type { ProgramExercise, WeekPlanSet, SetLog, ProgramSet, ProgramSupersetB
 import type { ReferenceSession } from './sessionService'
 import type { ScheduleType } from './referenceByExercise'
 import WorkoutExerciseHeader from './WorkoutExerciseHeader'
-import SwapExerciseSheet from './SwapExerciseSheet'
+import { cardOptions, SwapPickerSheet } from './cardOptions'
 import { CardRows } from './WorkoutRow'
 import { useExerciseCardState, type ExerciseCardProps } from './useExerciseCardState'
 import type { SupersetChainInput } from './restChain'
@@ -16,8 +16,10 @@ import { formatClock } from './workoutRowView'
 // rounds (round 1 = A1, B1, C1; round 2 = A2, B2, C2; …). The rounds are the ones chunk 46r's rules form (`resolveRows`: each row says
 // its block, letter and round), so the current set zigzags A1 → B1 → A2 → B2 …, and "+ ADD ROUND" adds one set to every member
 // (SPEC Defaults 9). Grouping only changes layout and order; every member keeps what a plain card gives it (its header and swap, its
-// reference, its warmups, ADD SET, skip the rest), through one `useExerciseCardState` call per member at its own index. GymSession's
-// key for this component names every member's id, so a membership change remounts it and no state stays on a position.
+// reference, its warmups, its ⋯ with the swap, the skip of the rest and Add a set), through one `useExerciseCardState` call per member at its
+// own index. GymSession's key for this component names every member's id, so a membership change remounts it and no state stays on a
+// position. Chunk 59 (SPEC Supersets: "a member's ⋯ has 'Add a set' for that member only (W10)"): ADD SET and SKIP REST OF EXERCISE are the
+// member's ⋯ rows now, and no member has a button of its own under the rounds.
 
 export interface SupersetMember {
   cardKey: string
@@ -49,6 +51,8 @@ interface SupersetBlockProps {
   onUpdateSet: ExerciseCardProps['onUpdateSet']
   onDeleteSet: ExerciseCardProps['onDeleteSet']
   onSwap: ExerciseCardProps['onSwap']
+  /** Every exercise already in the workout, for the swap picker. */
+  excludeExerciseIds?: readonly string[]
 }
 
 const MONO = 'var(--font-mono)'
@@ -71,6 +75,7 @@ export default function SupersetBlock({
   onUpdateSet,
   onDeleteSet,
   onSwap,
+  excludeExerciseIds = [],
 }: SupersetBlockProps) {
   // One useExerciseCardState call per member: a stable call COUNT is all React's rule needs, and GymSession's key on this component
   // guarantees it.
@@ -94,6 +99,7 @@ export default function SupersetBlock({
       onUpdateSet,
       onDeleteSet,
       onSwap,
+      excludeExerciseIds,
     }),
   )
   const stateOf = (row: ResolvedRow) => memberStates[Math.max(0, members.findIndex((m) => m.cardKey === row.exerciseKey))]
@@ -146,7 +152,7 @@ export default function SupersetBlock({
             </div>
             <WorkoutExerciseHeader
               programExercise={member.programExercise}
-              onSwapClick={() => state.setShowSwapSheet(true)}
+              options={cardOptions(state, member.cardKey, member.programExercise)}
               today={today}
               scheduleType={referenceScheduleType ?? 'weekday'}
               sessions={member.referenceSessions}
@@ -191,73 +197,10 @@ export default function SupersetBlock({
         </button>
       </div>
 
-      {/* Per-member actions — ADD SET and SKIP REST OF EXERCISE, the same two a plain card offers, once per member (chunk 59 moves
-          them into the member's ⋯). */}
-      <div className="px-3 pb-3 space-y-4">
-        {members.map((member, i) => {
-          const state = memberStates[i]
-          return (
-            <div key={`actions-${member.cardKey}`} className="space-y-2">
-              <p className="text-xs font-bold tracking-wide" style={{ color: 'var(--text-dim)', fontFamily: MONO }}>
-                {memberLetter(i)} · {(member.programExercise.exercise?.name ?? '—').toUpperCase()}
-              </p>
-              <button
-                onClick={state.handleAddSet}
-                className="w-full flex items-center justify-center gap-2 rounded-lg text-xs font-bold tracking-widest"
-                style={{ minHeight: 44, border: '1px dashed var(--border)', color: 'var(--text-muted)', fontFamily: MONO }}
-              >
-                <Plus size={12} />
-                ADD SET
-              </button>
-              {state.hasUnfinishedPlannedWork &&
-                (state.showSkipConfirm ? (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => state.setShowSkipConfirm(false)}
-                      disabled={state.isSkippingExercise}
-                      className="flex-1 py-3 rounded-lg text-xs font-bold tracking-widest"
-                      style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', fontFamily: MONO }}
-                    >
-                      CANCEL
-                    </button>
-                    <button
-                      onClick={state.handleConfirmSkip}
-                      disabled={state.isSkippingExercise}
-                      className="flex-1 py-3 rounded-lg text-xs font-bold tracking-widest"
-                      style={{ backgroundColor: 'color-mix(in srgb, var(--error) 15%, transparent)', color: 'var(--error)', fontFamily: MONO }}
-                    >
-                      CONFIRM SKIP
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => state.setShowSkipConfirm(true)}
-                    disabled={state.isSkippingExercise}
-                    className="w-full flex items-center justify-center gap-2 rounded-lg text-xs font-bold tracking-widest"
-                    style={{ minHeight: 44, color: 'var(--text-muted)', fontFamily: MONO, opacity: state.isSkippingExercise ? 0.6 : 1 }}
-                  >
-                    {state.isSkippingExercise ? 'SKIPPING…' : 'SKIP REST OF EXERCISE'}
-                  </button>
-                ))}
-            </div>
-          )
-        })}
-      </div>
-
       {members.map((member, i) => {
         const state = memberStates[i]
         if (!state.showSwapSheet) return null
-        return (
-          <SwapExerciseSheet
-            key={`swap-${member.cardKey}`}
-            currentExerciseId={member.programExercise.exerciseId}
-            currentExerciseName={member.programExercise.exercise?.name ?? 'this exercise'}
-            muscleGroup={member.programExercise.exercise?.muscleGroup ?? 'other'}
-            remainingSetCount={state.remainingPlannedCount}
-            onConfirm={state.handleConfirmSwap}
-            onClose={() => state.setShowSwapSheet(false)}
-          />
-        )
+        return <SwapPickerSheet key={`swap-${member.cardKey}`} state={state} programExercise={member.programExercise} excludeExerciseIds={excludeExerciseIds} />
       })}
     </div>
   )

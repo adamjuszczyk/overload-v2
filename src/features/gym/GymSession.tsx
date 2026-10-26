@@ -26,7 +26,8 @@ import { isCoachUser } from '../coach/coachGate'
 import ExerciseCard from './ExerciseCard'
 import SupersetBlock from './SupersetBlock'
 import WarmupRoutineChecklist from './WarmupRoutineChecklist'
-import SwapExerciseSheet from './SwapExerciseSheet'
+import ExercisePickerSheet from '../../components/ExercisePickerSheet'
+import { ErrorLine } from './cardOptions'
 import RestBar from './RestBar'
 import SessionComplete from './SessionComplete'
 import WorkoutSidebarSheet from './WorkoutSidebarSheet'
@@ -39,7 +40,7 @@ import { formatClock, jumpLabelText } from './workoutRowView'
 import WorkoutHeader, { OfflineStrip } from './WorkoutHeader'
 import { headerEyebrow, setsLabel, setsProgress } from './workoutHeaderLogic'
 import { effectiveDate } from './effectiveDate'
-import type { LogRequest } from './useExerciseCardState'
+import type { ExerciseCardProps, LogRequest, SwapInput } from './useExerciseCardState'
 import type { OrderSuperset } from './workoutRules'
 import SyncFailedNotice from '../offline/SyncFailedNotice'
 
@@ -63,6 +64,10 @@ function ExerciseSection({
   logs,
   swappedFrom,
   slotSwapped,
+  addedToday,
+  setsMoved,
+  movedFrom,
+  excludeExerciseIds,
   referenceSessions,
   referenceLoading,
   referenceMesocycleId,
@@ -83,6 +88,10 @@ function ExerciseSection({
   logs: SetLog[]
   swappedFrom?: { exerciseName: string }
   slotSwapped?: boolean
+  addedToday?: boolean
+  setsMoved?: boolean
+  movedFrom?: ExerciseCardProps['movedFrom']
+  excludeExerciseIds: readonly string[]
   sessionId: string
   referenceSessions: ReferenceSession[]
   referenceLoading: boolean
@@ -95,7 +104,7 @@ function ExerciseSection({
   onLog: (params: LogRequest) => Promise<SetLog>
   onUpdateSet: (id: string, changes: { weight?: number | null; reps?: number | null; rir?: number | null; setNumber?: number; formRating?: FormRating | null }) => void
   onDeleteSet: (id: string) => Promise<void>
-  onSwap: (exercise: Exercise, programExercise: ProgramExercise) => void
+  onSwap: (input: SwapInput) => Promise<void>
 }) {
   return (
     <ExerciseCard
@@ -119,6 +128,10 @@ function ExerciseSection({
       onSwap={onSwap}
       swappedFrom={swappedFrom}
       slotSwapped={slotSwapped}
+      addedToday={addedToday}
+      setsMoved={setsMoved}
+      movedFrom={movedFrom}
+      excludeExerciseIds={excludeExerciseIds}
     />
   )
 }
@@ -132,6 +145,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   // detection below picks up the same exercise id and keeps rendering its card even across a refresh.
   const [addedExercises, setAddedExercises] = useState<Exercise[]>([])
   const [showAddExerciseSheet, setShowAddExerciseSheet] = useState(false)
+  const [addExerciseError, setAddExerciseError] = useState<unknown>(null)
 
   const { user } = useAuth()
   const isOnline = useOnlineStatus()
@@ -253,6 +267,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   // on a card of its own: DECISIONS 198 (a), W5), the extra cards last. A card's key is the same on every phone and after a reload.
   const plannedSetsOf = (pe: ProgramExercise): WeekPlanSet[] => (weekPlan?.sets ?? []).filter((s) => s.programExerciseId === pe.id).sort((a, b) => a.setNumber - b.setNumber)
   const replacementKey = (pe: ProgramExercise) => `${pe.id}:replacement`
+  const recordOf = (swap: ExerciseSwap, pe: ProgramExercise) => (swap.movedSets != null && swap.movedSets.fromKey === pe.id ? swap.movedSets : null)
   const cards: WorkoutCard[] = []
   const blocks: OrderSuperset[] = []
   for (const unit of renderUnits) {
@@ -265,7 +280,16 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     const swap = swapByProgramExerciseId.get(unit.pe.id)
     if (swap) {
       const replacement = resolveReplacementExercise(swap, allExercises)
-      cards.push({ key: replacementKey(unit.pe), programExercise: { ...unit.pe, exerciseId: replacement.id, exercise: replacement }, plannedSets: [] })
+      // A swap saved with its record (migration 047) puts the moved sets on this card: the record names the card they left by its key, the
+      // program exercise's id on every phone. A row with no record (every swap before 047), or a record naming another card, is drawn as
+      // before 1.2 draws it (DECISIONS 198 (a)): two cards, nothing moved, nothing inferred.
+      const record = recordOf(swap, unit.pe)
+      cards.push({
+        key: replacementKey(unit.pe),
+        programExercise: { ...unit.pe, exerciseId: replacement.id, exercise: replacement },
+        plannedSets: [],
+        ...(record !== null ? { swappedFrom: record } : {}),
+      })
     }
   }
   extraExercises.forEach((ex, i) => {
@@ -334,17 +358,33 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   function handleDeleteSet(id: string) {
     return deleteSetLog.mutateAsync(id)
   }
-  // Swap exercise for this session only (SPEC v1.1 "Part C") — the original exercise's card has already skipped its own remaining sets by
-  // the time this fires; this records the structural link (migration 025) and reaches Coach's daily analysis as an explicit fact.
-  function handleSwap(exercise: Exercise, programExercise: ProgramExercise) {
-    if (!programExercise.exercise) return
-    recordSwap.mutate({ programExerciseId: programExercise.id, originalExercise: programExercise.exercise, replacementExercise: exercise })
+  // Swap exercise for this session only (SPEC v1.1 "Part C"), chunk 59: the swap's row is saved FIRST, with the record of which sets moved
+  // (migration 047; DECISIONS 200 (a): "the swap row is saved before any set is skipped"), and it fails with the real reason when it can't
+  // be: offline, or refused. The card skips the moved sets only after this has resolved. The record's sets are listed on the card the swap
+  // makes before the request goes out (drawn only once that card exists, so a swap that isn't saved shows nothing) and taken back when
+  // the request fails. The row records the structural link (migration 025) and reaches Coach's daily analysis as an explicit fact.
+  async function handleSwap({ programExercise, exercise, record, entries }: SwapInput) {
+    const original = programExercise.exercise
+    if (!original) throw new Error('This exercise has not loaded yet.')
+    const key = replacementKey(programExercise)
+    workout.addEntries(key, entries)
+    try {
+      await recordSwap.mutateAsync({ programExerciseId: programExercise.id, originalExercise: original, replacementExercise: exercise, movedSets: record })
+    } catch (err) {
+      workout.removeEntries(key)
+      throw err
+    }
   }
   // Add exercise mid-workout — no original exercise, no swap row, no write to v2_program_exercises/v2_week_plan_sets: purely local state
-  // that adds one more card to extraExercises above.
+  // that adds one more card to extraExercises above. A failure shows its real reason in W14's confirm ("Couldn't add the exercise.").
   function handleAddExercise(exercise: Exercise) {
-    setAddedExercises((prev) => (prev.some((ex) => ex.id === exercise.id) ? prev : [...prev, exercise]))
-    setShowAddExerciseSheet(false)
+    try {
+      setAddedExercises((prev) => (prev.some((ex) => ex.id === exercise.id) ? prev : [...prev, exercise]))
+      setAddExerciseError(null)
+      setShowAddExerciseSheet(false)
+    } catch (err) {
+      setAddExerciseError(err)
+    }
   }
 
   const reference = (exerciseId: string) => referenceSessionsByExercise.get(exerciseId) ?? []
@@ -363,6 +403,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
     onUpdateSet: handleUpdateSet,
     onDeleteSet: handleDeleteSet,
     onSwap: handleSwap,
+    excludeExerciseIds: activeExerciseIds,
   }
   const programSetsOf = (pe: ProgramExercise) => allProgramSets.filter((ps) => ps.programExerciseId === pe.id)
   let blockLetterIndex = 0
@@ -435,12 +476,20 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
             const replacementCard = cardByKey.get(replacementKey(pe))!
             return (
               <div key={`${pe.id}-swapped-${swap.id}`} className="space-y-4">
-                <ExerciseSection card={card} programSets={programSetsOf(pe)} slotSwapped referenceSessions={reference(pe.exerciseId)} {...shared} />
+                <ExerciseSection
+                  card={card}
+                  programSets={programSetsOf(pe)}
+                  slotSwapped
+                  setsMoved={recordOf(swap, pe) !== null}
+                  referenceSessions={reference(pe.exerciseId)}
+                  {...shared}
+                />
                 <ExerciseSection
                   card={replacementCard}
                   programSets={[]}
                   swappedFrom={{ exerciseName: swap.originalExerciseName }}
                   slotSwapped
+                  movedFrom={replacementCard.swappedFrom === undefined ? undefined : { plannedSets: plannedSetsOf(pe), record: replacementCard.swappedFrom }}
                   referenceSessions={reference(replacementCard.programExercise.exerciseId)}
                   {...shared}
                 />
@@ -453,7 +502,7 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
         {/* Extra, unplanned exercise cards — legacy pre-migration-025 swaps and this session's own "+ ADD EXERCISE" additions alike. */}
         {extraExercises.map((ex) => {
           const card = cardByKey.get(`extra-${ex.id}`)!
-          return <ExerciseSection key={card.key} card={card} programSets={[]} referenceSessions={reference(ex.id)} {...shared} />
+          return <ExerciseSection key={card.key} card={card} programSets={[]} addedToday referenceSessions={reference(ex.id)} {...shared} />
         })}
       </div>
 
@@ -486,7 +535,26 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
       {showSidebarSheet && <WorkoutSidebarSheet sessionId={sessionId} onClose={() => setShowSidebarSheet(false)} />}
 
       {showAddExerciseSheet && (
-        <SwapExerciseSheet mode="add" excludeExerciseIds={activeExerciseIds} onConfirm={handleAddExercise} onClose={() => setShowAddExerciseSheet(false)} />
+        <ExercisePickerSheet
+          mode="add"
+          eyebrow={`${workoutDay.name.toUpperCase()} · TODAY`}
+          title="Add an exercise"
+          exclude={activeExerciseIds}
+          showGroup={false}
+          onCreate={() => {}}
+          confirmLabel="ADD EXERCISE"
+          confirmNote={() => (
+            <>
+              <span style={{ display: 'block' }}>Only today's session changes; the plan stays the same.</span>
+              {addExerciseError !== null && <ErrorLine headline="Couldn't add the exercise." error={addExerciseError} />}
+            </>
+          )}
+          onPick={handleAddExercise}
+          onClose={() => {
+            setAddExerciseError(null)
+            setShowAddExerciseSheet(false)
+          }}
+        />
       )}
     </div>
   )

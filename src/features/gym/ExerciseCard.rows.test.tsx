@@ -16,7 +16,6 @@ import { toStorageWeight } from '../../lib/weightUnit'
 // drawn through `useWorkoutRows` as GymSession does (cardHarness.testutil.tsx); `onLog` is `useLogSet`'s mutate, so what it receives
 // is the payload the screen writes.
 
-vi.mock('./SwapExerciseSheet', () => ({ default: () => null }))
 
 afterEach(() => {
   cleanup()
@@ -105,7 +104,7 @@ describe('row states (SPEC [1.2] "Row states", boards W1, W2)', () => {
     useRestTimerStore.getState().startRest(90)
     useRestTimerStore.setState({ anchorId: 'log-1' })
     const { container } = renderCard({ plannedSets: plan(), logs: logged() })
-    expect(container.textContent).not.toMatch(/REST \d/) // no "REST 0:12" under the row (the card's own SKIP REST OF EXERCISE is not a timer)
+    expect(container.textContent).not.toMatch(/REST \d/) // no "REST 0:12" under the row (the ⋯'s skip is not a timer)
   })
 })
 
@@ -429,12 +428,22 @@ describe('ADD STAGE and "mark as dropset" stay until chunk 62\'s picker replaces
   })
 })
 
-describe('SKIP REST OF EXERCISE (planned working sets; each skip stores the number its row shows)', () => {
+// Chunk 59: the skip is the exercise ⋯'s "Skip the rest of this exercise" (board W10), and it covers every open set (DECISIONS 163 (a));
+// its own file, ExerciseCard.options.test.tsx, proves the added sets, the warmups, the count and the words.
+const skipTheRest = async (label: string) => {
+  fireEvent.click(screen.getByLabelText('Exercise options'))
+  fireEvent.click(screen.getByText('Skip the rest of this exercise'))
+  await act(async () => {
+    fireEvent.click(screen.getByText(label))
+    await Promise.resolve()
+  })
+}
+
+describe('skip the rest of this exercise (planned working sets; each skip stores the number its row shows)', () => {
   it('skips the open planned sets around a logged one, 1 and 3, as skipped logs of their own plan slots', async () => {
     const { calls, onLog } = spy()
     renderCard({ plannedSets: [1, 2, 3].map((n) => plannedSet(n)), logs: [headLogOf(2)], props: { onLog } })
-    fireEvent.click(screen.getByText('SKIP REST OF EXERCISE'))
-    fireEvent.click(screen.getByText('CONFIRM SKIP'))
+    await skipTheRest('SKIP 2 SETS')
     await vi.waitFor(() => expect(calls).toHaveLength(2))
     expect(calls.map((c) => [c.weekPlanSetId, c.setNumber, c.isSkipped])).toEqual([['set-1', 1, true], ['set-3', 3, true]])
   })
@@ -443,8 +452,7 @@ describe('SKIP REST OF EXERCISE (planned working sets; each skip stores the numb
     const { calls, onLog } = spy()
     // the dropset is set 2 (set 1 is logged): a drop that took any number but its head's shows
     renderCard({ plannedSets: [plannedSet(1), plannedSet(2, { stageKind: 'dropset' }), plannedDrop(2, 1), plannedDrop(2, 2)], logs: [headLogOf(1)], props: { onLog } })
-    fireEvent.click(screen.getByText('SKIP REST OF EXERCISE'))
-    fireEvent.click(screen.getByText('CONFIRM SKIP'))
+    await skipTheRest('SKIP 3 SETS')
     await vi.waitFor(() => expect(calls).toHaveLength(3))
     expect(calls[0]).toMatchObject({ weekPlanSetId: 'set-2', setNumber: 2, isSkipped: true, stageKind: 'dropset', parentSetId: null })
     expect(calls.slice(1).map((c) => [c.weekPlanSetId, c.parentSetId, c.stageIndex, c.isDropset, c.setNumber])).toEqual([
@@ -453,14 +461,13 @@ describe('SKIP REST OF EXERCISE (planned working sets; each skip stores the numb
     ])
   })
 
-  it('leaves an added set and a warmup alone (today\'s skip covers planned working sets: chunk 59 extends it)', async () => {
+  it('skips an added set and a warmup too, each with the number its row shows (DECISIONS 163 (a); the details: ExerciseCard.options.test.tsx)', async () => {
     const { calls, onLog } = spy()
     const { container } = renderCard({ plannedSets: [plannedSet(1, { id: 'w', isWarmup: true }), plannedSet(2, { id: 'set-2' })], props: { onLog } })
     fireEvent.click(screen.getByText('ADD SET'))
-    fireEvent.click(screen.getByText('SKIP REST OF EXERCISE'))
-    fireEvent.click(screen.getByText('CONFIRM SKIP'))
-    await vi.waitFor(() => expect(calls).toHaveLength(1))
-    expect(calls[0].weekPlanSetId).toBe('set-2')
+    await skipTheRest('SKIP 3 SETS')
+    await vi.waitFor(() => expect(calls).toHaveLength(3))
+    expect(calls.map((c) => [c.weekPlanSetId, c.setNumber, c.isSkipped, c.isWarmup ?? false])).toEqual([['w', 1, true, true], ['set-2', 1, true, false], [null, 2, true, false]])
     expect(rowLabels(container)).toEqual(['W', '01', '02'])
   })
 })
@@ -533,12 +540,14 @@ describe('editing and deleting a logged set (today\'s writes, kept until chunk 6
 })
 
 describe('a swapped slot offers no second swap, and a plain card does', () => {
-  it('the swap button is on a plain card and gone from a card of a swapped slot', () => {
+  it('"Swap for today" is in the ⋯ of a plain card and gone from a card of a swapped slot (DECISIONS 199 (a))', () => {
     const plain = renderCard({ plannedSets: [plannedSet(1)] })
-    expect(screen.getAllByLabelText('Swap exercise for this session')).toHaveLength(1)
+    fireEvent.click(screen.getByLabelText('Exercise options'))
+    expect(screen.getAllByText('Swap for today')).toHaveLength(1)
     plain.unmount()
     renderCard({ plannedSets: [plannedSet(1)], props: { slotSwapped: true, programExercise: exerciseOf() } })
-    expect(screen.queryAllByLabelText('Swap exercise for this session')).toHaveLength(0)
+    fireEvent.click(screen.getByLabelText('Exercise options'))
+    expect(screen.queryAllByText('Swap for today')).toHaveLength(0)
   })
 })
 

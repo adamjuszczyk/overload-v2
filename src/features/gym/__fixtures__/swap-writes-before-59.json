@@ -1,0 +1,94 @@
+{
+  "note": "Captured from the pre-chunk-59 screen (staging ae25ab1): the swap icon -> SwapExerciseSheet -> confirm, on a session where set 1 is logged and set 2, set 3 and its drop are open. Order then: every skip, then the swap row.",
+  "before": [
+    "skip",
+    "skip",
+    "skip",
+    "swap"
+  ],
+  "skips": [
+    {
+      "weight": null,
+      "reps": null,
+      "rir": null,
+      "isDropset": false,
+      "isSkipped": true,
+      "restSeconds": null,
+      "setSeconds": null,
+      "enteredUnit": null,
+      "formRating": null,
+      "stageKind": null,
+      "exerciseId": "ex-1",
+      "weekPlanSetId": "set-2",
+      "setNumber": 2,
+      "parentSetId": null,
+      "stageIndex": 0,
+      "note": null
+    },
+    {
+      "weight": null,
+      "reps": null,
+      "rir": null,
+      "isDropset": false,
+      "isSkipped": true,
+      "restSeconds": null,
+      "setSeconds": null,
+      "enteredUnit": null,
+      "formRating": null,
+      "stageKind": "dropset",
+      "exerciseId": "ex-1",
+      "weekPlanSetId": "set-3",
+      "setNumber": 3,
+      "parentSetId": null,
+      "stageIndex": 0,
+      "note": null
+    },
+    {
+      "weight": null,
+      "reps": null,
+      "rir": null,
+      "isDropset": true,
+      "isSkipped": true,
+      "restSeconds": null,
+      "setSeconds": null,
+      "enteredUnit": null,
+      "formRating": null,
+      "stageKind": null,
+      "exerciseId": "ex-1",
+      "weekPlanSetId": "set-3-drop",
+      "setNumber": 3,
+      "parentSetId": "log-2",
+      "stageIndex": 1,
+      "note": null
+    }
+  ],
+  "swapArgs": {
+    "programExerciseId": "pe-1",
+    "originalExercise": {
+      "id": "ex-1",
+      "userId": "user-1",
+      "name": "Bench Press",
+      "muscleGroup": "chest",
+      "isArchived": false,
+      "createdAt": "2026-01-01T00:00:00Z",
+      "muscleSubgroups": null,
+      "movementPattern": null,
+      "status": "active",
+      "sourceLibraryId": null,
+      "lostAt": null
+    },
+    "replacementExercise": {
+      "id": "ex-2",
+      "userId": "user-1",
+      "name": "Incline Press",
+      "muscleGroup": "chest",
+      "isArchived": false,
+      "createdAt": "2026-01-01T00:00:00Z",
+      "muscleSubgroups": null,
+      "movementPattern": null,
+      "status": "active",
+      "sourceLibraryId": null,
+      "lostAt": null
+    }
+  }
+}

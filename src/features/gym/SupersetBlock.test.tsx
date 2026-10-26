@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { render, cleanup, within, fireEvent, screen } from '@testing-library/react'
+import { render, cleanup, within, fireEvent, screen, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import SupersetBlock, { type SupersetMember } from './SupersetBlock'
+import type { SwapInput } from './useExerciseCardState'
 import { useWorkoutRows } from './useWorkoutRows'
 import { referenceSessionOf } from './cardHarness.testutil'
 import { useRestTimerStore } from './restTimerStore'
@@ -23,11 +24,12 @@ const REPLACEMENT: Exercise = {
   id: 'ex-replacement', userId: 'u1', name: 'Incline Press', muscleGroup: 'chest', isArchived: false,
   createdAt: '', muscleSubgroups: null, movementPattern: null, status: 'active', sourceLibraryId: null, lostAt: null,
 }
-vi.mock('./SwapExerciseSheet', () => ({
-  default: ({ currentExerciseName, onConfirm, onClose }: { currentExerciseName?: string; onConfirm: (ex: Exercise) => void; onClose: () => void }) => (
+// A stand-in for the shared exercise picker (chunk 59: the swap's; its own states are chunk 41's): it names the exercise being replaced.
+vi.mock('../../components/ExercisePickerSheet', () => ({
+  default: ({ replacing, onPick, onClose }: { replacing?: { id: string }; onPick: (ex: Exercise) => void; onClose: () => void }) => (
     <div>
-      <p>SWAP SHEET FOR {currentExerciseName}</p>
-      <button onClick={() => onConfirm(REPLACEMENT)}>CONFIRM PICK</button>
+      <p>SWAP SHEET FOR {replacing?.id}</p>
+      <button onClick={() => onPick(REPLACEMENT)}>CONFIRM PICK</button>
       <button onClick={onClose}>close sheet</button>
     </div>
   ),
@@ -93,7 +95,7 @@ function Harness({ ms, logs, overrides }: { ms: SupersetMember[]; logs: SetLog[]
         onLog={() => Promise.resolve({} as SetLog)}
         onUpdateSet={() => {}}
         onDeleteSet={async () => {}}
-        onSwap={() => {}}
+        onSwap={async () => {}}
         {...overrides}
       />
     </MemoryRouter>
@@ -190,16 +192,17 @@ describe('SupersetBlock — full per-exercise behaviour inside a block (chunk 13
     expect(lastOf(sequence)).not.toContain('30 ×')
   })
 
-  it('swap: tapping SWAP on a member opens its own sheet; confirming calls onSwap with that member\'s programExercise', async () => {
-    const swapCalls: unknown[] = []
-    renderBlock(members(), { onSwap: (ex, pe) => swapCalls.push({ ex, pe }) })
-    const swapButtons = screen.getAllByLabelText('Swap exercise for this session')
-    expect(swapButtons).toHaveLength(2)
-    fireEvent.click(swapButtons[1])
-    expect(screen.getByText('SWAP SHEET FOR Barbell Row')).toBeTruthy()
+  it('swap: "Swap for today" in a member\'s ⋯ opens its own picker; confirming calls onSwap with that member\'s programExercise', async () => {
+    const swapCalls: SwapInput[] = []
+    renderBlock(members(), { onSwap: async (input) => void swapCalls.push(input) })
+    const options = screen.getAllByLabelText('Exercise options')
+    expect(options).toHaveLength(2)
+    fireEvent.click(options[1])
+    fireEvent.click(screen.getByText('Swap for today'))
+    expect(screen.getByText('SWAP SHEET FOR ex-pe-b')).toBeTruthy()
     fireEvent.click(screen.getByText('CONFIRM PICK'))
     await vi.waitFor(() => expect(swapCalls).toHaveLength(1))
-    expect(swapCalls[0]).toMatchObject({ ex: REPLACEMENT, pe: { id: 'pe-b', exerciseId: 'ex-pe-b' } })
+    expect(swapCalls[0]).toMatchObject({ exercise: REPLACEMENT, programExercise: { id: 'pe-b', exerciseId: 'ex-pe-b' }, record: { fromKey: 'pe-b' } })
   })
 
   it('skip: skipping one member marks only ITS remaining planned sets, each with the number its row shows', async () => {
@@ -210,20 +213,22 @@ describe('SupersetBlock — full per-exercise behaviour inside a block (chunk 13
         return Promise.resolve({ id: `log-${skipped.length}` } as SetLog)
       },
     })
-    const skipButtons = screen.getAllByText('SKIP REST OF EXERCISE')
-    expect(skipButtons).toHaveLength(2) // one per member, both fully unlogged
-    fireEvent.click(skipButtons[0]) // A's own SKIP REST OF EXERCISE
-    fireEvent.click(screen.getByText('CONFIRM SKIP'))
+    fireEvent.click(screen.getAllByLabelText('Exercise options')[0]) // A's own ⋯
+    fireEvent.click(screen.getByText('Skip the rest of this exercise'))
+    await act(async () => {
+      fireEvent.click(screen.getByText('SKIP 4 SETS'))
+      await Promise.resolve()
+    })
     await vi.waitFor(() => expect(skipped.length).toBe(4)) // A's own 4 planned sets, none of B's
     expect(skipped).toEqual([1, 2, 3, 4].map((setNumber) => ({ exerciseId: 'ex-pe-a', setNumber })))
   })
 
-  it('ADD SET: adding a set to the shorter member (B, 3 sets) extends its rounds — round 4 now has both members', () => {
+  it('Add a set: in the shorter member\'s ⋯ (B, 3 sets) it extends the rounds — round 4 now has both members — and no member has an ADD SET button of its own', () => {
     const { container } = renderBlock(members())
     expect(rowLabels(container)).not.toContain('B4')
-    const addSetButtons = screen.getAllByText('ADD SET')
-    expect(addSetButtons).toHaveLength(2)
-    fireEvent.click(addSetButtons[1]) // B's own ADD SET (B has 3 planned, A has 4)
+    expect(screen.queryAllByText('ADD SET')).toHaveLength(0)
+    fireEvent.click(screen.getAllByLabelText('Exercise options')[1]) // B's own ⋯ (B has 3 planned, A has 4)
+    fireEvent.click(screen.getByText('Add a set'))
     const round4 = [...container.querySelectorAll('p')].find((p) => p.textContent === 'ROUND 4')!.parentElement!
     expect(rowLabels(round4 as HTMLElement)).toEqual(['A4', 'B4'])
   })

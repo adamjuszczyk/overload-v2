@@ -73,7 +73,7 @@ function Harness({ plannedSets, logs, programSets = [], props = {} }: HarnessPro
         onLog={() => Promise.resolve({} as SetLog)}
         onUpdateSet={() => {}}
         onDeleteSet={async () => {}}
-        onSwap={() => {}}
+        onSwap={async () => {}}
         {...props}
       />
     </MemoryRouter>
