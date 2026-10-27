@@ -503,6 +503,8 @@ export async function dropQueuedWritesNamingLog(logId: string): Promise<number> 
     if (id) removePending(id)
   }
   if (named.length > 0) useOfflineStore.getState().setSyncFailures(failuresOf(await db.sync_queue.orderBy('createdAt').toArray()))
+  // The device's own copy of the log (the offline LOG put it beside the queued upsert) goes too, as `queueSetLogDelete` removes it: nothing offline (a finish queued meanwhile) should see it.
+  await db.set_logs.delete(logId)
   return named.length
 }
 

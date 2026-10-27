@@ -31,7 +31,7 @@ interface QueueItem {
   sessionId?: string
   parentSetId?: string
 }
-const world = vi.hoisted(() => ({ online: false, queue: [] as unknown[], nextId: 1, queueDeleteFails: 0 }))
+const world = vi.hoisted(() => ({ online: false, queue: [] as unknown[], nextId: 1, queueDeleteFails: 0, deviceDeleted: [] as string[] }))
 const queue = () => world.queue as QueueItem[]
 const server = new QueueServer()
 
@@ -53,7 +53,8 @@ vi.mock('../../lib/db', () => ({
       },
       update: async (id: number, patch: Partial<QueueItem>) => void (world.queue = queue().map((q) => (q.id === id ? { ...q, ...patch } : q))),
     },
-    set_logs: { delete: async () => {}, update: async () => {}, put: async () => {} },
+    // The device's own copies of logs: `delete` is noted so a test can say which copies went.
+    set_logs: { delete: async (id: string) => void world.deviceDeleted.push(id), update: async () => {}, put: async () => {} },
   },
 }))
 vi.mock('../../lib/supabase', () => ({ supabase: { from: (table: string) => server.from(table) } }))
@@ -80,6 +81,7 @@ beforeEach(() => {
   world.queue = []
   world.nextId = 1
   world.queueDeleteFails = 0
+  world.deviceDeleted = []
   server.reset()
   queryClient.clear()
   useOfflineStore.setState({ syncFailures: [], failedIds: new Set(), pendingIds: new Set() })
@@ -168,6 +170,7 @@ describe('230 (i): a set deleted online after its first send failed does not com
     await deleteLogOnline('s1', 'L')
 
     expect(server.requests.at(-1)).toBe('delete v2_set_logs:L -> 0 rows') // the server held nothing: its first send failed
+    expect(world.deviceDeleted).toEqual(['L']) // and the device’s own copy of the log goes, as an offline delete removes it
     expect(queued()).toEqual(['upsert v2_set_logs:M', 'upsert v2_set_logs:N', `upsert v2_coach_notes:${note}`, 'patch v2_set_logs:M']) // only L’s own write went
     await flushSyncQueue()
 
