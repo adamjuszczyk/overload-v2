@@ -1,15 +1,19 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-27, the screen rows by screenshot and the 1.2 tour.*
-- *The screen rows were checked by screenshot on staging (your change of plan, 2026-10-27): RC6, RC7, RC9, RC22, RC28, RC34, RC38, RC39, RC40, RC41 and RC43 all PASS, and none needs you. RC42 moved to the P rows after the release. With the 31 DATA rows, the checklist on staging is done with no failure (CONTEXT.md, "Release checklist on staging").*
-- *243 and 244 are answered (your words, 2026-10-27): 243 is known for 1.2 (a line in the update notes) and on the 1.2.1 list; 244 stays as it is.*
+*Rewritten at every boundary. Last: 2026-10-27, your vibe check (the four items investigated: 245–248).*
+- *Your vibe check on staging (2026-10-27) was the "what's new in 1.2" tour: your seven items are on the 1.2.1 list as you gave them, and nothing was flagged for 1.2 beyond the four checks below.*
+- *RC44 is done: run by you on production, 2026-10-27, zero rows (none of your active week-dependent sequence runs hits 203's case).*
+- *The four checks (245–248): none can write wrong data and none is an unintended 1.1 regression, so none blocks the release. Each has a recommendation for you below.*
 - *Tests owed: none.*
 
 What waits on you, in order:
-1. **The "what's new in 1.2" tour on staging** (your vibe check; it replaces the screen-row check): the account `staging-test@example.com` (you have its password), then the list of what changed, grouped by where it is in the app, in the order you'd meet it in a week (plan → workout → review), one line each: `<scratchpad>/build/tour-1.2.md`. Flag anything on the 1.2.1 list you want changed for 1.2; the rest stays as built.
-   - The six display points, of which three show in normal use (the tour file says how to see each): (1) W11 and the workout's add picker opened offline sit on "LOADING…" for good; (2) an ADDED TODAY card with no set logged is gone after a reload (as in 1.1); (4) a stepper stops at its kind's default (myo-reps REST BETWEEN, WITHIN ROUND). Not in normal use: (3) a swap's open moved set lives on the phone that swapped (two phones only); (5) the duplicate renumber PATCH (the network only); (6) the seed's lbs/kg LAST line (staging's seed only).
-2. **Before step 5** (TASKS-1.2 "Release"): RC44's read-only count of your sequence runs that hit 203's case (production, your id only) with the before counts and fingerprint, then your yes on 046 (the merge of step 5's migrations PR is the consent, DECISIONS 202); the manual backup; a time when nobody is training (step 4). R5's two read-only queries are information, not gates.
+1. **Before step 5** (TASKS-1.2 "Release"; blocks the release): the before counts and fingerprint (step 3), your yes on 046 (the merge of step 5's migrations PR is the consent, DECISIONS 202), the manual backup, which you take right before step 5 (your words, 2026-10-27), and a time when nobody is training (step 4). RC44 is done (zero rows). R5's two read-only queries are information, not gates.
+2. **The four vibe-check items** (none blocks; each executed, verdict NOT A BLOCKER):
+   - **245** — CHANGE THE PROGRAM gives a workout several weekdays, the planner one. Several days per workout is SPEC's own 1.2 rule ("Workouts that share one plan"), and Plan, `v2_plan_week`, Today's scheduler and `v2_run_schedules` all handle it; a save can't break planning. 1.1: create the same (one day), no running edit at all. Recommended: (a), leave.
+   - **246** — an existing 3+ superset edited and saved keeps every member the edit didn't split or remove, in order. The gap: a superset can't take the exercise below it in CHANGE THE PROGRAM (only a free exercise above can join it), so a split that leaves a superset above can't be joined again before SAVE. 1.1 couldn't change a running program's supersets at all. Recommended: (a), SUPERSET on a superset's last member, for 1.2.1.
+   - **247** — a save changes every not-done session from the current week on, week 5 included (by SPEC: "including a week already planned forward"): removed, swapped and added exercises and the order land there; that week's numbers on kept sets stay; Plan marks only the first week after a done one. 1.1 had no such screen. Recommended: (a), leave; your 1.2.1 "from the week being viewed" covers the start week.
+   - **248** — no ratings-only edit after finishing: 1.1 had none either (its finished-session screen and History are byte-identical to 1.2's), and SPEC holds "Edit button for energy, pump and notes that does not reopen the session" for phase 2; nothing removed it. Recommended: (a), leave.
 3. **After step 6:** the 30 rows marked P, on production, on your account, as part of your training (step 7): RC1, RC2, RC3, RC5, RC6, RC7, RC10, RC11, RC12, RC13, RC16, RC19, RC20, RC22, RC23, RC24, RC27, RC28, RC29, RC30, RC31, RC32, RC33, RC34, RC36, RC38, RC39, RC41, RC42 and RC43. RC42 (COACH and its sidebar, yours only) moved here from the staging check (your words, 2026-10-27), with RC43's COACH tab.
 4. **Re-seed:** none is needed for the release or for any checklist row. `staging-smoke.mjs` reads 49 of 51 until one: the test account's "in-progress session" (0 since RC36 completed the seed's) and the stable account's "the run is a stable weekday program" (2 run copies since RC20 and RC21). Its stable "week 1 done (3 completed sessions)" still passes: it counts the account's completed sessions, which are the finished run's three, so it has not described the active run (a fresh week 1, nothing done) since RC20 and fails only if those sessions go. Re-seed (and paste 046) before the next review that must read the smoke 51 of 51; nothing planned before the release does.
 
@@ -117,6 +121,16 @@ To-dos:
 - **237** — a planned AMRAP row reads "× AMRAP @ RIR 0": as built.
 - **238** — what queue-fix 230 leaves, (1)–(4): known, as built; for 1.2.1, (1) fixed by one line in a small DATA run.
 - **243** — the mirror case of 239 (an offline UNLOG, delete or renumber whose first send fails reads as undone until the next sync): known for 1.2 (Adam, 2026-10-27); for 1.2.1, the two lines in `withQueuedSetLogs`.
+
+*Adam, 2026-10-27, from his vibe check on staging: "1.2.1 list, add as given". His seven items, word for word:*
+
+- finished-program priorities must be read-only (and the pre-1.1 priorities page differs)
+- superset exercise reorder when creating
+- tempo input like reps/RIR (no typing dashes)
+- PREVIEW SESSION redesign (old design, and its planned line shows weight/reps/RIR under a "planned RIR" label)
+- remove the duplicate history button (the LAST line already opens it)
+- rest bar shows the workout is complete once all sets are logged or skipped
+- CHANGE THE PROGRAM from the week being viewed, not only the current week.
 
 ## Tests owed
 *Every missing-proof failure the reviewer merges (behaviour verified right, a test missing), one line each: chunk, PR, the test missing. One tests-only builder run before the release checklist adds them all, the way 176 does (RULES.md, "The 1.2 tests-owed rule").*
@@ -955,6 +969,109 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - What: a session moved to a day and not done there is not listed as missed on the days after (phase 1's behaviour; SPEC silent).
 - Answer: (Adam, 2026-10-27) "244: leave as is." Nothing built.
 - Date: 2026-10-27
+
+### 245 CHANGE THE PROGRAM gives a workout several weekdays; the stepped planner gives it one (Adam's vibe check, 2026-10-27; executed)
+**Ask:** the edit lets a workout have several weekdays and creating allows one. Is several days per workout supported by the planner, and can such a save break planning? Keep the two as they are, or make them match?
+**Recommendation:** (a), leave both as built. **NOT A BLOCKER:** several days per workout is SPEC's own 1.2 rule and every part of planning handles it; the probe found no way for such a save to write wrong data. If you want creating to match, (b) is a 1.2.1 item.
+**Blocks:** nothing.
+**Options:** (a) leave both as built; (b) 1.2.1: the stepped planner's weekday chips take several days per workout, like the DAYS card; (c) 1.2.1: the DAYS card takes one day per workout, like the planner (SPEC 1e changes).
+**Answer:**
+**Evidence:**
+- **Staging:** the DAYS card toggles the selected workout's days (`ChangeProgramPage.tsx:422-433`, `dayToggle` / `toggleWorkoutDay` in `changeProgramDraft.ts:453-466`, `validateDays` in `programChange.ts:582-600`). A day another workout holds is refused, the last day can't go, and any free day can be added. The planner's step 2 is single-select (`StepExercises.tsx:341-354`): `assignWorkoutWeekday` (`plannerService.ts:336`) clears the workout's other day first.
+- **SPEC, TASKS, DECISIONS:**
+  - CHANGE THE PROGRAM: "the selected workout's DAYS card toggles weekdays", and "At least one day stays on" (SPEC.md:443-447, 476-482; Defaults 2, :113-115).
+  - "Workouts that share one plan (one workout on several weekdays)" is a 1.2 rule (SPEC.md:629-634). Plan says "Shared with Thu — changes apply to both", the shared plan locks once one of its sessions is done, a deload mark covers every day, and MOVE moves one day.
+  - The planner's "one weekday per workout" is phase 1's (TASKS.md:387). A workout on several days was G14's old-program case (DECISIONS 43), and staging's stable account is seeded with it.
+- **The planner supports it:**
+  - Plan rows are per workout per week: `unique nulls not distinct (mesocycle_id, workout_day_id, week_number, sequence_position)` (037:188).
+  - `v2_plan_week` loops over the run copy's schedule and skips a second pass of the same workout on that conflict (045:171-195), so a shared workout gets one plan row a week.
+  - Today's scheduler finds sessions by date and workout, with the day's workout taken from the week in force (`scheduler.ts:100, 166, 179`; `scheduleForWeek` in `runSchedule.ts`).
+  - `v2_run_schedules` holds the whole seven-day map.
+  - REVIEW reads two sessions on one plan row (`review.ts:57`).
+- **1.1 (master `a3ffbe8`, read with `git show`):** creating and editing a saved program both allowed one day per workout (the same `assignWorkoutWeekday`). A running program's days couldn't change at all. Old G14 programs worked in Plan and Today. So creating is unchanged and the edit is new in 1.2: not a regression.
+- **Probe 1, unit test** (the real reducers, `planProgramChange` and Today's `schedule`; a scratch copy of staging, `<scratchpad>/vibe/copy/src/features/programs/vibe.probe.test.ts`, 4 of 4):
+  - The world: a week-dependent run with Push on Monday, Pull on Tuesday and Legs on Thursday; week 2 current, weeks 2–3 planned.
+  - The DAYS toggle gave Push Monday and Friday.
+  - SAVE wrote `v2_run_schedules` `from_week` 1 and 3 and the run copy's schedule, and nothing else: no plan row, no set.
+  - Today's scheduler: week 2's Friday is a rest day. Week 3's Monday, and week 3's Friday with Monday's Push done, are both `suggest_from_plan` on the one week-3 Push row.
+  - A day that Pull holds was refused.
+- **Probe 2, staging read** (signed in as `staging-stable`, read only, `<scratchpad>/vibe/g14read.mjs`): its fresh run plans Full Body on Tuesday and Thursday, the shape the edit makes, as one week-1 plan row with 9 sets, through 045 live, beside one Arms row.
+
+### 246 In CHANGE THE PROGRAM a superset can't take the exercise below it; an existing 3+ superset saves whole (Adam's vibe check, 2026-10-27; executed)
+**Ask:** creating allows 3+ exercises in a superset; editing seems not to. What happens when an existing 3+ superset is edited and saved? CHANGE THE PROGRAM lets a free exercise join the superset below it, but never lets a superset take the exercise below it, which the planner's per-gap link does. Add that?
+**Recommendation:** (a), for 1.2.1. **NOT A BLOCKER:** every edit of a 3-member superset saved exactly what the screen showed: SAVE keeps the members in order and splits or drops only the ones the edit split or removed. The fix: SUPERSET on a superset's last member, linking it with the exercise below. It also lets a split be joined again, as SPEC's Supersets says.
+**Blocks:** nothing.
+**Options:** (a) 1.2.1: as recommended; (b) leave as built.
+**Answer:**
+**Evidence:**
+- **Staging:**
+  - A superset is one card (`ChangeProgramExerciseCard.tsx:299-330`); each member has SWAP, REMOVE and ⋯. A link toggle between two members splits the superset there (`onSplitAfter`).
+  - SUPERSET is offered only on a unit of one exercise (`ChangeProgramPage.tsx:325`, `!isSuperset && canLinkBelow`). It links that exercise with the one below, joining a superset there (`linkWithBelow`, `changeProgramDraft.ts:275-286`; `planLinkToggle`, `supersetGroups.ts:136`).
+  - So a superset grows only from above. A split that leaves two or more members above can't be joined again before SAVE: no control links them with the exercise below, though CANCEL can undo the split.
+  - Creating has a link toggle in every gap (`StepExercises.tsx:278-279`, `useToggleSupersetLink`), so a superset grows downward there.
+- **SPEC:**
+  - "Any number of exercises" (SPEC.md:845).
+  - Defaults 5 (:118-120) and Supersets (:855-860): SUPERSET on an exercise's card links it with the exercise below, and "below a superset, it joins that superset"; inside a superset card, "a link toggle between two members splits the superset there or joins it again".
+  - As built it meets the link and the split. It does not meet "joins it again" when the part above the split is still a superset.
+- **1.1:** a running program's supersets couldn't be changed (the planner refuses a run's copy, PP5). The planner's per-gap toggle is the same as now. Not a regression.
+- **Probe, unit test** (the real draft reducers and `planProgramChange`, applied on the chunk-45 table stand-in; the scratch copy, 9 of 9):
+  - The world: Pull holds Row + Pulldown + Face Pull in one block, then Biceps Curl and Shrug; weeks 2–3 planned.
+  - Each edit, then SAVE: rename the workout, change the round rest, swap the middle member, remove the last member, move the superset down a step, split after the first member, add an exercise.
+  - After every save, each member kept its block except the one the edit removed or split off. Removing Face Pull left Row + Pulldown as a block. Splitting after Row left Row on its own and Pulldown + Face Pull as one block.
+  - Each block's members stayed next to each other on the run copy, and both planned sessions took the run copy's order.
+  - On Push, SUPERSET on the free Bench above a 2-member block made it 3, and SAVE kept 3.
+  - No member was split or dropped by SAVE without an edit asking for it.
+
+### 247 CHANGE THE PROGRAM's save changes every week planned forward, and Plan marks only the first week after a done one (Adam's vibe check, 2026-10-27; executed)
+**Ask:** CHANGE THE PROGRAM always starts from the current week. What happens to weeks already planned forward (week 5 while in week 3): are they overwritten, kept, or shown as changed?
+**Recommendation:** (a), leave as built for 1.2. **NOT A BLOCKER:** it is SPEC's design and nothing is written wrong. Your 1.2.1 item "CHANGE THE PROGRAM from the week being viewed, not only the current week" covers the start week.
+**Blocks:** nothing.
+**Options:** (a) leave as built; (b) 1.2.1: the rule box also says which weeks already planned forward change ("Changes start in week 3; weeks 4–5 are planned and change too").
+**Answer:**
+**Evidence:**
+- **Staging:**
+  - SAVE reads every plan row from the current week on (`fetchPlannedSessions(mesoId, currentWeek)`, `changeProgramService.ts:117-150`). It reads them again before it writes, and refuses if the run changed (51a).
+  - `planProgramChange` lands its rules on every session not started, a week planned forward included. Done and in-progress sessions, and earlier weeks, are never in an op (`programChange.ts:20-58`).
+  - The rules: a removed exercise goes with its planned sets; a swap takes the old exercise's sets with weight, RIR and cues cleared; an added exercise is appended, with no sets (week-dependent) or the default's sets (stable); the new order applies.
+  - On a stable run, a change to the default lands only where the session still matches the old default, so a THIS WEEK ONLY set stays. Numbers on sets that stay are kept.
+  - New days start next week.
+- **SPEC:**
+  - "It applies to every session that isn't done yet, from the current week (cycle) on, including a week already planned forward, and to what later weeks are copied from. Done sessions keep their plan. There is no choice of start week." (SPEC.md:425-428)
+  - Defaults 1 and 2 (:111-115) and "How a save lands" (:454-475).
+  - Built in chunks 45, 51a and 51b, each with its tests.
+- **1.1:** no CHANGE THE PROGRAM. Exercise changes were made in a week's view, which offered "apply to planned weeks ahead" (to-do 113 (c)). The screen is new, and no 1.1 behaviour is lost.
+- **Probe, unit test** (the real reducers, `planProgramChange` and Plan's `changesSinceSource`; the scratch copy, 3 of 3):
+  - The world: week-dependent, current week 3, weeks 1–5 planned. Week 3's Push is done, its Pull in progress, and week 5's Bench set 2 is typed at 77.5 kg × 4.
+  - SAVE removed Fly, swapped Row for Chin-up, added Dip and moved Face Pull up.
+    - Weeks 1–3 were untouched (0 ops).
+    - Weeks 4 and 5 each lost Fly with its set. Each got Chin-up with Row's 2 sets at 8–10 and no weight, Dip with no sets, and Face Pull first.
+    - Week 5's 77.5 × 4 was kept.
+  - Stable run (week 2 current, week 3 planned forward, week 3's Leg set 2 at 15 for that week only): the default's 10–12 → 6–8 landed on weeks 2 and 3, left week 3's 15 as it was, and kept the weights.
+  - Plan's marks after the week-dependent save:
+    - Week 4, compared with the done week 3, shows Fly struck through and Dip as added.
+    - Week 5, compared with week 4, shows nothing.
+- **So:** weeks planned forward are changed by the rules above. Their own numbers on kept sets stay, and only the first changed week shows marks.
+
+### 248 No edit of only energy and pump after finishing: 1.1 had none either, and SPEC holds it for phase 2 (Adam's vibe check, 2026-10-27; executed)
+**Ask:** after finishing, the only way to change energy or pump is CONTINUE SESSION. Did 1.1 have a ratings-only edit, and did SPEC remove it? Build one now, or keep it for later?
+**Recommendation:** (a), leave for 1.2. **NOT A BLOCKER:** it is unchanged from 1.1, and SPEC schedules the edit for phase 2; nothing removed it. If you want it sooner, (b) is a 1.2.1 item.
+**Blocks:** nothing.
+**Options:** (a) leave (phase 2, as SPEC); (b) 1.2.1: an EDIT RATINGS beside EDIT NOTE on the finished-session screen, with no reopen.
+**Answer:**
+**Evidence:**
+- **Staging:**
+  - Today's finished-session screen offers ADD NOTE / EDIT NOTE, with no reopen, and CONTINUE SESSION (`CompletedTodayScreen.tsx:172, 232`).
+  - History's session shows energy and pump read only (`SessionDetail.tsx:170-190`).
+  - A reopened session finishes through W19 with its note and ratings already in the boxes (`FinishScreen.tsx:181-200`).
+- **1.1 (master `a3ffbe8`):** the same.
+  - `CompletedTodayScreen.tsx` and `SessionDetail.tsx` are byte-identical between master and staging (`git diff` empty), and so is `reopenSession`, which shifts `started_at` by the idle gap.
+  - 1.1's `SessionComplete.tsx` set the ratings at finish and filled them back in on a reopened session, as `FinishScreen` does.
+  - So 1.1 had no ratings-only edit, and 1.2 is not a regression.
+- **SPEC:**
+  - "Finished session [P2]: Edit button for energy, pump and notes that does not reopen the session; workout time stays intact." (SPEC.md:1173-1176; again :1390-1393)
+  - A mandatory rating missing at finish leads to "the finished-session edit" (:1010-1011, P2).
+  - Planned for phase 2, never in 1.2's scope, and removed by no DECISIONS entry.
+- **Probe (the real module):** `FinishScreen.write.test.tsx` passed in the scratch copy of staging. It includes "a reopened session pressed with nothing changed writes back what it already held", so CONTINUE SESSION then COMPLETE keeps the ratings and the note. Nothing is written wrong.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
