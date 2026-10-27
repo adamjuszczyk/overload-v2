@@ -1,32 +1,21 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-27, fix 239–242's review (merged, #235).*
-- *Fix 239–242 is merged (#235, `f6da7c8`): 239, 240, 241 and 242 are answered and built (their entries below; "For the release" has their update-note lines). RC24, RC25, RC26 and RC37 were re-run on staging after it: all four PASS, none needed a re-seed. The checklist's 31 run rows all PASS (CONTEXT.md, "Release checklist on staging").*
-- *Whether each is in 1.1, re-run on master's own code: 239 and 241 are (241 through Plan's MOVE: its entry's "1.2 only" was wrong); 240's defect is in 1.1's code, but 1.1's own swaps never write the data that reaches it; 242 is 1.2 only.*
-- *Review-pass items 220–238 are on the new "1.2.1 list" below, as built (your answer of 2026-10-27).*
-- *New: 243 (the mirror case of 239) and 244 (a session moved to a day and not done there). Neither blocks.*
+*Rewritten at every boundary. Last: 2026-10-27, the screen rows by screenshot and the 1.2 tour.*
+- *The screen rows were checked by screenshot on staging (your change of plan, 2026-10-27): RC6, RC7, RC9, RC22, RC28, RC34, RC38, RC39, RC40, RC41 and RC43 all PASS, and none needs you. RC42 moved to the P rows after the release. With the 31 DATA rows, the checklist on staging is done with no failure (CONTEXT.md, "Release checklist on staging").*
+- *243 and 244 are answered (your words, 2026-10-27): 243 is known for 1.2 (a line in the update notes) and on the 1.2.1 list; 244 stays as it is.*
 - *Tests owed: none.*
 
 What waits on you, in order:
-1. **Your screen-row check on staging** (step 6 of your sequence): the 12 screen-only rows and the six display points below. Flag any item of the 1.2.1 list you want changed for 1.2; the rest stay as built.
-   - The rows (they write nothing; the account each needs): RC6 (test: no exercise action in the week view; CHANGE THE PROGRAM from the bottom button and from EDIT PROGRAM), RC7 (test: done sessions and past weeks read-only), RC9 (test and stable: the CHANGED SINCE marks; the stable run is a fresh week 1 since RC20, and week 1 is unmarked by rule), RC22 (test and empty: the PROGRAMS tab; the empty account is empty, so PR2 and PR3 show), RC28 (test: the rest bar and its jump button, in a session in progress; nothing is in progress now: start Wednesday's Lower A or Friday's Upper B), RC34 (test: stage rows and + ADD ROUND, which need a superset in progress: Upper A's, next on Monday in week 4), RC38 (test: Settings), RC39 (test and empty: "program" and "cues" everywhere, the pre-1.1 page the one exception), RC40 (test: error lines), RC41 (test and stable: Removals), RC42 (production: COACH, yours only) and RC43 (test: the 6 tabs).
-   - The six display points (seen in passing; none is a decision yet):
-     - (1) W11 and the workout's add picker opened offline sit on "LOADING…" for good (the exercise list's read pauses offline).
-     - (2) An ADDED TODAY card with no set logged is gone after a reload (as in 1.1).
-     - (3) A swap's open moved set lives on the phone that swapped. On another phone no card draws it, W18 doesn't name it and nothing holds auto-finish (201 (a) reaches the swapping phone only).
-     - (4) A stepper stops at its kind's default: myo-reps REST BETWEEN can't go back to the seed's 0:10, and WITHIN ROUND can't go back to 0.
-     - (5) After a logged added set is deleted, each later added set's renumber PATCH is sent twice, with the same value.
-     - (6) The seed's lateral raise logs (entered in kg) read "LAST 9 × 15" on the row while W16 shows 19.8 lbs: the seed's unit convention (app-written logs carry no entered unit).
-2. **243** (a decision; blocks nothing, by your rule as I read it): an offline UNLOG, delete or renumber of a set the server holds reads as undone until the next sync when its first send fails, and in one rarer shape the screen writes a set number that its next draw corrects. Recommended: (b), known for 1.2, fixed in 1.2.1 (two lines). If a wrong number that the next draw corrects counts as written wrong, (a): fix it before the release.
-3. **Before step 5** (TASKS-1.2 "Release"): RC44's read-only count of your sequence runs that hit 203's case (production, your id only) with the before counts and fingerprint, then your yes on 046 (the merge of step 5's migrations PR is the consent, DECISIONS 202); the manual backup; a time when nobody is training (step 4). R5's two read-only queries are information, not gates.
-4. **After step 6:** the 30 rows marked P, on production, on your account, as part of your training (step 7): RC1, RC2, RC3, RC5, RC6, RC7, RC10, RC11, RC12, RC13, RC16, RC19, RC20, RC22, RC23, RC24, RC27, RC28, RC29, RC30, RC31, RC32, RC33, RC34, RC36, RC38, RC39, RC41, RC42 and RC43.
-5. **Re-seed:** none is needed for the release or for any checklist row. `staging-smoke.mjs` reads 49 of 51 until one: the test account's "in-progress session" (0 since RC36 completed the seed's) and the stable account's "the run is a stable weekday program" (2 run copies since RC20 and RC21). Its stable "week 1 done (3 completed sessions)" still passes: it counts the account's completed sessions, which are the finished run's three, so it has not described the active run (a fresh week 1, nothing done) since RC20 and fails only if those sessions go. Re-seed (and paste 046) before the next review that must read the smoke 51 of 51; nothing planned before the release does.
-6. **244** (a decision; blocks nothing): a session moved to a day and not done there is not listed as missed on the days after (phase 1's behaviour, kept by 241's fix; SPEC silent). Recommended: (b), as it is for 1.2, decided for 1.2.1.
+1. **The "what's new in 1.2" tour on staging** (your vibe check; it replaces the screen-row check): the account `staging-test@example.com` (you have its password), then the list of what changed, grouped by where it is in the app, in the order you'd meet it in a week (plan → workout → review), one line each: `<scratchpad>/build/tour-1.2.md`. Flag anything on the 1.2.1 list you want changed for 1.2; the rest stays as built.
+   - The six display points, of which three show in normal use (the tour file says how to see each): (1) W11 and the workout's add picker opened offline sit on "LOADING…" for good; (2) an ADDED TODAY card with no set logged is gone after a reload (as in 1.1); (4) a stepper stops at its kind's default (myo-reps REST BETWEEN, WITHIN ROUND). Not in normal use: (3) a swap's open moved set lives on the phone that swapped (two phones only); (5) the duplicate renumber PATCH (the network only); (6) the seed's lbs/kg LAST line (staging's seed only).
+2. **Before step 5** (TASKS-1.2 "Release"): RC44's read-only count of your sequence runs that hit 203's case (production, your id only) with the before counts and fingerprint, then your yes on 046 (the merge of step 5's migrations PR is the consent, DECISIONS 202); the manual backup; a time when nobody is training (step 4). R5's two read-only queries are information, not gates.
+3. **After step 6:** the 30 rows marked P, on production, on your account, as part of your training (step 7): RC1, RC2, RC3, RC5, RC6, RC7, RC10, RC11, RC12, RC13, RC16, RC19, RC20, RC22, RC23, RC24, RC27, RC28, RC29, RC30, RC31, RC32, RC33, RC34, RC36, RC38, RC39, RC41, RC42 and RC43. RC42 (COACH and its sidebar, yours only) moved here from the staging check (your words, 2026-10-27), with RC43's COACH tab.
+4. **Re-seed:** none is needed for the release or for any checklist row. `staging-smoke.mjs` reads 49 of 51 until one: the test account's "in-progress session" (0 since RC36 completed the seed's) and the stable account's "the run is a stable weekday program" (2 run copies since RC20 and RC21). Its stable "week 1 done (3 completed sessions)" still passes: it counts the account's completed sessions, which are the finished run's three, so it has not described the active run (a fresh week 1, nothing done) since RC20 and fails only if those sessions go. Re-seed (and paste 046) before the next review that must read the smoke 51 of 51; nothing planned before the release does.
 
 The release:
 - 121 is closed with your output (2026-10-27): production's migration history is intact.
-- The update notes' lines for 239–242 are in "For the release"; 240's wording is yours (its line says plainly what 1.1's flows could reach).
+- The update notes' lines for 239–242 are in "For the release"; 240's wording is yours (its line says plainly what 1.1's flows could reach). 243 has a "known in 1.2, fixed in 1.2.1" line there.
 
 Decisions that block a chunk: none.
 
@@ -107,6 +96,7 @@ To-dos:
 - Update notes: fixed, a bug live since phase 1: a session moved in Plan to a day before its own (Wednesday's workout to Tuesday) didn't show on Today until it was moved back (fix 239–242; DECISIONS 241).
 - Update notes (Adam: "240 goes in the update notes as a 1.1 bug fixed, like 188f"; the wording is his): fixed, a defect in the deload calculation since phase 1: a deload week could take an exercise's weight from another exercise's log on the same planned set, for example a squat at 75% of a leg press weight. Plainly: 1.1's own flows could not reach it. Since 2026-09-04 its swaps log the replacement's sets with no planned set, so only logs written before that fix, or changed outside the app (the staging seed's are), have that shape (fix 239–242; DECISIONS 240).
 - Update notes: 242 is 1.2 only (REVIEW is new in 1.2), so no "fixed" line: REVIEW's own line says a sequence run's groups are headed with their slot, as Plan names it ("SLOT 2 · ROTATION A") (DECISIONS 242).
+- Update notes: known in 1.2, fixed in 1.2.1: an UNLOG, a deleted set or a renumber made offline whose first sync attempt fails reads as undone until the next sync; nothing is lost (DECISIONS 243, Adam 2026-10-27).
 
 ## 1.2.1 list
 *Adam, 2026-10-27: "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." Each item below is as built in 1.2 unless Adam flags it during that check; where its recommendation changes something, that change is for 1.2.1. The entries stay under "Open", with his answer in each.*
@@ -126,6 +116,7 @@ To-dos:
 - **236** — chunk 69's display choices (D31), (a)–(f): as built.
 - **237** — a planned AMRAP row reads "× AMRAP @ RIR 0": as built.
 - **238** — what queue-fix 230 leaves, (1)–(4): known, as built; for 1.2.1, (1) fixed by one line in a small DATA run.
+- **243** — the mirror case of 239 (an offline UNLOG, delete or renumber whose first send fails reads as undone until the next sync): known for 1.2 (Adam, 2026-10-27); for 1.2.1, the two lines in `withQueuedSetLogs`.
 
 ## Tests owed
 *Every missing-proof failure the reviewer merges (behaviour verified right, a test missing), one line each: chunk, PR, the test missing. One tests-only builder run before the release checklist adds them all, the way 176 does (RULES.md, "The 1.2 tests-owed rule").*
@@ -956,31 +947,14 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-27
 
 ### 243 An offline UNLOG, delete or renumber of a set the server holds reads as undone until the next sync when its first send fails (1.2; the mirror case of 239, found by fix 239–242's builder, reproduced in its review)
-**Ask:** fix it before the release, or ship it as known and fix it in 1.2.1?
-**Recommendation:** (b), known for 1.2 and fixed in 1.2.1: two lines in `withQueuedSetLogs` (a log the server holds is left out when its delete is queued, and takes its queued renumber), as 239's fix already does for the phone's own logs. Nothing is lost: the queued write stays queued and goes at the next pass, and the screen catches up then. The one wrong write found, a set number in a rarer shape, is put right by the screen's next draw.
-**Blocks:** nothing, by your rule as I read it: nothing is lost, and nothing stays written wrong. If a wrong number that the next draw corrects counts as written wrong, it blocks, and (a).
-**Options:** (a) fix it before the release: a small DATA run (the two lines; the builder's probe and the review's as tests, a break each), then the same review; (b) as recommended; (c) (b) with a "known" line in the update notes.
-**Answer:**
-**Evidence:**
-- What happens: 1.2's offline UNLOG and DELETE SET queue a delete, and a delete's renumber queues patches (chunks 57, 58a, 61, 63). Back online, the write's first send fails while the session's reads go through. The pass ends by reading the session again (`flushOnce`), and the server still holds the log as it was. So the set the user unlogged or deleted reads as logged again, and a renumbered set reads its old number, until the next pass sends the write. 239's fix merges only the phone's own unsent upserts (239 (a)'s words), so it leaves this as it was.
-- Executed in the review, the same before and after the fix:
-  - The builder's probe (the real hooks, queue and flush): the workout draws `[["D1",1],["P1",2]]` while `delete D1` and `patch P1 → 1` wait in the queue (attempts 1); after the next pass it draws `[["P1",1]]`, and the server holds P1 only.
-  - The workout screen (the real `GymSession`): set 2 unlogged offline, its delete's first send failing: after the pass set 2 is a logged row again, and after the next pass it is open, with the server's log gone. The screen queued nothing by itself, with the new read and with the old one.
-  - Real Chromium on the real IndexedDB, old and new builds (X5): a mixed queue (an UNLOG and a renumber of logs the server holds, two new logs and another session's log), three of its first sends failing. Both builds sent the same requests in each pass, left the same queue at each step and ended with the same server; both drew the unlogged set and the old number until the next pass.
-  - UNLOG and LOG again of one set, offline, both first sends failing (X6, and the workout screen): one row drawn, with the old log's numbers, until the next pass; nothing written by the screen. With only the delete failing (X7), staging's code already holds and draws both logs, since the server has them.
-- The wrong write, executed through the real rules (`resolveRows` and 58a's `numberCorrections`, with the card's list and without it): DELETE SET on an added set (04) offline, which renumbers the next one (05 → 04), then a new set added and logged (05), all three first sends failing. After the pass the rows read 04 (the deleted set), 05 (the renumbered one, still 05 on the server) and 06 (the new one), and the correction writer queues the new log's number as 6. The next pass stores 6; the next draw lists 6 → 5 and corrects it (also executed). The number stays wrong only if no workout screen draws that session again; FINISH and auto-finish are the workout screen's (read). The old read drew the new set open in that shape (239: LOG on it wrote it twice), or not at all without the card's list. With the mirror fixed, the rows read 04 and 05 and nothing is queued.
-- 1.1: no. Master's queue holds upserts only, with no queued delete or patch (`a3ffbe8`, read).
+- What: an offline UNLOG, delete or renumber of a set the server holds read as undone until the next sync when its first send failed, and in one rarer shape the screen wrote a set number that its next draw corrected.
+- Answer: (Adam, 2026-10-27) "243: known for 1.2, fix in 1.2.1." A known line in the update notes ("For the release"); on the 1.2.1 list (the two lines in `withQueuedSetLogs`).
+- Date: 2026-10-27
 
 ### 244 A session moved to a day and not done there is not listed as missed afterwards (since phase 1; SPEC silent; found by fix 239–242's builder, executed in its review)
-**Ask:** should a session moved to a day and not done there count as missed on the days after (the missed-session prompt, with "Do it now" and "Mark skipped"), or stay as it is?
-**Recommendation:** (b), as it is for 1.2, decided for 1.2.1: it is phase 1's behaviour for a move to a later day, 241's fix doesn't change it, and SPEC's prompt names missed days without saying whether a moved session's new day is one.
-**Blocks:** nothing.
-**Options:** (a) for 1.2.1: Today's missed check also takes a session's new day (`moved_to_date`), so a session moved to Tuesday and not done there is a missed session on Wednesday; (b) as recommended.
-**Answer:**
-**Evidence:**
-- Executed on staging (fix 239–242's review, RC25's re-run): Wednesday's Lower A moved to Tuesday; with the browser clock on Wednesday, Today reads "REST DAY · 1 OF 3 SESSIONS DONE THIS WEEK · NEXT UP Upper B IN 2 DAYS". Lower A is nowhere on Today until Plan's MOVE moves it again.
-- Why: the missed check walks the schedule's weekdays (`useScheduler.ts`). A day with no scheduled workout is never missed, and the move gave up the session's own day. A move to a later day that isn't done there (Friday's Upper B to Saturday) is the same, since phase 1 (chunk 24). The builder's test pins today's answer (`rest_day`), so a change shows.
-- SPEC (Scheduling → Weekday): "Missed-session prompt: stays, but only for missed days of the current week." It doesn't say whether a moved session's new day is one.
+- What: a session moved to a day and not done there is not listed as missed on the days after (phase 1's behaviour; SPEC silent).
+- Answer: (Adam, 2026-10-27) "244: leave as is." Nothing built.
+- Date: 2026-10-27
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
