@@ -29100,3 +29100,26 @@ From CONTEXT.md, "What exists" (the Offline line):
 From CONTEXT.md, "Repo facts":
 
 - Vitest (node env; component tests opt into jsdom per file); 6596 tests in 356 files pass (2026-10-27, the tests-owed run); script tests 365. Pure logic lives in testable modules.
+
+## 2026-10-27 tests-owed run 2 review — merged (#232, `6ec67b9`); tests only; queue-fix 230's four owed lines (five breaks) break-proven (builder 5 of 5, review re-ran M1 and M12); "Tests owed" emptied; moved out of CONTEXT.md and DECISIONS.md (replaced by newer lines), word for word
+
+From DECISIONS.md, "Tests owed":
+
+*Emptied 2026-10-27 by the tests-owed run (#228, `44f41a3`): every line is done or owed nothing; each owed test failed under its named break (builder 16 of 16; review re-ran 10). The full lines are in HISTORY.md, "2026-10-27 tests-owed run review", word for word. Owed since: queue-fix 230's four (#230), the last lines below.*
+- **queue-fix 230** (#230): a pass already running when History deletes a session must not send the session's finish it had read (`removedByCleanup.add` in `dropQueuedWritesNamingSession`, `src/features/offline/useSyncQueue.ts`).
+  - The break it must catch: the review's M1, that line removed (the running pass sends the finish and the deleted session comes back). It passed all 16 tests of `useSyncQueue.deletes.test.tsx`.
+  - Behaviour verified right: the review's probe R-M1 (`<scratchpad>/rq230/zzr230.probe.test.tsx`, on the builder's harness) passes on the branch and fails under M1.
+- **queue-fix 230** (#230): a cleanup the phone's database refuses is logged and doesn't fail History's delete that was done (`useDeleteSession`'s `.catch`, `src/features/history/useHistory.ts`); the deletes file pins the same for `useDeleteSetLog`. The break: the review's M8 (no `.catch`), which passed the same 16 tests. Probe R-M8 fails under it.
+- **queue-fix 230** (#230): a session cleanup the phone's database cuts short after one removal never leaves the session's own upsert (the sort in `dropQueuedWritesNamingSession` that removes the `v2_sessions` upserts first).
+  - The break: the review's M11, the sort removed: the finish stays and brings the deleted session back. It passed the same 16 tests.
+  - Probe R-M11 (the second device delete refused) fails under it.
+- **queue-fix 230** (#230): what a recovery or History's cleanup removes from the queue loses its pending-sync marker (`removePending` in `recoverFromRemovedPlannedSet` and in `dropQueuedWritesNamingSession`); otherwise the row reads SYNC after its write landed or left. The breaks: the review's M12 and M13 (each `removePending` removed), which passed the same 16 tests. Probes R-M12 and R-M13 fail under them.
+
+From CONTEXT.md, "Where the build is":
+
+- **queue-fix 230** (2026-10-27, #230, `cd9e0fa`): an online delete drops the queued writes that name the deleted record (a log's own; a session's, with a coach note sent on with no session), a log refused because its planned set was removed is sent with no planned set (a change row so refused is dropped), the Library keeps an exercise with a set still queued, and sign-out clears every table (234) (What exists: Offline; "For the release", like 188f: four cases live since phase 1). 230 and 234 answered, 121 closed; new: 238. Tests owed: four.
+- **Where the build goes next:** every chunk, the tests-owed run and queue-fix 230 are merged; 230, 234 and 121 are closed. Next: the release checklist's data rows (the rows that write data or migrate are the final reviewer's; the screen-only rows go on Adam's list for his review pass on staging: the 1.2 cost rule; Adam, 2026-10-27: "Then go straight on to the release checklist's data rows on staging, without waiting for me. Put the screen-only rows on my list."). Queue-fix 230 left four tests owed (DECISIONS "Tests owed"): by the tests-owed rule a tests-only run adds them before the release checklist (test files only; nothing from Adam). 239 (a set logged offline whose first send fails reads as not logged and can be saved twice; executed on staging, older than 1.2) blocks the release's update notes, not the checklist; 238 (what 230 leaves) is for Adam's review pass.
+
+From CONTEXT.md, "Repo facts":
+
+- Vitest (node env; component tests opt into jsdom per file); 6616 tests in 358 files pass (2026-10-27, queue-fix 230); script tests 365. Pure logic lives in testable modules.

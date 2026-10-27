@@ -109,7 +109,7 @@ To-dos:
 ## Tests owed
 *Every missing-proof failure the reviewer merges (behaviour verified right, a test missing), one line each: chunk, PR, the test missing. One tests-only builder run before the release checklist adds them all, the way 176 does (RULES.md, "The 1.2 tests-owed rule").*
 
-*Emptied 2026-10-27 by the tests-owed run (#228, `44f41a3`): every line is done or owed nothing; each owed test failed under its named break (builder 16 of 16; review re-ran 10). The full lines are in HISTORY.md, "2026-10-27 tests-owed run review", word for word. Owed since: queue-fix 230's four (#230), the last lines below.*
+*Emptied 2026-10-27 by the tests-owed run (#228, `44f41a3`) and again by tests-owed run 2 (#232, `6ec67b9`, queue-fix 230's four): every line is done or owed nothing; each owed test failed under its named break (run 1: builder 16 of 16, review re-ran 10; run 2: builder 5 of 5, review re-ran M1 and M12). The full lines are in HISTORY.md, "2026-10-27 tests-owed run review" and "2026-10-27 tests-owed run 2 review", word for word.*
 
 - **46r** (#177), R4 (a swap's card drawn before the card it replaced numbers on its own): done, #228 (`workoutRules.place.test.ts`).
 - **54a** (#186), R54-W1 (19.8 lbs typed again on a 9 kg set writes nothing; 20 writes 9.07): done, #228 (`PlanPage.weightTarget.test.tsx`).
@@ -133,14 +133,10 @@ To-dos:
 - **63** (#221), R4 (the same for an unlogged warmup): done, #228 (`ExerciseCard.unlog.test.tsx`).
 - 64 (#224): none.
 - 69 (#226): none.
-- **queue-fix 230** (#230): a pass already running when History deletes a session must not send the session's finish it had read (`removedByCleanup.add` in `dropQueuedWritesNamingSession`, `src/features/offline/useSyncQueue.ts`).
-  - The break it must catch: the review's M1, that line removed (the running pass sends the finish and the deleted session comes back). It passed all 16 tests of `useSyncQueue.deletes.test.tsx`.
-  - Behaviour verified right: the review's probe R-M1 (`<scratchpad>/rq230/zzr230.probe.test.tsx`, on the builder's harness) passes on the branch and fails under M1.
-- **queue-fix 230** (#230): a cleanup the phone's database refuses is logged and doesn't fail History's delete that was done (`useDeleteSession`'s `.catch`, `src/features/history/useHistory.ts`); the deletes file pins the same for `useDeleteSetLog`. The break: the review's M8 (no `.catch`), which passed the same 16 tests. Probe R-M8 fails under it.
-- **queue-fix 230** (#230): a session cleanup the phone's database cuts short after one removal never leaves the session's own upsert (the sort in `dropQueuedWritesNamingSession` that removes the `v2_sessions` upserts first).
-  - The break: the review's M11, the sort removed: the finish stays and brings the deleted session back. It passed the same 16 tests.
-  - Probe R-M11 (the second device delete refused) fails under it.
-- **queue-fix 230** (#230): what a recovery or History's cleanup removes from the queue loses its pending-sync marker (`removePending` in `recoverFromRemovedPlannedSet` and in `dropQueuedWritesNamingSession`); otherwise the row reads SYNC after its write landed or left. The breaks: the review's M12 and M13 (each `removePending` removed), which passed the same 16 tests. Probes R-M12 and R-M13 fail under them.
+- **queue-fix 230** (#230), M1 (a pass already running when History deletes a session does not send the finish it had read): done, #232 (`useSyncQueue.deletes.test.tsx`).
+- **queue-fix 230** (#230), M8 (a cleanup the phone's database refuses is logged; History's delete resolves): done, #232 (`useSyncQueue.deletes.test.tsx`).
+- **queue-fix 230** (#230), M11 (a cleanup cut short after one removal has removed the session's finish first): done, #232 (`useSyncQueue.deletes.test.tsx`).
+- **queue-fix 230** (#230), M12 and M13 (a recovered log, and each write the session cleanup drops, loses its pending-sync marker): done, #232 (`useSyncQueue.deletes.test.tsx`).
 
 ## Format for all new entries
 
