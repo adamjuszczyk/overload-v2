@@ -15,8 +15,10 @@
 //     (SPEC: "Internal names (tables, code, routes) don't change"), which never appear as JSX text and, as strings,
 //     look like code. A string counts as CODE, not words, when it is ONE token (no whitespace) that does not start
 //     with a capital: 'tags', 'meso-1', '/meso/:mesocycleId/priorities', 'v2_mesocycles', 'mesocycleId',
-//     'runService'. The same word in JSX text, in a text attribute (placeholder, title, aria-label, alt, label, ...),
-//     or as a capitalised or multi-word string ('RUN', 'Tags', 'NO MESO', "the run's workouts") is words.
+//     'runService'. So is an argument of a query call (.from, .select, .eq, .order, .rpc, ...): a column list such as
+//     'id, tags, mesocycle_id' is names. The same word in JSX text, in a text attribute (placeholder, title,
+//     aria-label, alt, label, ...), or as a capitalised or multi-word string ('RUN', 'Tags', 'NO MESO',
+//     "the run's workouts") is words.
 //   - Not scanned: src/features/coach/** (Coach is frozen; this is also what keeps the G50 exception in place:
 //     MesoPrioritiesPage.tsx, a pre-1.1 finished program's priorities page, "opens as it is, wording included",
 //     SPEC G50, lives there), test files (*.test.ts / *.test.tsx), test support (*.testutil.ts / *.testutil.tsx,
