@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { scrollRowIntoView } from './scrollArea'
 
 // "Current set" = the first unlogged working set or drop of the session (SPEC [1.2] "Current set"; chunk 58a): SetRowCurrent.tsx marks
 // that one row's wrapper with data-current-set, which this hook finds (there is at most one on the screen: workoutRules' `currentSet`). A button is
@@ -28,7 +29,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 // caller-supplied useRef object — found by adversarial review: a plain
 // RefObject's identity never changes when `.current` changes, so an effect
 // keyed on that RefObject can never re-run when the DOM node itself is
-// swapped (e.g. GymSession.tsx conditionally returns <SessionComplete />
+// swapped (e.g. GymSession.tsx conditionally returns <FinishScreen />
 // instead of the exercises container on FINISH SESSION, then swaps back to
 // a brand-new container node on BACK TO SESSION — the same GymSession
 // component instance stays mounted throughout, so its hooks including this
@@ -89,23 +90,12 @@ export function useScrollToCurrentSet() {
     }
   }, [container, checkVisibility])
 
+  // Top quarter of the scroller, not dead center or the very top edge — keeps a bit of context visible above the row without burying it near the
+  // bottom. The math is `scrollArea.ts`'s (chunk 64), which the finish screen's GO BACK shares: one way to scroll a row into view.
   const scrollToCurrentSet = useCallback(() => {
     const target = targetRef.current
     if (!target) return
-    const rect = target.getBoundingClientRect()
-    const scrollParent = document.querySelector('main')
-    const viewportHeight = scrollParent?.clientHeight ?? window.innerHeight
-    const currentScrollTop = scrollParent?.scrollTop ?? window.scrollY
-    // Top quarter, not dead center or the very top edge — keeps a bit of
-    // context visible above the row without burying it near the bottom.
-    const targetOffset = viewportHeight * 0.25
-    const newScrollTop = currentScrollTop + (rect.top - targetOffset)
-
-    if (scrollParent) {
-      scrollParent.scrollTo({ top: newScrollTop, behavior: 'smooth' })
-    } else {
-      window.scrollTo({ top: newScrollTop, behavior: 'smooth' })
-    }
+    scrollRowIntoView(target)
   }, [])
 
   return { containerRef: setContainer, direction, scrollToCurrentSet }

@@ -339,7 +339,8 @@ describe('a swap for today: the moved sets are added sets of the new exercise, n
     // the original card draws no row for the set that moved, though the swap skipped it there (break: draw it there too)
     expect(s.server.logs.find((l) => l.weekPlanSetId === 'lat.3')).toMatchObject({ isSkipped: true })
     expect(s.rows().filter((r) => r.exerciseKey === 'lat').map((r) => r.key)).toEqual(['set:lat.1', 'set:lat.2'])
-    expect(finishWarning(s.order(), s.server.logs, s.server.held())).toBeNull()
+    // DECISIONS 201 (a), chunk 64: the planned set that moved is still one the person has not done, so the finish warning lists it under the new card (46r left it out: it is an added set there)
+    expect(finishWarning(s.order(), s.server.logs, s.server.held())!.text).toBe("1 planned set isn't logged yet: machine 03.")
     // LOG stores the number its row shows, the place the swap gave it and its type
     const moved = s.rows().find((r) => r.exerciseKey === m && r.kind === 'working')!
     expect([moved.type, moved.slotKey, moved.addedPlace]).toEqual([staged('dropset', 1), 'lat', 1])

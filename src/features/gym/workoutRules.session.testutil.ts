@@ -76,6 +76,8 @@ export class Session {
   old: Map<string, string[]>
   /** The gaps a swap left (46r's Q1), by their token in `places`: whether the set was a warmup at the swap, and its added place. */
   gaps: Map<string, { warmup: boolean; place: number | null }>
+  /** The places of the sets a swap moved to each card FROM PLANNED SETS, recorded from the swap's own input rows (DECISIONS 201 (a): the sets the finish warning lists beside the planned ones). */
+  movedPlanned: Map<string, Set<number>>
   private serial = 0
 
   constructor(cards: OrderExercise[], blocks: OrderSuperset[] = [], logs: SetLog[] = []) {
@@ -83,6 +85,7 @@ export class Session {
     this.blocks = blocks
     this.server = new FakeServer({ logs })
     this.gaps = new Map()
+    this.movedPlanned = new Map()
     this.slotOf = new Map(cards.map((c) => [c.key, c.key]))
     const oldLogs = (c: OrderExercise) =>
       logs
@@ -110,6 +113,7 @@ export class Session {
       slotOf: new Map(this.slotOf),
       old: new Map([...this.old].map(([k, v]) => [k, [...v]])),
       gaps: new Map(this.gaps),
+      movedPlanned: new Map([...this.movedPlanned].map(([k, v]) => [k, new Set(v)])),
       serial: this.serial,
       clock: this.clock,
       lastCorrections: [],
@@ -311,6 +315,9 @@ export class Session {
     const exerciseId = exerciseIdOf(to)
     const key = `${to}~${++this.serial}`
     const moves = movedSetEntries(this.order(), this.server.logs, { exerciseId, name: to }, open.map((row) => ({ row, localId: `m${++this.serial}` })))
+    // which of the moved sets came from a planned set (201 (a)): the rows the swap was handed, in the order the swap numbers them in (their places on the card they left), each with the place it took
+    const byPlace = [...open].sort((a, b) => a.planIndex - b.planIndex)
+    this.movedPlanned.set(key, new Set(moves.record.moved.filter((_, i) => byPlace[i].weekPlanSetId !== null).map((m) => m.place)))
     for (const row of open) {
       const id = `walk.${++this.serial}`
       this.server.insertLog({
@@ -349,6 +356,11 @@ export class Session {
     // a member with a swap leaves its block, as today's screen moves a swapped member out of its round grid
     this.blocks = this.blocks.map((b) => ({ ...b, members: b.members.filter((m) => m !== fromKey) }))
     return key
+  }
+
+  /** A set a swap moved from a planned set (201 (a)): by the place it took on the card it moved to, which no later step changes. */
+  movedFromPlan(row: Pick<ResolvedRow, 'exerciseKey' | 'added' | 'addedPlace'>): boolean {
+    return row.added && row.addedPlace !== null && this.movedPlanned.get(row.exerciseKey)?.has(row.addedPlace) === true
   }
 
   /** The card the row `key` is on, as the card keeps it now. */

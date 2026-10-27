@@ -48,15 +48,16 @@ export interface WorkoutRows {
   rows: ResolvedRow[]
   current: ResolvedRow | null
   /**
-   * What the rows say is left (46r's `finishWarning`: the planned working sets still unlogged, a deleted one not among them), or null when nothing
-   * is. The finish screen's warning reads this (chunk 64).
+   * What the rows say is left (46r's `finishWarning`: the planned working sets still unlogged, a deleted one not among them, a set a swap moved from a
+   * planned set among them since chunk 64: DECISIONS 201 (a)), or null when nothing is. The finish screen's warning reads this.
    */
   finish: FinishWarning | null
   /**
    * Auto-finish's question (chunk 61, DECISIONS 166 (a)): nothing is left to log. The finish warning is empty AND no open row is a drop of a
    * planned set or a planned warmup (`holdsAutoFinish`); the warning alone lists the planned working sets only, so an open planned drop or an
-   * open planned warmup would let the session complete by itself (61's review 1, F2). The warning stays in it: 64 adds a swap's moved planned
-   * sets to the warning (DECISIONS 201 (a)) and auto-finish follows.
+   * open planned warmup would let the session complete by itself (61's review 1, F2). The warning stays in it: since chunk 64 it lists a swap's
+   * moved planned sets too (DECISIONS 201 (a)), and auto-finish follows. A set a swap moved from a planned set counts as planned in
+   * `holdsAutoFinish` too (`ResolvedRow.movedFromPlan`: 64's review 1, F1), so its open drops and a moved planned warmup hold it.
    */
   nothingLeft: boolean
   /** The number patches the rows call for (DECISIONS 178, 185 (c)): logged sets whose stored number is not the row's. */

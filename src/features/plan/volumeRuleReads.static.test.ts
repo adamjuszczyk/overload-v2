@@ -52,7 +52,7 @@ describe('G51 — the Drops and stages rule is the VOLUME sheet\'s alone', () =>
   })
 
   it('History\'s set count and the finish screen\'s tile read no setting by that name, whatever else they read', () => {
-    const FINISH = ['features/gym/SessionComplete.tsx', 'features/gym/CompletedTodayScreen.tsx', 'features/gym/countCompletedSets.ts']
+    const FINISH = ['features/gym/FinishScreen.tsx', 'features/gym/CompletedTodayScreen.tsx', 'features/gym/countCompletedSets.ts']
     const counts = sources.filter(([path]) => /^features\/history\//.test(path) || FINISH.includes(path))
     expect(counts.map(([path]) => path)).toEqual(expect.arrayContaining([...FINISH, 'features/history/HistorySessions.tsx', 'features/history/historyService.ts']))
     expect(counts.filter(([, text]) => NAMES_THE_SETTING.test(text)).map(([path]) => path)).toEqual([])
