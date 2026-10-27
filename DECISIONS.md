@@ -1,17 +1,18 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-27, chunk 64's review 2 (merged, #224).*
-- *Chunk 64 (Finishing) is merged (#224, `9ebb6c9`) on its second attempt: FINISH SESSION opens W18 (W19 for a reopened session); the finish warning lists a set a swap moved from a planned set (201 (a)), and its open drops and a moved planned warmup hold auto-finish (166 (a); review 1's F1, fixed). New: 235 (D31, accepted as built, with the reopened reading). Tests owed: none. TASKS 64's Staging list goes to the release checklist (it ends the seed's in-progress session). 230 still blocks the release.*
+*Rewritten at every boundary. Last: 2026-10-27, chunk 69's review (merged, #226).*
+- *Chunk 69 ("Program" everywhere, "cues" everywhere) is merged (#226, `940408b`): every chunk in the build order is merged. Next: the tests-only run for "Tests owed", then the release checklist's data rows (the final reviewer's); its screen-only rows go on your list for the review pass. New: 236 (D31, accepted as built; Coach not swept, per your 154). Tests owed: none.*
 
 What blocks, in order:
-1. **230** (a decision, below): the release waits for its answer (fixed before it, or "known" lines in the update notes). Recommended: (a), one small DATA fix chunk after 64 and before the release checklist; 69 doesn't wait.
-2. **121** (a to-do, below): the release's migrations PR waits for it.
-Nothing else blocks a chunk or the release.
+1. **230** (a decision, below): the release waits for its answer (fixed before it, or "known" lines in the update notes). Recommended: (a), one small DATA fix chunk before the release checklist.
+2. **121** (a to-do, below): the release's migrations PR waits for it (paste the `migration list --linked` output).
+Nothing else blocks the release.
 
 Decisions that block a chunk: none.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
+- **236** — chunk 69's display choices on the wording sweep (D31), (a)–(f): GO TO PROGRAMS → kept on `/program` (a), "(ACTIVE)" kept (b), two thrown messages reworded (c), and (f) Coach's MESO words left as they are, per your 154 ("Coach stays exactly as it is"), listed for the update notes. Recommended: accept all, as built. Blocks: nothing.
 - **235** — chunk 64's display choices on FINISH (D31), (a)–(i), and its readings (j)–(l): (j) a session is a reopened one (W19, no box) when it carries a note or a rating from the earlier COMPLETE, since 1.2 adds no marker. Recommended: accept all, as built. Blocks: nothing.
 - **232** — UNLOG's disabled note says TASKS 63's "Log its drops first", where SPEC 18c's way on is to unlog the drops ("can't be unlogged until they are"). Recommended: (a), "Unlog its drops first" (one constant, `UNLOG_BLOCKED_NOTE`). Blocks: nothing (display).
 - **233** — a logged warmup's ✕ (rows mode) and the tick list's untick still delete its log with no draft, as since 58a; SPEC's unlog is the edit panel's UNLOG, which a logged warmup has since 63. Recommended: (a), drop the ✕ (board W2b draws none) and make the untick an unlog (no confirm, SPEC 18c). Blocks: nothing (nothing a user expects to keep is lost).
@@ -70,6 +71,7 @@ To-dos:
 - Update notes: fixed, a bug live since phase 1: a week marked as deload again after a mark that stopped part way (a dropped connection, the app closed) saved a marked session's deloaded sets over its plan, so UNMARK brought back the deload and not the plan (chunk 188f; DECISIONS 188 (a)).
 - **queue-fix 227** — (#219, `84c8000`), Adam 2026-10-26 (DECISIONS 227): the sync queue treats a change row that names a log as hanging under that log (it cancels with the log's never-sent pair, the log's queued delete waits behind it, and an online delete of the log drops it), and an online delete of a head drops the stage upserts still queued under it. The stage shape is live in production since phase 1 (executed on master's own code: a set logged offline under a dropset, its first send failed, the dropset deleted online, refused `23503` for ever), so it ships with the release; no migration, no stored row changes.
 - Update notes: fixed, a bug live since phase 1: a set logged offline under a dropset whose first send failed, then the dropset deleted, left a "couldn't sync" notice that could not be cleared (queue-fix 227; DECISIONS 227).
+- Update notes: Coach (your account only) still says MESO and mesocycle in five places (its MESO tab, two empty-state lines, NO MESO on the week and session analyses), and a pre-1.1 program's priorities page says MESOCYCLE NOT FOUND (G50); every other screen says "program" (chunk 69; DECISIONS 154, 236).
 - Update notes, by 230's answer: the same notice through a session deleted in History, or a planned set removed on Plan, while one of its sets was still waiting to sync (live since phase 1; in the second case the set never reaches the server), and a set deleted while its first send was failing coming back: "fixed" if 230 (a) is built before the release, else "known" (DECISIONS 230).
 
 ## Tests owed
@@ -97,6 +99,7 @@ To-dos:
 - **63** (#221): the re-LOG of an unlogged set on an lbs exercise sends the draft's exact kg when the weight is left as shown (`resolveEditedWeightKg` in `SetRowCurrent.tsx`'s LOG): 9 kg shows as 19.8 lbs and must go back as 9, not 8.98 (RULES, 54a's round-trip rule). The break it must catch is the review's R3, `toStorageWeight` for every LOG, which passed the same 53 tests (every unlog test is in kg). Same probe (R3).
 - **63** (#221): the same for an unlogged warmup's re-LOG (`SetRowWarmup.tsx`'s `handleLog`). The break it must catch is the review's R4, which passed the same 53 tests. Same probe (R4).
 - **64** (#224): none. The review re-ran 10 of attempt 2's 12 breaks (R1, the pre-fix predicate, fails 8 tests) and 11 of attempt 1's (P2, P3, P9a, P12a–f, P13b, P16: COMPLETE's session-row writes and the drafts clear included): all caught, each by named failing tests; review 1's probe passes.
+- **69** (#226): none. The review re-ran 15 of the builder's 17 breaks, one per call pattern (8 at the screens, the 7 scanner breaks): all caught, each by named failing tests; the check fails on staging's tree before the chunk (15 strings) and passes after.
 
 ## Format for all new entries
 
@@ -846,6 +849,20 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (j) How a reopened session is known (SPEC 11: "A reopened session finishes through W19"; TASKS 64 names no marker; 1.2 adds no column, Migration: none; `reopenSession` sets only `status` and `completed_at`): a session is a reopened one when it carries a note or an energy or pump rating, what the earlier COMPLETE saved (`finishView.ts`, `isReopened`). The miss, a session completed with no note and no rating and then reopened, draws W18, with its box if planned sets are open, which hides no work; COMPLETE writes the same either way (the payload tests cover both). To see W19 on staging, the first COMPLETE saves a note or a rating.
 - (k) A moved set is found in the swap's record by the place it took (179). Two sets of one exercise hold one place only when two phones add at once (173); a set of that place on the swap's card would then be read as the moved one.
 - (l) A planned set moved twice gets a second record that names `{ addedPlace }`, so on the third card it would read as an added set; not reachable, since a swap's card offers no second swap (199 (a), `canSwap`).
+
+### 236 Chunk 69's display choices on the wording sweep, and Coach's words (provisional, D31; accepted as built)
+**Ask:** chunk 69's choices where SPEC Language [1.2] and TASKS 69 give no single answer are accepted as built and listed for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups). Coach is not swept: SPEC's Scope of the look listed Coach among the screens whose 1.2 change is the wording sweep, while TASKS 69 excepts it and your answer to 154 says "Coach stays exactly as it is"; 154 settles it, and SPEC now says so (Scope of the look, Language, G50).
+**Recommendation:** accept all, as built; Coach's remaining words go in the update notes ("For the release").
+**Blocks:** nothing.
+**Options:** (a)–(f) below, each accepted or changed by letter; for (f), sweep Coach's strings too (Coach's frozen files change; `check-frozen-code.mjs` would need its baseline moved).
+**Answer:**
+**Evidence:** the builder's report (`<scratchpad>/build/chunk-69-builder-1.md`, section 3) and the review (#226): the check fails on staging `4171b58` (15 strings) and passes on the merge; the review's audit of the strings the check skips as code (one lowercase token) found 9, all keys or comparisons, none drawn.
+- (a) Today's GO TO PROGRAMS → still goes to `/program`, which opens Plan on PROGRAMS (TASKS wrote `/plan` on PROGRAMS; with no program running `/plan` opens there too); pinned in `TodayPage.noProgram.test.tsx`.
+- (b) "Active" stays: History's program filter marks the running program "(ACTIVE)" and Progress's selector "(active)"; SPEC's name for it is "current program", but the retired words are meso, mesocycle and run.
+- (c) The two `RangeError` messages in `programChange.ts`, which reach the screen through CHANGE THE PROGRAM's real-reason line, say "program" where they said "run".
+- (d) The check also retires "change the plan" (SPEC Language's third bullet) and tagged / untagged / tagging with tag, and counts console messages; Progress's empty state points to "Plan → Programs".
+- (e) History's confirm reads "DELETE FINISHED PROGRAM?" (TASKS' words) under DELETE PROGRAM, whose card shows for a finished program only, as before.
+- (f) Coach's words left as they are (154): `CoachAnalysisTab.tsx:29` the tab "MESO"; `CoachMesoAnalysisTab.tsx:88` "A mesocycle becomes available here once you mark it complete." and `:143` "Analyze a complete mesocycle above to see its write-up here."; `CoachWeekAnalysisTab.tsx:97` and `CoachSessionAnalysisTab.tsx:113` "NO MESO"; G50's `MesoPrioritiesPage.tsx:123` "MESOCYCLE NOT FOUND". Coach's model-facing prompts also say "mesocycle" and "run" (not UI). The staging bundle's uppercase MESO is these and the `/meso/…` routes only.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
