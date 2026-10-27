@@ -87,10 +87,15 @@ async function withFinishDerivedFromServer(payload: Record<string, unknown>) {
 // its log, and the log's delete behind the writes to its rows, so a delete is
 // never sent ahead of a row still to be created (the row would then be refused
 // for ever, `23503`, naming a log that is gone). Writes to any other record still go.
+//
+// A record the user deletes online while a write that names it waits here (DECISIONS 230) is dealt with in three places, each by what the server's own foreign key does to
+// a row that got there first: a log's own queued writes leave with an online delete of the log (they would bring it back), a session's leave with History's delete of the
+// session (`ON DELETE CASCADE` took theirs; a coach note, `ON DELETE SET NULL`, goes on with no session), and a log refused because the planned set it names was removed on
+// Plan is sent again with no planned set (`SET NULL`), its change row dropped (`CASCADE`). Only a write that names the deleted record is touched, and nothing is held back.
 const SESSION_SET_CHANGES_TABLE = 'v2_session_set_changes'
 
 function payloadOf(item: SyncQueueItem) {
-  return (item.payload ?? {}) as { id?: string; session_id?: string | null; parent_set_id?: string | null; set_log_id?: string | null }
+  return (item.payload ?? {}) as { id?: string; session_id?: string | null; parent_set_id?: string | null; set_log_id?: string | null; exercise_id?: string | null }
 }
 
 function recordKey(item: SyncQueueItem): string | null {
@@ -246,8 +251,45 @@ function patchOf(payload: unknown): { id: string; changes: { set_number: number 
   throw new Error('a queued patch is { id, set_number } or { id, stage_kind: null } and nothing else')
 }
 
+// DECISIONS 230. The queue items an online delete's cleanup removed (`dropQueuedWritesNamingLog`, `dropQueuedWritesNamingSession`) while a pass was running: the pass
+// read its list before the delete, so it still holds them, and sending one after the delete would bring the deleted record back. The pass skips them; the set is emptied
+// when a pass starts (a queue item's id is never used twice, so one removed before that pass began can't be in the list it reads).
+const removedByCleanup = new Set<number>()
+
+// DECISIONS 230 (iii). A write refused `23503` because the planned set it names was removed on Plan while it waited: `v2_set_logs.week_plan_set_id` (001, ON DELETE SET NULL)
+// and `v2_session_set_changes.week_plan_set_id` (042, ON DELETE CASCADE), both to `v2_week_plan_sets`. The constraint's name says which key refused, in the message PostgREST
+// answers (`… violates foreign key constraint "v2_set_logs_week_plan_set_id_fkey"`) and the key in its details (`Key (week_plan_set_id)=(…) is not present`); any other refusal,
+// and any other key, is a failed attempt as before.
+const PLANNED_SET_KEY: Record<string, string> = { v2_set_logs: 'v2_set_logs_week_plan_set_id_fkey', [SESSION_SET_CHANGES_TABLE]: 'v2_session_set_changes_week_plan_set_id_fkey' }
+
+function refusedOnPlannedSet(item: SyncQueueItem, err: unknown): boolean {
+  const e = err as { code?: unknown; message?: unknown; details?: unknown } | null
+  const constraint = PLANNED_SET_KEY[item.table]
+  if (!e || e.code !== '23503' || constraint === undefined) return false
+  return (typeof e.message === 'string' && e.message.includes(`"${constraint}"`)) || (typeof e.details === 'string' && e.details.startsWith('Key (week_plan_set_id)='))
+}
+
+// What the server would have ended with had the row got there before the planned set went: a log stays with no planned set, so the queued log is sent that way (now, in this
+// pass, and kept that way in the queue if the request fails again); a change row goes with its planned set, so the queued row leaves the queue. Returns whether the item is
+// settled; a request that fails again is thrown, to be counted as a failed attempt like any other.
+async function recoverFromRemovedPlannedSet(item: SyncQueueItem, err: unknown): Promise<boolean> {
+  if (item.operation !== 'upsert' || !refusedOnPlannedSet(item, err)) return false
+  const { removePending } = useOfflineStore.getState()
+  const id = payloadOf(item).id
+  if (item.table === 'v2_set_logs') {
+    const row = { ...(item.payload as Record<string, unknown>), week_plan_set_id: null }
+    await db.sync_queue.update(item.id!, { payload: row })
+    const { error } = await supabase.from(item.table).upsert(row)
+    if (error) throw error
+  }
+  await db.sync_queue.delete(item.id!)
+  if (id) removePending(id)
+  return true
+}
+
 async function flushOnce() {
   const { removePending } = useOfflineStore.getState()
+  removedByCleanup.clear() // what an earlier cleanup removed is not in the queue this pass reads; only a cleanup during this pass matters
   const items = await dropNeverSentPairs(await db.sync_queue.orderBy('createdAt').toArray())
   const hanging = hangingUnderLogs(items)
   // Record keys with an earlier write still unsent in this pass.
@@ -255,6 +297,7 @@ async function flushOnce() {
   for (const item of items) {
     const payload = item.payload as { id?: string }
     const own = recordKey(item)
+    if (removedByCleanup.has(item.id!)) continue
     if (item.gaveUp || dependencyKeys(item, hanging).some((k) => held.has(k))) {
       if (own) held.add(own)
       continue
@@ -285,6 +328,12 @@ async function flushOnce() {
       await db.sync_queue.delete(item.id!)
       if (payload?.id) removePending(payload.id)
     } catch (err) {
+      let failure = err
+      try {
+        if (await recoverFromRemovedPlannedSet(item, err)) continue
+      } catch (again) {
+        failure = again
+      }
       if (own) held.add(own)
       const attempts = (item.attempts ?? 0) + 1
       // Never dropped: after MAX_SYNC_ATTEMPTS it stops retrying on its own
@@ -292,7 +341,7 @@ async function flushOnce() {
       // until the user taps retry on the screen it belongs to.
       const gaveUp = attempts >= MAX_SYNC_ATTEMPTS
       await db.sync_queue.update(item.id!, { attempts, gaveUp })
-      console.error(gaveUp ? '[sync] stopped retrying item' : '[sync] attempt failed for item', attempts, item.id, err)
+      console.error(gaveUp ? '[sync] stopped retrying item' : '[sync] attempt failed for item', attempts, item.id, failure)
     }
   }
 
@@ -433,19 +482,73 @@ export async function queueSetLogStageKindClear(log: { id: string; sessionId: st
 // log with it (042: a change row's `set_log_id`, ON DELETE CASCADE; 010: a stage log's `parent_set_id`, ON DELETE CASCADE), and a queued upsert of one of those would
 // be refused `23503` for ever: they leave the queue, and only they, the upserts of change rows whose `set_log_id` is this log's and the upserts of stage logs whose
 // `parent_set_id` is this log's (1.1 has the defect in this second shape: a stage logged offline under a head that is then deleted online). Every other queued write
-// stays, however it is related (another log's rows or stages, the session's other rows, the log's own writes, a stage's queued delete or patch, which match no row and
+// stays, however it is related (another log's rows or stages, the session's other rows, a stage's queued delete or patch, which match no row and
 // are never refused, a finish). Called after the request has been answered, never before: a delete that fails leaves the writes, and the log, in place. A write that had
 // given up was on the "couldn't sync" notice, which is made again from what is left. Returns how many writes left.
+//
+// DECISIONS 230 (i): the log's OWN queued upserts and patches leave too. The request deleted the log on the server (a delete that names no row still answers ok), and a queued
+// upsert of it, kept for a send that had failed, would create it again at the next pass: a set the user deleted (or unlogged, chunk 63) comes back. Its own queued delete stays
+// (it matches no row and is never refused), and so does every write to any other log, stage or session, in the same queue. They go log first, then what hangs under it: a removal
+// the device's database refuses half way must leave a row refused for ever, never a deleted log that comes back.
 export async function dropQueuedWritesNamingLog(logId: string): Promise<number> {
-  const named = (await db.sync_queue.toArray()).filter((item) => namedLogIdOf(item) === logId || (item.operation === 'upsert' && headIdOf(item) === logId))
+  const isOwn = (item: SyncQueueItem) => item.table === 'v2_set_logs' && (item.operation === 'upsert' || item.operation === 'patch') && payloadOf(item).id === logId
+  const named = (await db.sync_queue.toArray())
+    .filter((item) => isOwn(item) || namedLogIdOf(item) === logId || (item.operation === 'upsert' && headIdOf(item) === logId))
+    .sort((a, b) => Number(isOwn(b)) - Number(isOwn(a)))
   const { removePending } = useOfflineStore.getState()
   for (const item of named) {
+    removedByCleanup.add(item.id!)
     await db.sync_queue.delete(item.id!)
     const id = payloadOf(item).id
     if (id) removePending(id)
   }
   if (named.length > 0) useOfflineStore.getState().setSyncFailures(failuresOf(await db.sync_queue.orderBy('createdAt').toArray()))
   return named.length
+}
+
+// DECISIONS 230 (ii). History's delete of a session (`useDeleteSession`'s direct request) has gone through. The server took the session's set logs (001: `session_id`, ON DELETE
+// CASCADE) and its change rows (042: the same) with it, so a queued upsert of one is refused `23503` for ever; and a queued upsert of the session's own row (a finish, a skip) would
+// create the session again. The writes that name the session leave the queue: set-log and change-row upserts by `session_id`, the session's own upserts by `id`, a queued delete or
+// patch of one of its logs by the `sessionId` beside it. A coach note that names it (017: ON DELETE SET NULL) is the user's own words and is never dropped: it goes on with no session,
+// as the server would have left it. Every other session's writes, other notes and everything else stay. Called after the request has been answered, never before. Returns how many
+// writes left; the notice is made again from what is left.
+function namesSession(item: SyncQueueItem, sessionId: string): boolean {
+  const p = payloadOf(item)
+  if (item.table === 'v2_sessions') return item.operation === 'upsert' && p.id === sessionId
+  if (item.table === 'v2_set_logs') return p.session_id === sessionId || item.sessionId === sessionId
+  if (item.table === SESSION_SET_CHANGES_TABLE) return p.session_id === sessionId
+  return false
+}
+
+export async function dropQueuedWritesNamingSession(sessionId: string): Promise<number> {
+  const items = await db.sync_queue.toArray()
+  // The session's own upserts first (a session that comes back is the worst a half-finished cleanup could leave), then what hangs under it.
+  const named = items.filter((item) => namesSession(item, sessionId)).sort((a, b) => Number(b.table === 'v2_sessions') - Number(a.table === 'v2_sessions'))
+  const notes = items.filter((item) => item.table === 'v2_coach_notes' && item.operation === 'upsert' && (item.payload as { session_id?: string | null } | null)?.session_id === sessionId)
+  const { removePending } = useOfflineStore.getState()
+  for (const item of named) {
+    removedByCleanup.add(item.id!)
+    await db.sync_queue.delete(item.id!)
+    const id = payloadOf(item).id
+    if (id) removePending(id)
+  }
+  for (const note of notes) await db.sync_queue.update(note.id!, { payload: { ...(note.payload as Record<string, unknown>), session_id: null } })
+  if (named.length > 0 || notes.length > 0) useOfflineStore.getState().setSyncFailures(failuresOf(await db.sync_queue.orderBy('createdAt').toArray()))
+  return named.length
+}
+
+// DECISIONS 230 (the Library's delete of an exercise): how many logs this phone still has to send for the exercise. The Library counts the server's logs to choose between deleting an
+// exercise for good (none) and keeping it as lost (any); a log still waiting here is a log of it, and a delete that went ahead would leave it refused `23503` for ever
+// (`v2_set_logs.exercise_id` has no delete action). A log queued together with its own delete never reaches the server and is not counted.
+export async function queuedSetsNamingExercise(exerciseId: string): Promise<number> {
+  const items = await db.sync_queue.toArray()
+  const deleted = new Set(items.filter((item) => item.table === 'v2_set_logs' && item.operation === 'delete').map((item) => payloadOf(item).id))
+  const logs = new Set<string>()
+  for (const item of items) {
+    const p = payloadOf(item)
+    if (item.table === 'v2_set_logs' && item.operation === 'upsert' && p.exercise_id === exerciseId && p.id && !deleted.has(p.id)) logs.add(p.id)
+  }
+  return logs.size
 }
 
 async function lastQueuedWriteIsPatch(logId: string, setNumber: number): Promise<boolean> {
