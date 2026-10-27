@@ -33,50 +33,51 @@
 --   * counts: every table the same. 046 inserts and deletes nothing.
 --   * fingerprint "outside his active week-dependent runs": rows, week_only, removed and md5 all the same.
 --   * run rows: rows the same. week_only goes down by the hidden rows (a 1.1 swap's or add's) that the run's last planned week
---     lists; removed goes down by the removed rows that week still lists and up by the live rows it doesn't list; the md5
---     changes whenever any row of that run changed its week_only, removed_at or position (a reorder changes the md5 and no count).
+--     lists; removed goes down by the removed rows that week still lists and up by the live rows it doesn't list, so the two
+--     can cancel (one row brought back, another taken out: removed stays where it was); the md5 changes whenever any row of
+--     that run changed its week_only, removed_at or position, which is how a cancelled count or a reorder shows.
 --   * fingerprint "all his rows": the md5 differs exactly when some run row's md5 differs.
 --   * A user whose runs already match their last planned week: nothing changes, every row but `taken` is identical before and
 --     after.
 --   Anything else (a count that moved, a changed md5 outside the runs, a run's rows that moved) is not 046: stop and ask.
 --
--- Not in it: RC44's query (the sequence-run case, TASKS-1.2.md), and the tables 046 doesn't mention (scripts/live-counts.sql
--- counts the others, but not v2_week_plan_exercises).
+-- Not in it: RC44's query (the sequence-run case, TASKS-1.2.md), a separate reading, and the tables 046 doesn't mention
+-- (scripts/live-counts.sql counts six of these seven, not v2_week_plan_exercises, and the rest of his tables).
 
-with
-  his_runs as (
-    select m.id as run_id,
-           coalesce(m.name, 'unnamed') as run_name,
-           coalesce(p.schedule_type, 'no schedule type') as schedule_type,
-           p.id as program_id
-      from public.v2_mesocycles m
-      join public.v2_programs p
-        on p.id = m.program_id
-       and p.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-       and p.kind = 'run'
-       and p.planning_type = 'week_dependent'
-     where m.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-       and m.status = 'active'
-  ),
-  his_rows as (
-    select e.id,
-           e.week_only,
-           e.removed_at,
-           r.run_id,
-           e.id::text
-             || '|' || coalesce(e.week_only::text, '')
-             || '|' || coalesce(to_char(e.removed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US'), '')
-             || '|' || coalesce(e.position::text, '') as line
-      from public.v2_program_exercises e
-      left join public.v2_workout_days wd
-        on wd.id = e.workout_day_id
-       and wd.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-      left join his_runs r
-        on r.program_id = wd.program_id
-     where e.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
-  )
 select q.section, q.item, q.rows, q.week_only, q.removed, q.fingerprint
   from (
+    with
+      his_runs as (
+        select m.id as run_id,
+               coalesce(m.name, 'unnamed') as run_name,
+               coalesce(p.schedule_type, 'no schedule type') as schedule_type,
+               p.id as program_id
+          from public.v2_mesocycles m
+          join public.v2_programs p
+            on p.id = m.program_id
+           and p.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
+           and p.kind = 'run'
+           and p.planning_type = 'week_dependent'
+         where m.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
+           and m.status = 'active'
+      ),
+      his_rows as (
+        select e.id,
+               e.week_only,
+               e.removed_at,
+               r.run_id,
+               e.id::text
+                 || '|' || coalesce(e.week_only::text, '')
+                 || '|' || coalesce(to_char(e.removed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US'), '')
+                 || '|' || coalesce(e.position::text, '') as line
+          from public.v2_program_exercises e
+          left join public.v2_workout_days wd
+            on wd.id = e.workout_day_id
+           and wd.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
+          left join his_runs r
+            on r.program_id = wd.program_id
+         where e.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f'
+      )
     select 0 as ord, 'scope' as section, 'user_id 12e79b69-9891-4f53-a7cf-650edd83659f' as item,
            null::bigint as rows, null::bigint as week_only, null::bigint as removed, null::text as fingerprint
     union all
