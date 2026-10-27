@@ -256,6 +256,29 @@ describe('with "Log sets in order" on, LOG on a row that is not the current set 
   })
 })
 
+// Chunk 60's review (R1): a drop is an open row with its own LOG once its head is logged, and the lock asks about it like any other row.
+describe('with "Log sets in order" on, LOG on a drop that is not the current set asks first, in 46r\'s words for a drop', () => {
+  it('set 03 logged while set 02 is open: LOG on its drop 1 asks "Log set 03 drop 1 before set 02?", writes nothing yet, and logs the drop with the question\'s button (break: a drop row skips the question)', async () => {
+    useSettingsStore.setState({ logInOrder: true })
+    const head3 = logOf({ id: 'l-lat-3', exerciseId: 'ex-lat', weekPlanSetId: 'lat-3', setNumber: 3, weight: 52.5, reps: 9, rir: 1, stageKind: 'dropset' })
+    const { container } = open(w1Plan, [...w1Logs().filter((l) => l.id !== 'l-lat-2'), head3])
+    expect(currentKey(container)).toBe('set:lat-2') // the first set still open
+    const drop = rowOf(container, 'set:lat-3:stage:1')
+    expect(drop.hasAttribute('data-current-set')).toBe(false)
+    typeInto(drop, 'Reps', '12') // the plan's AMRAP is a placeholder, so LOG needs reps typed
+    await press(logButton(drop))
+
+    const sheet = screen.getByRole('dialog', { name: 'Log set 03 drop 1 before set 02?' })
+    expect(sheet.textContent).toContain('The next set is Lat Pulldown 02.')
+    expect(writes).toEqual([]) // nothing is written until it is answered
+
+    await press(within(sheet).getByRole('button', { name: /^LOG SET 03 DROP 1$/i }))
+    expect(writes).toHaveLength(1)
+    expect(writes[0]).toMatchObject({ exerciseId: 'ex-lat', parentSetId: 'l-lat-3', isDropset: true, stageIndex: 1, weight: 40, reps: 12, isSkipped: false })
+    expect(dialog()).toBeNull()
+  })
+})
+
 describe('with "Log sets in order" off, every LOG logs at once', () => {
   it('LOG on A2 writes at once and asks nothing (the fixture\'s `false` is not the default)', async () => {
     expect(DEFAULT_SETTINGS.logInOrder).toBe(true)

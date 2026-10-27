@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import type { ReactElement } from 'react'
-import { USER, makeWorld, plan, planId, setId, type World } from './reviewWorld.testutil'
+import { NOW, USER, makeWorld, plan, planId, setId, type World } from './reviewWorld.testutil'
 
 // Chunk 56 (TASKS-1.2 "REVIEW", Verification, screen tests): the line and the sheet over the seed-shaped week, through the real hooks, the
 // real service, the fake PostgREST and a stand-in for 043's `v2_apply_ops` (`reviewWorld.testutil.ts`). The service's own requests are
@@ -279,6 +279,71 @@ describe('W: pending and error, per item', () => {
     expect(alert.textContent).toContain("Couldn't ignore this.")
     expect(alert.textContent).toContain('connection lost')
     expect(screen.getAllByRole('alert')).toHaveLength(1)
+  })
+})
+
+// Chunk 56's review (M1, M12, M13): three behaviours no test above pressed, each asserted on the screen. Which plan row a press writes to (every item the
+// tests above press is in the first row's group), and that an item another phone decided goes when it is pressed, with nothing sent, whether the
+// service finds the decision on its read or meets it as the unique key's refusal.
+describe('W: a press writes to its own session\'s plan row, and an item decided elsewhere goes when it is pressed', () => {
+  const groupItems = (heading: string) =>
+    [...document.querySelectorAll('[data-review-group]')].filter((g) => g.textContent!.includes(heading)).flatMap((g) => [...g.querySelectorAll('[data-review-item]')]) as HTMLElement[]
+
+  it('(M1) an item of the second day\'s group is written to the second day\'s plan row: Upper B done too, its decision and every set write name its plan row (break: every item takes this week\'s first plan row)', async () => {
+    world = makeWorld({ ub: 'completed' })
+    h.client = world.client
+    openSheet()
+    await screen.findByText(/UPPER B/)
+    const first = groupItems('UPPER B')
+    expect(first.length).toBeGreaterThan(1) // a group of its own, with items to press one after another
+    const k1 = first[0].getAttribute('data-review-item')!
+    fireEvent.click(within(first[0]).getByRole('button', { name: 'IGNORE' }))
+    await waitFor(() => expect(item(k1)).toBeNull())
+    expect(world.tables.v2_week_review_decisions).toMatchObject([{ week_plan_id: planId('ub', 3), item_key: k1, decision: 'ignored', user_id: USER }])
+
+    const before = structuredClone(world.tables.v2_week_plan_sets)
+    const next = groupItems('UPPER B')[0]
+    const k2 = next.getAttribute('data-review-item')!
+    fireEvent.click(within(next).getAllByRole('button')[1]) // the item's own action, the one that writes the week's sets
+    await waitFor(() => expect(item(k2)).toBeNull())
+    const ops = world.sent[world.sent.length - 1] as Array<{ op: string; table: string; id?: string; row?: Record<string, unknown> }>
+    const setOps = ops.filter((o) => o.table === 'v2_week_plan_sets')
+    expect(setOps.length).toBeGreaterThan(0)
+    for (const o of setOps) {
+      const planOf = o.op === 'insert' ? o.row!.week_plan_id : before.find((s) => s.id === o.id)?.week_plan_id
+      expect(planOf, `${o.op} ${o.id ?? ''}`).toBe(planId('ub', 3))
+    }
+    expect(world.tables.v2_week_review_decisions.find((d) => d.item_key === k2)).toMatchObject({ week_plan_id: planId('ub', 3) })
+  })
+
+  it('(M12) an item another phone decided since the list was read goes when it is pressed, and nothing is sent (break: the list is not read again)', async () => {
+    openSheet()
+    await screen.findByText('MON · UPPER A')
+    world.tables.v2_week_review_decisions.push({ id: 'd-phone', user_id: USER, week_plan_id: planId('ua', 3), item_key: KEYS.bench3, decision: 'used', created_at: NOW })
+    press(KEYS.bench3, 'IGNORE')
+    await waitFor(() => expect(item(KEYS.bench3)).toBeNull(), { timeout: 4000 })
+    expect(world.sent).toEqual([])
+  })
+
+  it('(M13) a decision that lands between the check and the write (23505 on the item key) makes the item go, with no error line (break: the list is not read again after the refusal)', async () => {
+    const real = world.client
+    let raced = false
+    h.client = {
+      ...real,
+      rpc: async (...args: unknown[]) => {
+        if (!raced) {
+          raced = true
+          world.tables.v2_week_review_decisions.push({ id: 'd-race', user_id: USER, week_plan_id: planId('ua', 3), item_key: KEYS.bench3, decision: 'used', created_at: NOW })
+          return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint "v2_week_review_decisions_item_uk"' } }
+        }
+        return (real.rpc as (...a: unknown[]) => unknown)(...args)
+      },
+    } as World['client']
+    openSheet()
+    await screen.findByText('MON · UPPER A')
+    press(KEYS.bench3, 'IGNORE')
+    await waitFor(() => expect(item(KEYS.bench3)).toBeNull(), { timeout: 4000 })
+    expect(document.querySelector('[role=alert]')).toBeNull()
   })
 })
 

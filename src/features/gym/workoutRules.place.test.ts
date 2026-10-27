@@ -545,6 +545,19 @@ describe('a swap for today: the moved sets are added sets of the new exercise, n
     expect(numberCorrections(s.order(), s.server.logs, s.server.held())).toEqual([])
   })
 
+  it('a card a swap made that is drawn BEFORE the card it replaced (a layout W5 doesn\'t draw) numbers on its own, so the replaced card\'s logged sets keep their numbers (46r review R4; break: the swap\'s card continues the slot wherever it is drawn)', () => {
+    // Lat Pulldown 01 and 02 are logged and its 03 moved to Machine Pulldown, whose card is drawn above Lat Pulldown's
+    const made: OrderExercise = { ...card('machine', ''), added: [{ localId: 'm', logId: null, type: NORMAL, place: 1 }], swappedFrom: { fromKey: 'lat', moved: [{ from: { weekPlanSetId: 'lat.3' }, place: 1 }] } }
+    const logs = [headLog('lat', 1), headLog('lat', 2)]
+    const above = orderOf([made, card('lat', 'n n n')])
+    // the moved set is the swap card's own 01; read on from the card it left, it would stand before the logged sets and push them to 02 and 03
+    expect(resolveRows(above, logs).map(brief)).toEqual(['machine 01·', 'lat 01✓', 'lat 02✓'])
+    expect(numberCorrections(above, logs)).toEqual([]) // 46r's Q1: a swap never changes the number of a set that is already logged
+    // drawn after the card it replaced (as W5 draws it), the same swap reads on from it
+    const below = orderOf([card('lat', 'n n n'), made])
+    expect(resolveRows(below, logs).map(brief)).toEqual(['lat 01✓', 'lat 02✓', 'machine 03·'])
+  })
+
   it('the rule reads every card of the exercise and every place a swap\'s record names: a set moved away with nothing else holding its place, and two cards of one exercise each holding open sets (break: the record\'s moved-away places, or the other card, left out)', () => {
     // an added set of lat moved away; the card dropped it from its list and the swap wrote no skip: only the record names place 1
     const lat1: OrderExercise = { ...card('lat', 'n'), added: [] }

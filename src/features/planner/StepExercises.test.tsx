@@ -26,6 +26,8 @@ const updateNameMutateAsyncMock = vi.fn()
 const deleteDayMutateMock = vi.fn()
 const reorderMutateMock = vi.fn()
 const addExerciseMutateAsyncMock = vi.fn()
+// The workout day each `useAddProgramExercise` call was built for (chunk 68's review R1: the mock used to ignore its argument).
+const addHookArgs: string[] = []
 // What the settings query says (chunk 68: the add sheet reads the unit to write from it, never from the store, which stays 'kg' here).
 let settingsUnit: 'kg' | 'lbs' = 'kg'
 let settingsLoading = false
@@ -52,7 +54,10 @@ vi.mock('../programs/usePrograms', () => ({
   useUpdateWorkoutDayName: () => ({ mutateAsync: updateNameMutateAsyncMock, isPending: false }),
   useDeleteWorkoutDay: () => ({ mutate: deleteDayMutateMock, isPending: false }),
   useProgramExercises: (workoutDayId: string) => ({ data: exercisesByDay[workoutDayId] ?? [], isLoading: false }),
-  useAddProgramExercise: () => ({ mutateAsync: addExerciseMutateAsyncMock, isPending: false }),
+  useAddProgramExercise: (workoutDayId: string) => {
+    addHookArgs.push(workoutDayId)
+    return { mutateAsync: addExerciseMutateAsyncMock, isPending: false }
+  },
   useReorderProgramExercises: () => ({ mutate: reorderMutateMock, isPending: false }),
   useDeleteProgramExercise: () => ({ mutate: deleteExerciseMutateMock, isPending: false }),
   useUpdateProgramExerciseWeightUnit: () => ({ mutate: updateWeightUnitMutateMock, isPending: false }),
@@ -163,6 +168,7 @@ beforeEach(() => {
   settingsUnit = 'kg'
   settingsLoading = false
   pickerProps.current = null
+  addHookArgs.length = 0
 })
 
 // An exercise's row is shut until it is tapped (PP2): its editors are in the open one.
@@ -1008,6 +1014,20 @@ describe('StepExercises — the add-exercise sheet is the shared picker (PP2d)',
     expect(screen.queryByText('pick Lat Pulldown')).toBeNull()
     expect(screen.getByText('pick Face Pull')).toBeTruthy()
     expect(pickerProps.current!.exclude).toEqual(['lib-1', 'lib-2'])
+  })
+
+  it('W: the sheet writes to the workout whose card opened it: with two unlike workouts, the second one\'s + ADD EXERCISE builds the add for the second one\'s own id (break: the program\'s id)', async () => {
+    workoutDays = [day({ id: 'wd-1', name: 'Push 1' }), day({ id: 'wd-2', name: 'Pull 1', position: 1 })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', workoutDayId: 'wd-1', exerciseId: 'lib-1', position: 0, exercise: { ...LIBRARY[0] } })]
+    exercisesByDay['wd-2'] = [exercise({ id: 'pe-2', workoutDayId: 'wd-2', exerciseId: 'lib-2', position: 0, exercise: { ...LIBRARY[1] } })]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+    fireEvent.click(screen.getByLabelText('Show editor for Pull 1')) // the first card is the open one
+    fireEvent.click(screen.getByText('ADD EXERCISE'))
+    expect(pickerProps.current!.eyebrow).toBe('PULL 1')
+    expect([...new Set(addHookArgs)]).toEqual(['wd-2']) // the workout day's id: not the program's ('prog-1'), not the first workout's
+    addExerciseMutateAsyncMock.mockResolvedValue(undefined)
+    await act(async () => { fireEvent.click(screen.getByText('pick Face Pull')) })
+    expect(addExerciseMutateAsyncMock).toHaveBeenCalledWith({ exerciseId: 'lib-3', position: 1, weightUnit: 'kg' })
   })
 
   it('W: two taps in one instant add once (a ref says one is out: the pending flag only turns true after a draw); the next tap after it lands adds', async () => {

@@ -191,6 +191,20 @@ describe('PlanPage — the RIR picker writes target_rir and target_rir_max toget
     expect(updateSetMutate).not.toHaveBeenCalled()
   })
 
+  // Chunk 54a's review (R54-I1): the test above holds the whole target (1–2 to 1–2); a set that differs in its high end only is the case that tells
+  // a check on both ends from a check on the low one.
+  it('a range that differs from the set\'s only in its high end is written: 1–3 picked to 1–2 writes both ends (break: the "already holds it" check compares the low end only)', () => {
+    arrange([setRow({ id: 'a', setNumber: 1, targetRir: 1, targetRirMax: 3 })])
+
+    fireEvent.click(rirCell())
+    expect(pressed()).toEqual(['RANGE'])
+    expect([box('From').value, box('To').value]).toEqual(['1', '3'])
+    typeInto('To', '2')
+    submit('SET RIR 1–2')
+
+    expect(written()).toEqual([{ id: 'a', changes: { targetRir: 1, targetRirMax: 2 } }])
+  })
+
   it('RIR 0 is a target like any other: a number 0 is written, not read as none', () => {
     arrange([setRow({ id: 'a', setNumber: 1, targetRir: null })])
     fireEvent.click(rirCell())
