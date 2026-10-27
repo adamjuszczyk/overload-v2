@@ -14,7 +14,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import type { Session } from '../../types'
 import { QueueServer } from './queueServer.testutil'
 import { card, headLog, orderOf, rowKeyed, viewOf } from '../gym/workoutRules.testutil'
 
@@ -57,7 +56,7 @@ vi.mock('../../lib/db', () => ({
     set_logs: { delete: async (id: string) => void world.deviceDeleted.push(id), update: async () => {}, put: async () => {} },
   },
 }))
-vi.mock('../../lib/supabase', () => ({ supabase: { from: (table: string) => server.from(table) } }))
+vi.mock('../../lib/supabase', () => ({ supabase: { from: (table: string) => server.query(table) } }))
 
 const { queryClient } = await import('../../lib/queryClient')
 const { flushSyncQueue, retrySyncFailures, hasQueuedWritesFor, queueSetLogPatch } = await import('./useSyncQueue')
@@ -169,7 +168,7 @@ describe('230 (i): a set deleted online after its first send failed does not com
 
     await deleteLogOnline('s1', 'L')
 
-    expect(server.requests.at(-1)).toBe('delete v2_set_logs:L -> 0 rows') // the server held nothing: its first send failed
+    expect(server.requests[server.requests.length - 1]).toBe('delete v2_set_logs:L -> 0 rows') // the server held nothing: its first send failed
     expect(world.deviceDeleted).toEqual(['L']) // and the device’s own copy of the log goes, as an offline delete removes it
     expect(queued()).toEqual(['upsert v2_set_logs:M', 'upsert v2_set_logs:N', `upsert v2_coach_notes:${note}`, 'patch v2_set_logs:M']) // only L’s own write went
     await flushSyncQueue()
@@ -256,7 +255,7 @@ describe('230 (i): a set deleted online after its first send failed does not com
     expect(queue()).toEqual([])
   })
 
-  it('a cleanup the phone’s own database refuses is logged and leaves the delete done; the next time the log is sent is the only harm (no worse than before)', async () => {
+  it('a cleanup the phone’s own database refuses is logged and does not fail the delete that was done (no worse than before the fix)', async () => {
     await logOffline('s1', 'L')
     failFirstSend('upsert v2_set_logs:L')
     await reconnectPass()
@@ -388,7 +387,7 @@ describe('230 (iii): a planned set removed on Plan: its logged set is sent with 
 
     await flushSyncQueue()
     expect(server.get('v2_set_logs', 'L5')?.week_plan_set_id).toBeNull()
-    expect(server.requests.at(-1)).toBe('upsert v2_set_logs:L5 -> ok') // sent as it was kept, with no second refusal
+    expect(server.requests[server.requests.length - 1]).toBe('upsert v2_set_logs:L5 -> ok') // sent as it was kept, with no second refusal
     expect(queue()).toEqual([])
   })
 

@@ -1,7 +1,7 @@
 // A test stand-in for the Supabase side of the sync queue (queue-fix 230): an in-memory server that models the foreign keys the queued writes carry, with the delete action each
 // migration gave it, and answers the request shapes the app's own services send (an upsert, a one-column patch, a delete with `.eq` filters, a head count, a select). It is where
-// the app's real producers and the real `flushSyncQueue` meet a server that REFUSES a row naming a parent it no longer holds (`23503`, with the constraint's name in the message and
-// the key in the details, as PostgREST answers) and that takes or keeps a child when a parent is deleted, as the real tables do. Tests and their stand-ins are not the app.
+// the app's real producers and the real `flushSyncQueue` meet a server that REFUSES a row naming a parent it no longer holds (`23503`, with the constraint's name in the message, as
+// PostgREST answers) and that takes or keeps a child when a parent is deleted, as the real tables do. Tests and their stand-ins are not the app.
 export type Row = Record<string, unknown>
 
 interface Key {
@@ -88,11 +88,12 @@ export class QueueServer {
     this.requests.push(`${tag} -> network error`)
     return true
   }
-  private violation(table: string, key: Key, value: unknown) {
+  private violation(table: string, key: Key, _value: unknown) {
+    // As the real PostgREST answers a signed-in caller (read on staging, queue-fix 230): the constraint's name is in the message; under RLS the details do not name the key or its value.
     return {
       code: '23503',
       message: `insert or update on table "${table}" violates foreign key constraint "${key.name}"`,
-      details: `Key (${key.column})=(${String(value)}) is not present in table "${key.parent}".`,
+      details: `Key is not present in table "${key.parent}".`,
     }
   }
 
@@ -148,7 +149,8 @@ export class QueueServer {
     }
   }
 
-  from(table: string) {
+  /** What the Supabase client's `from` answers for a table. A test's mock maps `from` onto this one (`verify-rls-tables.test.mjs` allows no other dynamic `from` call with a variable in `src/`). */
+  query(table: string) {
     const server = this
     const builder = <T,>(run: (filters: Filters) => Promise<T>): Thenable<T> => {
       const filters: Filters = []

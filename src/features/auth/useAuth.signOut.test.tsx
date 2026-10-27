@@ -27,7 +27,12 @@ const ALL_TABLES = ['exercises', 'workout_days', 'week_plans', 'sessions', 'set_
 
 beforeEach(() => {
   calls.order.length = 0
-  for (const table of db.tables) vi.spyOn(table, 'clear').mockImplementation(async () => void calls.order.push(`clear ${table.name}`))
+  // Watched on Dexie's Table class, so a table cleared by name (`db.exercises.clear()`) is seen as well as one cleared through `db.tables`.
+  const tableClass = Object.getPrototypeOf(db.tables[0]) as { clear: () => Promise<void> }
+  vi.spyOn(tableClass, 'clear').mockImplementation(function (this: { name: string }) {
+    calls.order.push(`clear ${this.name}`)
+    return Promise.resolve()
+  })
 })
 
 async function signOut() {

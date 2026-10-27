@@ -17,8 +17,9 @@ const AuthContext = createContext<AuthContextValue>({
 })
 
 // Everything the phone keeps for the account that signed out: the cache (exercises, workout_days, week_plans, sessions, set_logs), the sync queue and, since chunk 63, the unlog's
-// drafts and the workout card's added sets (session_set_drafts, session_added_sets). Every table of the database is cleared, not a list of names (DECISIONS 234: 63's two tables
-// were left out of the list, and a signed-out account's numbers stayed on the phone), so a table added later can't be forgotten here.
+// drafts and the workout card's added sets (`sessionDrafts.static.test.ts` lets only the schema and the drafts module name those two tables). Every table of the database is
+// cleared, not a list of names (DECISIONS 234: 63's two tables were left out of the list, and a signed-out account's numbers stayed on the phone), so a table added later can't be
+// forgotten here.
 async function wipeOfflineCache() {
   await Promise.all(db.tables.map((table) => table.clear()))
 }

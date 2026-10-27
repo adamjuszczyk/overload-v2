@@ -258,15 +258,15 @@ const removedByCleanup = new Set<number>()
 
 // DECISIONS 230 (iii). A write refused `23503` because the planned set it names was removed on Plan while it waited: `v2_set_logs.week_plan_set_id` (001, ON DELETE SET NULL)
 // and `v2_session_set_changes.week_plan_set_id` (042, ON DELETE CASCADE), both to `v2_week_plan_sets`. The constraint's name says which key refused, in the message PostgREST
-// answers (`… violates foreign key constraint "v2_set_logs_week_plan_set_id_fkey"`) and the key in its details (`Key (week_plan_set_id)=(…) is not present`); any other refusal,
-// and any other key, is a failed attempt as before.
+// answers (read on staging, as the test account: `insert or update on table "v2_set_logs" violates foreign key constraint "v2_set_logs_week_plan_set_id_fkey"`, code `23503`; its
+// details carry no key, only `Key is not present in table "v2_week_plan_sets".`, so the details are not read). Any other refusal, and any other key, is a failed attempt as before.
 const PLANNED_SET_KEY: Record<string, string> = { v2_set_logs: 'v2_set_logs_week_plan_set_id_fkey', [SESSION_SET_CHANGES_TABLE]: 'v2_session_set_changes_week_plan_set_id_fkey' }
 
 function refusedOnPlannedSet(item: SyncQueueItem, err: unknown): boolean {
-  const e = err as { code?: unknown; message?: unknown; details?: unknown } | null
+  const e = err as { code?: unknown; message?: unknown } | null
   const constraint = PLANNED_SET_KEY[item.table]
   if (!e || e.code !== '23503' || constraint === undefined) return false
-  return (typeof e.message === 'string' && e.message.includes(`"${constraint}"`)) || (typeof e.details === 'string' && e.details.startsWith('Key (week_plan_set_id)='))
+  return typeof e.message === 'string' && e.message.includes(`"${constraint}"`)
 }
 
 // What the server would have ended with had the row got there before the planned set went: a log stays with no planned set, so the queued log is sent that way (now, in this
