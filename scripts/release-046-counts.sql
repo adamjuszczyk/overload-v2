@@ -12,6 +12,8 @@
 --   * Or Windows cmd, from the repo root on an up-to-date checkout (like scripts\live-counts.sql):
 --       npx --yes supabase@2.119.0 db query --linked -f scripts\release-046-counts.sql -o json > counts-046-before.json
 --     and after step 5's deploy the same line ending > counts-046-after.json. Keep both files.
+--   * Check first that it is the PRODUCTION project. On any other database his id owns no rows, so every count reads 0, which
+--     looks like an answer and isn't (RULES.md, "Checks that lied" 33): if every count reads 0, stop.
 --
 -- What it returns: one table with the columns  section | item | rows | week_only | removed | fingerprint.
 --   scope        the user_id every table below is filtered to.

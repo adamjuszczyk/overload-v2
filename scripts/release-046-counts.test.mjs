@@ -13,7 +13,8 @@
 //   - no statement or clause that writes or changes the session (insert, update, delete, merge, truncate, create, drop,
 //     alter, grant, do, set, copy, select ... into, for update ...), and only these functions: count, string_agg, md5,
 //     coalesce, to_char, chr, left, now (nextval, set_config, pg_advisory_lock and the like are not on the list);
-//   - no `or` and no `not` (but `is not null`), so a filter cannot be widened or negated;
+//   - no `or` and no `not` (but `is not null`), so a filter cannot be widened or negated, no `table x` and no comma join
+//     (both read a relation the per-block check would not see);
 //   - every uuid in the file is Adam's;
 //   - it reads exactly the seven tables 046 mentions, each as `public.<table> <alias>`, and in the same select block as
 //     each one stands `<alias>.user_id = '<Adam>'` (a block = one parenthesised group of its own, nested groups apart);
@@ -102,6 +103,7 @@ export function problems(sql, migration046 = text046) {
   }
   // CTE names are `name as (`; a bare `name(` that is not a function is caught above
   const ctes = new Set([...low.matchAll(/\b([a-z_][a-z0-9_]*)\s+as\s*\(/g)].map((m) => m[1]))
+  if (/\btable\b/.test(low)) out.push('"table" in the statement (TABLE x reads a relation without a filter)')
   if (/\bor\b/.test(low)) out.push('"or" in the statement (a filter could be widened)')
   if (/\bnot\b/.test(low.replace(/\bis\s+not\s+null\b/g, ''))) out.push('"not" in the statement (a filter could be negated)')
 
@@ -118,8 +120,9 @@ export function problems(sql, migration046 = text046) {
   }
   for (const own of groups) {
     const aliases = []
-    for (const m of own.matchAll(/\b(?:from|join)\s+([a-z_][a-z0-9_.]*)(?:\s+(?:as\s+)?([a-z_][a-z0-9_]*))?/gi)) {
+    for (const m of own.matchAll(/\b(?:from|join)\s+([a-z_][a-z0-9_.]*)(?:\s+(?:as\s+)?([a-z_][a-z0-9_]*))?(\s*,)?/gi)) {
       const name = m[1].toLowerCase()
+      if (m[3]) out.push(`${m[1]} is followed by a comma (a comma join reads a table these checks do not see)`)
       if (ctes.has(name)) continue
       const table = name.replace(/^public\./, '')
       if (name !== `public.${table}` || !TABLES.includes(table)) {
@@ -238,6 +241,15 @@ test('a table 046 does not mention, a catalog or the auth schema is refused, wit
   for (const rel of ['public.v2_set_logs', 'public.exercises', 'auth.users', 'pg_class', 'supabase_migrations.schema_migrations']) {
     assert.ok(problems(extra(rel)).some((p) => p.includes('not one of the seven tables')), `${rel} is refused`)
   }
+})
+
+test('a comma join and TABLE x, which read a relation without a visible FROM/JOIN, are refused', () => {
+  const comma = real.replace('from public.v2_programs t where', "from public.v2_programs t, public.v2_set_logs u where u.user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' and")
+  assert.notEqual(comma, real)
+  assert.ok(problems(comma).some((p) => /followed by a comma/.test(p)), problems(comma).join(' / '))
+  const bare = real.replace('      his_rows as (', '      gone as (table public.v2_set_logs),\n      his_rows as (')
+  assert.notEqual(bare, real)
+  assert.ok(problems(bare).some((p) => /"table"/.test(p)), problems(bare).join(' / '))
 })
 
 test('a table read without public. or without an alias is refused', () => {
