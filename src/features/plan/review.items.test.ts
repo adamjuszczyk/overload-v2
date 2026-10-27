@@ -1160,6 +1160,30 @@ describe('which week, which workout, which session', () => {
     expect((groups[1].items[0].item as ReviewNumberItem).target.setId).toBe('ps-p3@2')
   })
 
+  // DECISIONS 242 (found in the release checklist's RC26): a sequence run has no weekdays, and Plan names a slot "SLOT 2 · ROTATION A" (its position counted from 1). REVIEW headed the
+  // group with the weekday the slot happened to be done ("TUE · ROTATION A").
+  it('a sequence run heads a group with its slot, counted from 1 as Plan\'s chips are, never with the weekday it was done', () => {
+    const slot = (position: number) =>
+      weekPlan('a', 1, [row('pe-1', 'ex-1', 1, 'Bench Press')], [wset(`ps-p${position}`, 'pe-1', 1, { targetWeight: 80 })], { id: `wp-a-1-p${position}`, sequencePosition: position })
+    const [first, second] = [slot(0), slot(3)]
+    const sessions = [
+      session('s-first', first.id, 'completed', [setLog('lg-1', 's-first', 'ex-1', { weekPlanSetId: 'ps-p0', weight: 90 })], { date: '2026-10-06' }), // a Tuesday
+      session('s-second', second.id, 'completed', [setLog('lg-2', 's-second', 'ex-1', { weekPlanSetId: 'ps-p3', weight: 95 })], { date: '2026-10-08', movedToDate: '2026-10-09' }), // a Thursday, moved to Friday
+    ]
+    const groups = reviewItems({
+      weekNumber: 2,
+      lastWeek: { sessions, plan: [first, second] },
+      thisWeek: [mirrorWeek(first), mirrorWeek(second)],
+      decisions: [],
+      workouts: [{ id: 'wd-a', name: 'Rotation A' }],
+    })
+    expect(groups.map((g) => g.heading)).toEqual(['SLOT 1 · ROTATION A', 'SLOT 4 · ROTATION A'])
+    expect(groups.map((g) => g.date)).toEqual(['2026-10-06', '2026-10-09']) // the group's day is still where the session was done (its order)
+    // a slot with no workout name anywhere is the slot alone, no dangling separator
+    const unnamed = reviewItems({ weekNumber: 2, lastWeek: { sessions: [sessions[0]], plan: [first] }, thisWeek: [mirrorWeek(first)], decisions: [] })
+    expect(unnamed.map((g) => g.heading)).toEqual(['SLOT 1'])
+  })
+
   it('G14: one workout on two weekdays shares one plan row; each session\'s items are its own, keyed and decided apart', () => {
     const shared = oneExerciseWeek('fb', 1, 1, { targetWeight: 80 })
     const tue = session('s-tue', shared.id, 'completed', [setLog('lg-t', 's-tue', 'ex-1', { weekPlanSetId: 'ps-pe-1-1', weight: 82.5 })], { date: '2026-10-06' })

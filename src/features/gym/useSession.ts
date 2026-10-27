@@ -6,13 +6,14 @@ import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore } from '../offline/offlineStore'
 import { DONE_WEEK_PLANS_KEY } from '../plan/useDoneWeekPlanIds'
-import { dropQueuedWritesNamingLog, flushSyncQueue, hasQueuedWritesFor, queueSetLogDelete } from '../offline/useSyncQueue'
+import { dropQueuedWritesNamingLog, flushSyncQueue, hasQueuedWritesFor, queueSetLogDelete, queuedSetLogsFor } from '../offline/useSyncQueue'
 import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating, Exercise } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import {
   fetchSessionsInRange,
   fetchLastDoneOrSkippedSession,
   fetchSession,
+  withQueuedSetLogs,
   createSession,
   completeSession,
   reopenSession,
@@ -62,11 +63,24 @@ export function useLastDoneOrSkippedSession(mesoId: string) {
   })
 }
 
+// The workout's read of its session (DECISIONS 239): the server's rows and the set logs this phone has queued and not yet sent. The queue is read FIRST, so a pass that
+// sends and clears a log while the server is being asked can't leave it in neither (the server read began before the send landed, the queue read after the item was
+// gone). A queue that can't be read leaves the server's answer as it was: a read of the session never fails because of the phone's database.
+export async function readActiveSession(sessionId: string): Promise<Session> {
+  let queued: Array<Record<string, unknown>> = []
+  try {
+    queued = await queuedSetLogsFor(sessionId)
+  } catch {
+    queued = []
+  }
+  return withQueuedSetLogs(await fetchSession(sessionId), queued)
+}
+
 export function useActiveSession(sessionId: string | null) {
   const { user } = useAuth()
   return useQuery({
     queryKey: ['v2_session', sessionId],
-    queryFn: () => fetchSession(sessionId!),
+    queryFn: () => readActiveSession(sessionId!),
     enabled: !!user && !!sessionId,
     staleTime: 0,
   })

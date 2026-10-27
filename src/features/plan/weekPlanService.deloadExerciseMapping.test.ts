@@ -105,7 +105,7 @@ describe('markSessionDeload — never orphans a set onto an exercise the marked 
         // One non-skipped, non-warmup, non-stage log against the base
         // week's own set-a1 — makes week 1 "happened".
         return makeChain(table, () => ({
-          data: [{ week_plan_set_id: 'base-a1', weight: 95, is_skipped: false, is_warmup: false, parent_set_id: null }],
+          data: [{ week_plan_set_id: 'base-a1', exercise_id: 'ex-A', weight: 95, is_skipped: false, is_warmup: false, parent_set_id: null }],
           error: null,
         }))
       }
@@ -193,7 +193,7 @@ describe('markSessionDeload — never orphans a set onto an exercise the marked 
       }
       if (table === 'v2_set_logs') {
         return makeChain(table, () => ({
-          data: [{ week_plan_set_id: 'base-1', weight: 95, is_skipped: false, is_warmup: false, parent_set_id: null }],
+          data: [{ week_plan_set_id: 'base-1', exercise_id: baseExercise.exercise, weight: 95, is_skipped: false, is_warmup: false, parent_set_id: null }],
           error: null,
         }))
       }

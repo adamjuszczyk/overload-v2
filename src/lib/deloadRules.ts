@@ -265,6 +265,9 @@ export function resolveDeloadBaseOccurrence(
 
 export interface DeloadSetLogRecord {
   weekPlanSetId: string | null
+  // The exercise the set was DONE on (`v2_set_logs.exercise_id`). A swap's logs point at the planned sets of the exercise they replaced (1.1's replacement
+  // card logs the original's planned sets), so the planned set alone doesn't say whose weight a log is (DECISIONS 240).
+  exerciseId: string
   weight: number | null
   isSkipped: boolean
   isWarmup: boolean
@@ -287,11 +290,20 @@ export function occurrenceHasWorkingLog(
 // 1) — the first non-skipped log pointing at this exact planned set, or
 // null if none. No stated tie-break for more than one match (a redone or
 // re-logged set); first-found is this module's own, documented choice.
+//
+// DECISIONS 240 (SPEC Deload: the weights actually logged in the last normal week, "planned weight where nothing was logged"): only a log of the planned set's
+// OWN exercise counts. A swapped-in exercise's logs carry the original's planned set id but are the replacement's weights, so they are skipped and the set
+// falls back to its planned weight, as a set with no log does. `plannedExerciseId` is required with no default and refused at run time: left out, no log would
+// match and every set would read as never logged, a plausible wrong answer (RULES.md, "an input whose omission would silently give plausible numbers is required").
 export function resolveLoggedWeightKg(
   logs: readonly DeloadSetLogRecord[],
   plannedSetId: string,
+  plannedExerciseId: string,
 ): number | null {
-  const match = logs.find((l) => l.weekPlanSetId === plannedSetId && !l.isSkipped)
+  if (typeof plannedExerciseId !== 'string' || plannedExerciseId === '') {
+    throw new TypeError('resolveLoggedWeightKg: plannedExerciseId is required (the exercise the planned set is for; DECISIONS 240)')
+  }
+  const match = logs.find((l) => l.weekPlanSetId === plannedSetId && l.exerciseId === plannedExerciseId && !l.isSkipped)
   return match?.weight ?? null
 }
 

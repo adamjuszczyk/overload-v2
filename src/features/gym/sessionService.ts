@@ -166,8 +166,25 @@ export function toSession(row: DbSession): Session {
   }
 }
 
+// DECISIONS 239. The set logs this phone still has to send for the session (`queuedSetLogsFor`: the sync queue's rows, in the shape the table takes) are part of what the
+// workout draws, whatever the server answered: the server has never seen them, so its read of the session leaves them out. A log the server already holds is not added a
+// second time (a reply lost on a locked phone leaves the upsert queued beside the row; the server's copy has the exercise joined). The logs stay in `loggedAt` order,
+// as `toSession` leaves them.
+export function withQueuedSetLogs(session: Session, queued: ReadonlyArray<Record<string, unknown>>): Session {
+  const held = new Set((session.setLogs ?? []).map((log) => log.id))
+  const missing = queued
+    .filter((row) => !held.has(row.id as string))
+    .map((row) => toSetLog({ weight: null, reps: null, rir: null, note: null, parent_set_id: null, week_plan_set_id: null, rest_seconds: null, is_dropset: false, is_skipped: false, ...row } as unknown as DbSetLog))
+  if (missing.length === 0) return session
+  return { ...session, setLogs: [...(session.setLogs ?? []), ...missing].sort((a, b) => a.loggedAt.localeCompare(b.loggedAt)) }
+}
+
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 
+// The sessions of a window: those dated in it, and those MOVED into it (DECISIONS 241). A session moved in Plan to a day before its own (Wednesday's to today,
+// Tuesday) keeps its own `date`, so a read by `date` alone never returned it for the days up to the day it was moved to, and Today, which finds a session by its
+// effective day (`moved_to_date ?? date`), could not see it. A row dated in the window and moved out of it is still returned (the scheduler needs it to know the
+// day's slot was vacated).
 export async function fetchSessionsInRange(
   startDate: string,
   endDate: string,
@@ -175,8 +192,7 @@ export async function fetchSessionsInRange(
   const { data, error } = await supabase
     .from('v2_sessions')
     .select('*')
-    .gte('date', startDate)
-    .lte('date', endDate)
+    .or(`and(date.gte.${startDate},date.lte.${endDate}),and(moved_to_date.gte.${startDate},moved_to_date.lte.${endDate})`)
   if (error) throw error
   return (data as DbSession[]).map(toSession)
 }
