@@ -151,7 +151,8 @@ Each is written into the rules below as stated here.
 - **G49 — Warmup rows in Plan:** no RIR target.
 - **G50 — Pre-1.1 finished programs:** PR14's PRIORITIES row opens today's
   completed-run priorities page as it is, wording included. It is the one
-  exception to the "program" wording sweep.
+  exception to the "program" wording sweep outside Coach, which stays exactly
+  as it is (DECISIONS 154, Adam 2026-10-16; TASKS 69).
 - **G51 — "Drops and stages count as":** applies to the VOLUME sheet only.
   History, Progress and the finish screen count as they do today.
 - **G52 — A workout skipped as a whole** (2026-10-14): a session marked
@@ -201,7 +202,8 @@ files. Board IDs below (e.g. `PR13`) refer to that index.
   half new: Plan (with PROGRAMS), CHANGE THE PROGRAM, the stepped program
   planner, and the workout screen. Every other screen (Today outside the workout
   itself, History, Progress, Library, Settings, sign-in, Coach) keeps its
-  current code. Its only 1.2 changes are the wording sweep (Language) and the
+  current code. Its only 1.2 changes are the wording sweep (Language; not
+  Coach, which stays exactly as it is: DECISIONS 154, Adam 2026-10-16) and the
   Settings rows listed under Screens → Settings. The canvas also draws those
   screens; those boards are not part of 1.2 and are not copied.
   - Text on the accent (DECISIONS 154, Adam 2026-10-16): Coach stays exactly as
@@ -1233,7 +1235,8 @@ optional:
   change. This is a text change on every screen, including the ones whose look
   1.2 doesn't touch (Today, History, Progress, Settings): "NO MESO", "ALL
   MESOS", "DELETE MESO", "MESO OVERVIEW", "Search sessions or mesos…", and the
-  like. The one exception is a pre-1.1 finished program's priorities page, which
+  like. The exceptions are Coach, which stays exactly as it is (DECISIONS 154,
+  Adam 2026-10-16), and a pre-1.1 finished program's priorities page, which
   opens as it is (G50).
 - [1.2] **Tags are "cues"** in the UI.
 - [1.2] The planner screen and its button say "change the program", never
