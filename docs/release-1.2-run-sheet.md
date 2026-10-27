@@ -2,7 +2,7 @@
 
 *TASKS-1.2.md "Release", steps 3–7, in your order. Written 2026-10-27 by the release reviewer; also in the repo as `docs/release-1.2-run-sheet.md`.*
 
-- *Every command is Windows **cmd**, not PowerShell (PowerShell's `>` writes UTF-16). Run them from your `overload-v2-switch` worktree, in one window from start to end.*
+- *Every command is Windows **cmd**, not PowerShell (PowerShell's `>` writes UTF-16). Run them from your `overload-121` clone (linked to production; the project-ref check in 0 confirms it), in one window from start to end.*
 - *Nothing here has been merged or run for you: each merge to master is yours.*
 
 **What's ready**
@@ -18,14 +18,14 @@
 
 ## 0. Before you start
 
-**A time when nobody trains (step 4).** Pick about an hour in which neither you nor your friend trains, and tell your friend. It runs from PR #240's merge until step 6's Vercel deploy is Ready. In between:
+**A time when nobody trains (step 4).** Pick about an hour in which neither you nor your friend trains, and tell your friend. It runs from **step 1 (the backup)** until step 6's Vercel deploy is Ready (Adam, 2026-10-27), so the backup is complete and the before and after counts can't differ because someone trained. From #240's merge on, also:
 - 1.1's app plans weeks through 045 (structure, no weights, RIR or week-dependent reps);
 - a week-view edit made in 1.1 no longer carries forward, because 046 has run.
 
 **Start Docker Desktop** and wait until it says it is running. `db dump` runs `pg_dump` in a container.
 
 ```cmd
-cd /d C:\path\to\overload-v2-switch
+cd /d C:\path\to\overload-121
 git fetch origin
 git checkout --detach origin/master
 git log --oneline -1
@@ -128,7 +128,7 @@ What it does:
 
 Before you merge, check all of:
 - [ ] `%OUT%` holds `roles.sql`, `schema.sql`, `data.sql`, `release-046-before.json` (zero check OK) and `live-counts-before.json`, and the dashboard lists today's daily backup.
-- [ ] Nobody is training, and nobody will until step 6 is done.
+- [ ] Nobody has trained since the backup, and nobody will until step 6 is done.
 - [ ] PR #240 shows **10 files changed** (six in `supabase/migrations/`, four in `scripts/probe-specs/`), and its `migration-replay` check is green.
 
 Merging PR #240 is your yes (DECISIONS 202).
