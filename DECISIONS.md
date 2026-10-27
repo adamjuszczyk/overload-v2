@@ -1,23 +1,41 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-27, queue-fix 230's review (merged, #230).*
-- *Queue-fix 230 (with 234) is merged (#230, `cd9e0fa`). An online delete now drops the queued writes that name the deleted record, a log whose planned set was removed on Plan is sent with no planned set, the Library keeps an exercise with a set still queued, and sign-out clears every table (234).*
-- *Four of its cases are live in production since phase 1 (re-run on master's own code in the review). They are in "For the release" and the update notes, like 188f.*
-- *121 is closed with your output: production's migration history is intact.*
-- *Nothing in this file blocks the release checklist.*
-- *New: 239 (below), which blocks the release's update notes.*
-- *New: 238, what the fix leaves; none of it is worse than before. Recommended: known, with no update-note line, and the Library's one-line rule fixed in a small run of its own.*
-- *Tests owed: four (queue-fix 230), for a tests-only run; it needs nothing from you.*
+*Rewritten at every boundary. Last: 2026-10-27, the release checklist on staging (the data rows).*
+- *The release checklist's data rows ran on staging: 31 of the 32 DATA rows (RC44 is yours, on production). 28 PASS, 3 FAIL, none blocked. The 12 screen-only rows are on your list below. Row by row: CONTEXT.md, "Release checklist on staging".*
+- *New: 240, 241 and 242 (below). 239 stays open.*
+- *Tests owed: none.*
 
-What blocks, in order:
-1. **239** (a decision, below): the release waits for its answer, "fixed" or a "known" line in the update notes. A set logged offline whose first send fails while the phone reads as online reads as not logged once the workout is read again, and LOG on it saves the set twice. Executed on staging, older than 1.2. Recommended: (a), one small DATA fix chunk before the release. It doesn't block the release checklist's data rows.
+The failures, and one finding, in order:
+1. **241** (RC25 FAIL; a decision, below): a session moved from Plan's ⋯ to a day before its own (Wednesday's workout to today, Tuesday) is gone from Today until it is moved back, because Today reads sessions by their own date. 1.2 only (1.1 could not move a session earlier). Executed on staging. Recommended: (a), a small DATA fix before the release: Today's read also takes the sessions moved into its days. Blocks: the release's update notes ("fixed" or "known").
+2. **239** (RC37 FAIL; a decision, open since queue-fix 230's review): a set logged offline whose first send fails reads as not logged once the workout is read again, and LOG on it saves the set twice. RC37 saw the same shape on staging (LOG not pressed again). Recommended: (a), a small DATA fix before the release. Blocks: the release's update notes.
+3. **240** (found in RC24; a decision, below): a deload's base weight comes from a swapped-in exercise's log when that log carries the original's planned set, as 1.1's replacement card logs it. On staging a deload Back Squat read 135 kg (75% of the Leg Press's 180 kg), planned at 112.5 kg in the normal week. Live since phase 1. Recommended: (a), one condition in `resolveLoggedWeightKg`, in the same small run as 239 and 241. Blocks: nothing new.
+4. **242** (RC26 FAIL, a label; a decision, below): REVIEW on a sequence run heads its group "TUE · ROTATION A" (the weekday the slot was done), where Plan says "SLOT 2 · ROTATION A". Recommended: (a), the slot, one line. Blocks: nothing (display).
 
-Nothing else waits on you before the release checklist. The release's own steps (the manual backup, your yes on 046) wait for you where TASKS-1.2's Release section puts them (DECISIONS 202).
+The release (121, and the release's own gates):
+- 121 is closed with your output (2026-10-27): production's migration history is intact.
+- Before the release (TASKS-1.2 "Release"): R5's two read-only queries on production, your id only (F5, G50). They are information, not gates.
+- The gates, where the Release section puts them:
+  - the update notes, which wait for 239's and 241's answers (and 240's, if it is fixed);
+  - the manual backup;
+  - RC44's read-only count of your sequence runs that hit 203's case (production, your id only), and the before counts and fingerprint;
+  - your yes on 046: the merge of step 5's migrations PR is the consent (DECISIONS 202);
+  - a time when nobody is training (step 4).
+- After step 6: the 30 rows marked P, on production, on your account, as part of your training (step 7): RC1, RC2, RC3, RC5, RC6, RC7, RC10, RC11, RC12, RC13, RC16, RC19, RC20, RC22, RC23, RC24, RC27, RC28, RC29, RC30, RC31, RC32, RC33, RC34, RC36, RC38, RC39, RC41, RC42 and RC43.
+
+Your review pass on staging: the screen-only rows (they write nothing; the account each needs):
+- RC6 (test: no exercise action in the week view; CHANGE THE PROGRAM from the bottom button and from EDIT PROGRAM), RC7 (test: done sessions and past weeks read-only), RC9 (test and stable: the CHANGED SINCE marks), RC22 (test and empty: the PROGRAMS tab; the empty account is empty again, so PR2 and PR3 show), RC28 (test: the rest bar and its jump button, in a session in progress: Wednesday's Lower A or Friday's Upper B), RC34 (test: stage rows and + ADD ROUND, which need a superset in progress: Upper A's, next on Monday in week 4), RC38 (test: Settings), RC39 (test and empty: "program" and "cues" everywhere, the pre-1.1 page the one exception), RC40 (test: error lines), RC41 (test and stable: Removals), RC42 (production: COACH, yours only) and RC43 (test: the 6 tabs).
+- Seen in passing (display, for the same pass; none is a decision yet):
+  - (1) W11 and the workout's add picker opened offline sit on "LOADING…" for good (the exercise list's read pauses offline).
+  - (2) An ADDED TODAY card with no set logged is gone after a reload (as in 1.1).
+  - (3) A swap's open moved set lives on the phone that swapped. On another phone no card draws it, W18 doesn't name it and nothing holds auto-finish (201 (a) reaches the swapping phone only).
+  - (4) A stepper stops at its kind's default: myo-reps REST BETWEEN can't go back to the seed's 0:10, and WITHIN ROUND can't go back to 0.
+  - (5) After a logged added set is deleted, each later added set's renumber PATCH is sent twice, with the same value.
+  - (6) The seed's lateral raise logs (entered in kg) read "LAST 9 × 15" on the row while W16 shows 19.8 lbs: the seed's unit convention (app-written logs carry no entered unit).
 
 Decisions that block a chunk: none.
 
-Decisions (none blocks; for your review pass after the release checklist):
+Decisions for your review pass on staging (none blocks):
 - **238** — what queue-fix 230 leaves; none is made worse by the fix, and each is rarer than 230's shapes:
   - (1) The Library's delete preflight leaves out a log whose set was deleted offline after its upsert had been tried, or after a renumber. Such an exercise is still deleted for good and its log refused for ever (1.2 only).
   - (2) Another phone's delete.
@@ -105,6 +123,8 @@ To-dos:
 - Update notes: fixed, a bug live since phase 1: a planned set removed on Plan while a set logged under it was waiting to sync left the same notice, and the logged set never reached the server; it now syncs without its planned set, as a set that synced first always did (queue-fix 230; DECISIONS 230).
 - Update notes: fixed, a bug live since phase 1: an exercise deleted in the Library whose only sets were waiting to sync was deleted for good and left the same notice; it is now kept, as an exercise with history is, and its sets sync (queue-fix 230; DECISIONS 230).
 - Update notes, by 239's answer: a set logged offline whose first sync attempt failed could read as not logged once the workout was read again, and logging it again saved it twice (live since phase 1, by reading; executed on staging): "fixed" if 239 (a) is built before the release, else "known" (DECISIONS 239).
+- Update notes, by 241's answer: a session moved in Plan to a day before its own (Wednesday's workout to Tuesday) didn't show on Today until it was moved back (1.2 only; executed on staging): "fixed" if 241 (a) is built before the release, else "known" (DECISIONS 241).
+- Update notes, if 240 (a) is built: fixed, a bug live since phase 1: a deload week whose base week had an exercise swapped (1.1's replacement card) took that exercise's deload weight from the replacement's logs, for example a squat at 75% of a leg press weight (DECISIONS 240).
 
 ## Tests owed
 *Every missing-proof failure the reviewer merges (behaviour verified right, a test missing), one line each: chunk, PR, the test missing. One tests-only builder run before the release checklist adds them all, the way 176 does (RULES.md, "The 1.2 tests-owed rule").*
@@ -928,6 +948,47 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
   - Result: two logs of one set, 34.5 × 6, `added_place` 6 both. Both were deleted by API afterwards; the account is back to 214 logs and the plan's fingerprint is unchanged.
 - With the session's reads failing too (a flaky connection), the row stays on the screen marked SYNC (`<scratchpad>/rq230/staging/case230b/`).
 - 1.1, by reading (`git archive origin/master`): its flush invalidates the session the same way and its `fetchSession` reads the server alone. So a planned set logged offline whose first send failed reads open again there too. Not executed on master.
+
+### 240 A deload's base weight comes from a swapped-in exercise's log when that log carries the original's planned set (live since phase 1, chunk 22; found in the release checklist's RC24, executed on staging)
+**Ask:** fix this before the release, or ship it as known?
+**Recommendation:** (a). A deload set can come out heavier than the normal week's (on staging a deload Back Squat read 135 kg where the normal week plans 112.5 kg), and the fix is one condition in one function.
+**Blocks:** nothing new (live in production since phase 1). The update notes say "fixed" if (a) is built.
+**Options:** (a) a small DATA fix, in the same run as 239 (a) and 241 (a) if those are built: `DeloadSetLogRecord` carries the log's `exercise_id`, and `resolveLoggedWeightKg` (`src/lib/deloadRules.ts`) counts only a log of the base set's own exercise. A replacement's logs are then skipped and the set falls back to its planned weight (`loggedWeight ?? plannedWeight`), as a base set with no log does. A test with a swapped base week, and its break; (b) ship as is, with a "known" line in the update notes (by reading, it fades once every base week is a 1.2 week); (c) ship as is, with no line.
+**Answer:**
+**Evidence:**
+- Executed on staging (the release checklist's RC24, the test account; `<scratchpad>/build/rc/out/rc24`). Week 3's Lower A marked as deload from the session's ⋯. Its base occurrence is week 1's Lower A (week 2's was a deload).
+  - In week 1 the seed swapped Back Squat for Leg Press, and the Leg Press logs (180 kg) carry the squat's planned set ids. That is the seed's copy of 1.1's shape: 1.1's replacement card logs the original's planned sets.
+  - The calculated Back Squat set read 135 kg = 180 × 75%; week 3 plans the squat at 112.5 kg. Unmarked afterwards (content equal to before).
+- The code: `resolveLoggedWeightKg(logs, plannedSetId)` takes "the first non-skipped log pointing at this exact planned set", by `week_plan_set_id` only (`DeloadSetLogRecord` has no exercise). `weekPlanService.ts` calls it for every matched base set. It dates from chunk 22 (`d632427`, 2026-10-08), so it is on master.
+- 1.2's own swaps don't feed it, by reading: a swap for today logs the original's remaining planned sets as skipped (RC35: the skip went through POST v2_set_logs), and the moved sets are added sets of the new exercise (179), with no planned set. So it bites where a base week holds 1.1-era replacement logs: production runs with a 1.1 swap in their last normal week, and the seed.
+
+### 241 A session moved from Plan to a day before its own is gone from Today until it is moved back (1.2; found in the release checklist's RC25, executed on staging)
+**Ask:** fix this before the release, or ship with a "known" line in the update notes?
+**Recommendation:** (a). MOVE offers "today or a later day this week" for any session of the current week, so moving a later session to today, the common case and half of SPEC's "swapping two days = two moves", loses it from Today. The fix is in one read.
+**Blocks:** the release's update notes ("fixed" or "known"), like 239; no chunk.
+**Options:** (a) a small DATA fix. `fetchSessionsInRange` (`src/features/gym/sessionService.ts`) also returns the rows whose `moved_to_date` falls in the window (a PostgREST `or` of the two date ranges), so Today's scheduler (`useScheduler.ts`, its read from the lookback to today), the rest-day screen and Plan's MOVE control see a session moved in from a later day. Tests on the read and the resolver, a break that drops the `or`, and the move re-run on staging; (b) MOVE offers only the session's own day and the later ones (chunk 54b's Staging list read it so: "offers only Friday and later days of week 3"). One filter in the move sheet, but no workout can then be done earlier; (c) ship as is, with a "known" line.
+**Answer:**
+**Evidence:**
+- Executed on staging (the release checklist's RC25, the test account, Tuesday 2026-10-27; `<scratchpad>/build/rc/out/rc29b`, `today`, `rc29c`).
+  - Plan week 3 → Wednesday's Lower A ⋯ → MOVE THIS SESSION → "PICK TODAY OR A LATER DAY THIS WEEK" → TUE 27. That sent POST v2_sessions (status planned, date 2026-10-28, moved_to_date 2026-10-27); Plan shows the move.
+  - Today on Tuesday: "REST DAY · NEXT UP Lower A TOMORROW".
+  - With the browser clock on Wednesday: "REST DAY · NEXT UP Upper B IN 2 DAYS". Lower A has moved off Wednesday, and Tuesday holds no scheduled workout, so nothing reads as missed.
+  - MOVE BACK (WED 28) deleted the row and Lower A showed again. A move to a later day (Friday's Upper B to Saturday) is right.
+- Why: `useScheduler.ts` reads `fetchSessionsInRange(lookbackStart, today)`, which filters on the row's own `date`. A row dated tomorrow is never read, so its `moved_to_date` of today is never seen. On Wednesday the row is read, and its day (`moved_to_date ?? date`) is Tuesday, in the past.
+- 1.2 only: 1.1 moved a session only from Today, its own session to a later day or a missed one to today, never to a day before the row's own date.
+
+### 242 REVIEW on a sequence run heads its group with the weekday the slot was done ("TUE · ROTATION A"), where Plan names the slot (found in the release checklist's RC26)
+**Ask:** the slot in the heading, or keep the weekday?
+**Recommendation:** (a). RC26 and SPEC (Scheduling → Sequence: "The cycle replaces the week everywhere the week is used (… labels, … REVIEW …)") put cycles and slots on a sequence run, and the sheet's own eyebrow already says LAST CYCLE. One line.
+**Blocks:** nothing (display).
+**Options:** (a) on a sequence run the heading reads "SLOT n · ROTATION A", from the last cycle's plan row's sequence position, numbered as Plan's chips are (the heading line in `review.ts`; the sequence test in `ReviewSheet.test.tsx`, which expects "MON · UPPER A", changes with it); (b) keep the weekday, accepted as built: it is the day the slot was done.
+**Answer:**
+**Evidence:**
+- Staging (the sequence account; `<scratchpad>/build/rc/out/rc26b`). Cycle 1 followed its plan, so no REVIEW line showed. Today's Rotation A (cycle 2, slot 2) was done with set 1 at 60 kg × 6 (planned 5 reps) and completed.
+  - Cycle 3 then read "LAST CYCLE · 1 thing went differently · REVIEW →". The sheet: "LAST CYCLE · 1 THING · What went differently · Where last cycle went differently from its plan.", under "TUE · ROTATION A": "BACK SQUAT · SET 01 · Did 60 kg × 6 · planned 5 reps · IGNORE · USE 60 × 6".
+  - Nothing pressed. The session and its two logs were deleted by API afterwards; the account is as before.
+- `review.ts` builds every group's heading as the weekday of `moved_to_date ?? date`, then the workout's name. The run's unit reaches only the eyebrow and the line.
+- Seen with it, by reading only (not pressed): cycle 3's slot 2 lists Leg Press with no sets (203's accepted case), so this item has no row to write to. `applyReviewAction` then returns the `used` decision with no writes, so USE would take the item away and change nothing. The same holds on any run for an item whose exercise this week's plan no longer lists. For your review pass, whichever of (a) and (b).
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
