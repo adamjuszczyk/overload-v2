@@ -29030,3 +29030,73 @@ From CONTEXT.md, "Where the build is":
 From CONTEXT.md, "Repo facts":
 
 - Vitest (node env; component tests opt into jsdom per file); 6493 tests in 346 files pass (2026-10-26, chunk 63); script tests 355. Pure logic lives in testable modules.
+
+## 2026-10-27 queue-fix 230 review — merged (#230, `cd9e0fa`); 230 (a) and 234 answered and built; each case's 1.1 verdict re-run on master's code (four exist in 1.1: recorded for the release like 188f); 121 closed with Adam's output; 238 (what the fix leaves); 239 (found on staging, older than 1.2: a set logged offline whose first send fails reads as not logged and can be saved twice); tests owed: four; a check that lied and five rules; moved out of CONTEXT.md and DECISIONS.md (replaced by newer or shorter lines), word for word
+
+From DECISIONS.md, 230 (its full text before the answer):
+
+### 230 Online deletes that still don't look at the queue, in 1.1 and 1.2: a deleted set comes back, and the never-clearing 23503 through a session deleted in History or a planned set removed on Plan (found by queue-fix 227's builder and review; executed on master's code and on the merged tree)
+**Ask:** fix these three shapes before the release, or ship with "known" lines in the update notes?
+**Recommendation:** (a), one small DATA fix chunk after 64 and before the release checklist; 63 and 64 don't wait. Two of the three change what the server ends with (a set the user deleted comes back; a set the user did never arrives), which 227's shapes never did.
+**Blocks:** the release (its update notes say "fixed" or "known"); no chunk.
+**Options:** (a) a small fix chunk before the release checklist: (i) `useDeleteSetLog` online also drops the deleted log's own queued upserts and patches once its request has gone through (they would bring back a log the user deleted); (ii) History's session delete, once its request has gone through, drops the queued writes that name the session (its logs, change rows and finish: the server's cascade took them); (iii) a queued log refused `23503` on `v2_set_logs_week_plan_set_id_fkey` is sent again with `week_plan_set_id` null, as the server's ON DELETE SET NULL leaves a log that landed first, never dropped (a queued change row naming a planned set that is gone is dropped: 042's cascade); each with a break on the queue's order fake and the real-IndexedDB proof; (b) instead, refuse those deletes while a queued write names the record, with a line saying why (as 1.1's exercise reassignment refuses while anything is unsynced, `checkReassignBlockers`): a screen change, so SPEC gets a line; (c) ship as is, with "known" lines in the update notes.
+**Answer:**
+**Evidence:** executed on master's own code (`git archive origin/master`; the builder's probe extended: `<scratchpad>/rq227/m11/src/features/offline/zzq227r.probe.test.ts`, output `<scratchpad>/rq227/prod-1.1-probe-review.raw`), with a fake server that models master's 001 keys on `v2_set_logs` (`session_id` → `v2_sessions` ON DELETE CASCADE, `week_plan_set_id` → `v2_week_plan_sets` ON DELETE SET NULL) beside 010's `parent_set_id`, and on the merged tree (`<scratchpad>/rq227/stg/src/features/offline/zzq227s.probe.test.ts`, the online deletes as `useDeleteSetLog` sends them; output `stage-1.1-shapes-probe.raw`):
+- M3 (the builder's): a head and its drop both queued, the head's first send failed, the dropset deleted online (each delete reads 0 rows): the next pass creates both on the server, though the user deleted them. Since #219 the head alone comes back (its drop's upsert leaves with the head's delete).
+- M4, History: a set logged offline whose first send fails in the reconnect pass, while the session's queued finish lands in the same pass (a finish doesn't wait behind its logs), so the session is in History; DELETE there (`SessionDetail`, `historyService.deleteSession`): the log is refused `23503` on every pass, gives up after five, RETRY resets it and it fails again, and `hasQueuedWritesFor` stays true. Control (no delete): the next pass lands it. Moot on the server: the user deleted the session.
+- M5, Plan: a set logged offline whose first send fails; its planned set removed on Plan (`weekPlanService.removeSet`; a session in progress is not read-only, in 1.1 and 1.2 alike: only a done one is): the log is refused `23503` for ever the same way. Control: lands. Not moot: the set never reaches the server; only the device holds it, and a sign-out wipes it.
+- On the merged tree M4 and M5 are unchanged and 1.1's head shape (M1) clears.
+- Same family, by reading (not executed): Plan's other planned-set deletes of an in-progress session's week (the week view's exercise removal); 1.1's Library delete of an exercise with no history on the server (`deleteExercise` counts the server's logs only, so a queued log naming the exercise is refused `23503` on `exercise_id`); and 1.2's change rows, which name planned sets and sessions too (042: cascade), so a queued `retyped` or `deleted` row naming a planned set removed online is refused the same way (moot: the cascade would have removed it).
+- Likelihood is low for each (a first send that fails, then the delete before the next pass), as for 227's.
+- Since 63 (by reading, chunk 63's review): an online UNLOG goes through `useDeleteSetLog`, so (i)'s shape reaches it too: a set unlogged online while its log's own first send is still queued comes back logged at the next pass, its draft hidden under the log.
+
+
+From DECISIONS.md, 234 (its full text before the answer):
+
+### 234 Sign-out doesn't wipe chunk 63's two Dexie tables (found in 63's review)
+**Ask:** should sign-out also clear `session_set_drafts` and `session_added_sets`?
+**Recommendation:** (a). `wipeOfflineCache` (`src/features/auth/useAuth.tsx`) clears the six older tables so that "cached data never leaks across accounts"; the two new ones keep a signed-out account's unlogged numbers and added-set lists until that session ends on this phone. Two lines, with 230's fix chunk.
+**Blocks:** nothing: no other account draws them (each row is keyed by its session), nothing is sent, and the same account signing in again sees its drafts as before.
+**Options:** (a) wipe them at sign-out; (b) keep them (the drafts are "on that phone", G46, and outlive a sign-out).
+**Answer:**
+**Evidence:** read in the review: `wipeOfflineCache` names `exercises`, `workout_days`, `week_plans`, `sessions`, `set_logs` and `sync_queue`.
+
+
+From DECISIONS.md, 121 (its full text before Adam's output):
+
+### 121 Before the release: prove production's migration history
+**Ask:** in your worktree `overload-v2-switch`, on an up-to-date `master`, check that `supabase\.temp\project-ref` holds production's ref, then run `npx --yes supabase@2.119.0 migration list --linked` (a Windows cmd line, read-only) and paste the output here. Expected: versions `000`–`041` in both the Local and Remote columns, 42 rows, nothing on one side only.
+**Recommendation:** do it once before the release's migrations PR. **When:** any time before the release. Read-only (Management API, your login).
+**Blocks:** the release's migrations-first PR to master.
+**Answer:** (Adam, 2026-10-21) "121: give me the exact read-only command to prove production's migration history, as a Windows cmd line, and what output to expect. I'll run it myself." The coordinator gave him the command above on 2026-10-21; 121 stays open until he pastes its output.
+**Evidence:** the project moved to the "business" org and its GitHub integration was reconnected on 2026-10-14. The docs-only merge #87 (`a3ffbe8`) produced a production deploy: one `Supabase Preview` run `success` in 4 s (10:57:55–10:57:59 UTC), two more left `in_progress` (the pattern seen since 027, Checks that lied #24), no output text. So a merge to master does run a deploy and it didn't fail; a full re-apply would have failed at once (`000` creates `public.exercises` with no `if not exists`). What GitHub can't show is that the history is intact: a partly lost history could re-run an idempotent file (e.g. 041's `create or replace`) silently. The deploy log (Dashboard → Branches → the production branch → #87's run) or `migration list` shows it; this environment can reach neither (supabase.com and api.supabase.com are blocked; no CLI link here by design).
+
+
+From DECISIONS.md, "For the release" (replaced by the queue-fix 230 lines):
+
+- Update notes, by 230's answer: the same notice through a session deleted in History, or a planned set removed on Plan, while one of its sets was still waiting to sync (live since phase 1; in the second case the set never reaches the server), and a set deleted while its first send was failing coming back: "fixed" if 230 (a) is built before the release, else "known" (DECISIONS 230).
+
+From DECISIONS.md, "Tests owed" (its note's last sentence):
+
+Nothing is owed now.*
+
+From DECISIONS.md, "Waiting on Adam" (its header):
+
+*Rewritten at every boundary. Last: 2026-10-27, the tests-owed run's review (merged, #228).*
+- *The tests-owed run is merged (#228, `44f41a3`): the 15 owed tests, each break-proven; "Tests owed" is empty. Next: the release checklist's data rows (the final reviewer's); its screen-only rows go on your list for the review pass. New: 237 (display, accepted as built: an AMRAP row reads "@ RIR 0" where board W5 draws none). 230 and 121 still block the release.*
+
+From CONTEXT.md, "Where the build is" (where the build goes next):
+
+- **Where the build goes next:** every chunk and the tests-owed run are merged. Next: the release checklist's data rows (the rows that write data or migrate are the final reviewer's; the screen-only rows go on Adam's list for his review pass on staging: the 1.2 cost rule). 230 and 121 still block the release (DECISIONS "Waiting on Adam").
+
+From CONTEXT.md, "Where the build is" (staging's data):
+
+- **Staging's data:** Adam's re-seed of 2026-10-26 for chunk 62 (226; the seed file's line is `overload seed 2026-10-26 seed-fix 219`), confirmed by rows only a fresh run of the seed has, then changed by the reviews of 61–64 and 69. The in-progress session (Monday 2026-10-26's Upper A) holds 13 logs: bench W and 01–03, added bench 04 (a dropset with its drop) to 07, A1, B1, A2, and B2's head (20 lbs × 12, stored 9.07 kg, kind dropset; 69's smoke, 2026-10-27); 213 set logs on the account, three change rows, the plan's 14 sets unchanged (fingerprint `b4f6f5523d2baee5`). Open: B2's 2 drops, A3, B3 and the pushdown and dip sets; the session is not finished (64's staging list is the release checklist's). Earlier states, with each set's numbers: HISTORY.md, "2026-10-27 chunk 69 review" and the reviews it names.
+
+From CONTEXT.md, "What exists" (the Offline line):
+
+- Offline (this line's long form: HISTORY.md, "2026-10-27 chunk 69 review"): Dexie cache (`db.ts`, version 3 since 63); logging, creating, finishing and skipping a session queue through the sync queue (`useSyncQueue`): `upsert`, `delete` (57: behind the earlier writes to its own row, a head's also behind its stages'; a never-sent pair cancels inside the pass) and `patch` in exactly two shapes, `{ id, set_number }` (58a, DECISIONS 197) and `{ id, stage_kind: null }` (61, held behind the drops' writes). A change row that names a log hangs under it (queue-fix 227; online, `dropQueuedWritesNamingLog` after `useDeleteSetLog`'s request); History's session delete and Plan's planned-set removals still don't look at the queue, nor does an online delete at the log's own queued writes (230). 62's `pending_stages` and `retyped` rows queue; 63's `session_set_drafts` and `session_added_sets` are read and written only by `gym/sessionDrafts.ts`, never queued or sent, cleared when the session ends (sign-out doesn't wipe them, 234). Every write mutation is `networkMode: 'always'`; `SyncFailedNotice` after 5 failed passes, which the workout draws as a strip under its header with RETRY; a failed row says ONLY ON THIS PHONE · RETRY, a queued row SYNC, and with no network OFFLINE · SETS WILL SYNC WHEN YOU RECONNECT shows. Meso creation, History cross-meso views, priorities, Library and Coach are online-only.
+
+From CONTEXT.md, "Repo facts":
+
+- Vitest (node env; component tests opt into jsdom per file); 6596 tests in 356 files pass (2026-10-27, the tests-owed run); script tests 365. Pure logic lives in testable modules.

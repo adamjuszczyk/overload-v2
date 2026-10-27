@@ -1,23 +1,35 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-27, the tests-owed run's review (merged, #228).*
-- *The tests-owed run is merged (#228, `44f41a3`): the 15 owed tests, each break-proven; "Tests owed" is empty. Next: the release checklist's data rows (the final reviewer's); its screen-only rows go on your list for the review pass. New: 237 (display, accepted as built: an AMRAP row reads "@ RIR 0" where board W5 draws none). 230 and 121 still block the release.*
+*Rewritten at every boundary. Last: 2026-10-27, queue-fix 230's review (merged, #230).*
+- *Queue-fix 230 (with 234) is merged (#230, `cd9e0fa`). An online delete now drops the queued writes that name the deleted record, a log whose planned set was removed on Plan is sent with no planned set, the Library keeps an exercise with a set still queued, and sign-out clears every table (234).*
+- *Four of its cases are live in production since phase 1 (re-run on master's own code in the review). They are in "For the release" and the update notes, like 188f.*
+- *121 is closed with your output: production's migration history is intact.*
+- *Nothing in this file blocks the release checklist.*
+- *New: 239 (below), which blocks the release's update notes.*
+- *New: 238, what the fix leaves; none of it is worse than before. Recommended: known, with no update-note line, and the Library's one-line rule fixed in a small run of its own.*
+- *Tests owed: four (queue-fix 230), for a tests-only run; it needs nothing from you.*
 
 What blocks, in order:
-1. **230** (a decision, below): the release waits for its answer (fixed before it, or "known" lines in the update notes). Recommended: (a), one small DATA fix chunk before the release checklist.
-2. **121** (a to-do, below): the release's migrations PR waits for it (paste the `migration list --linked` output).
-Nothing else blocks the release.
+1. **239** (a decision, below): the release waits for its answer, "fixed" or a "known" line in the update notes. A set logged offline whose first send fails while the phone reads as online reads as not logged once the workout is read again, and LOG on it saves the set twice. Executed on staging, older than 1.2. Recommended: (a), one small DATA fix chunk before the release. It doesn't block the release checklist's data rows.
+
+Nothing else waits on you before the release checklist. The release's own steps (the manual backup, your yes on 046) wait for you where TASKS-1.2's Release section puts them (DECISIONS 202).
 
 Decisions that block a chunk: none.
 
-Decisions (none blocks; for Adam's review pass after the release checklist):
+Decisions (none blocks; for your review pass after the release checklist):
+- **238** — what queue-fix 230 leaves; none is made worse by the fix, and each is rarer than 230's shapes:
+  - (1) The Library's delete preflight leaves out a log whose set was deleted offline after its upsert had been tried, or after a renumber. Such an exercise is still deleted for good and its log refused for ever (1.2 only).
+  - (2) Another phone's delete.
+  - (3) A queued session start naming a workout day or run deleted on Programs.
+  - (4) Writes already stuck on a phone before the release.
+
+  Recommended: (a), (1) fixed by one line in a small DATA run of its own, and (2)–(4) known, with no update-note line. Blocks: nothing.
 - **237** — a planned AMRAP row reads "× AMRAP @ RIR 0" (SPEC: an AMRAP set's RIR defaults to 0, and the row shows the plan's RIR), where board W5 draws the moved drop "40 kg × AMRAP"; W5's fixture plans that drop with no RIR, so its picture matches the board and hides the difference. Recommended: accept as built. Blocks: nothing (display).
 - **236** — chunk 69's display choices on the wording sweep (D31), (a)–(f): GO TO PROGRAMS → kept on `/program` (a), "(ACTIVE)" kept (b), two thrown messages reworded (c), and (f) Coach's MESO words left as they are, per your 154 ("Coach stays exactly as it is"), listed for the update notes. Recommended: accept all, as built. Blocks: nothing.
 - **235** — chunk 64's display choices on FINISH (D31), (a)–(i), and its readings (j)–(l): (j) a session is a reopened one (W19, no box) when it carries a note or a rating from the earlier COMPLETE, since 1.2 adds no marker. Recommended: accept all, as built. Blocks: nothing.
 - **232** — UNLOG's disabled note says TASKS 63's "Log its drops first", where SPEC 18c's way on is to unlog the drops ("can't be unlogged until they are"). Recommended: (a), "Unlog its drops first" (one constant, `UNLOG_BLOCKED_NOTE`). Blocks: nothing (display).
 - **233** — a logged warmup's ✕ (rows mode) and the tick list's untick still delete its log with no draft, as since 58a; SPEC's unlog is the edit panel's UNLOG, which a logged warmup has since 63. Recommended: (a), drop the ✕ (board W2b draws none) and make the untick an unlog (no confirm, SPEC 18c). Blocks: nothing (nothing a user expects to keep is lost).
-- **234** — sign-out wipes the six older Dexie tables but not 63's two, so a signed-out account's drafts and added-set lists stay on the phone (no other account draws them). Recommended: (a), wipe them too (two lines), with 230's fix chunk. Blocks: nothing.
 - **231** — chunk 63's display choices (D31), (a)–(e), and its readings, (f)–(n). Recommended: accept all, as built. Blocks: nothing.
 - **228** — an open warmup row in the workout has no ⋯ (boards W1 and W2b draw none), so it can't be retyped or deleted before it is logged, where SPEC 19 and 18b put SET TYPE and DELETE in the set's ⋯. Recommended: (a), the ⋯ on an open warmup row in rows mode (SPEC wins over a board). Blocks: nothing.
 - **229** — chunk 62's display choices (D31), (a)–(h), and two readings, (i) a weight typed where a log had none now stored in kg and (j) TASKS' `stage_index` not patched and a Normal log's old `pending_stages` row left unread. Recommended: accept all, as built. Blocks: nothing.
@@ -45,7 +57,6 @@ Decisions (none blocks; for Adam's review pass after the release checklist):
 - **189** — chunk 65's display choices on the PROGRAMS tab (D31), (a)–(l). Recommended: accept all, as built. Blocks: nothing.
 
 To-dos:
-- **121** — Before the release: prove production's migration history. The command (given to you on 2026-10-21): in your `overload-v2-switch` worktree, on an up-to-date master, check that `supabase\.temp\project-ref` holds production's ref, then run `npx --yes supabase@2.119.0 migration list --linked`. Expected: `000`–`041` in both the Local and Remote columns, 42 rows, nothing on one side only. Paste the output; 121 stays open until then. Blocks: the release's migrations PR.
 - **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
 - **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.
 
@@ -73,12 +84,32 @@ To-dos:
 - **queue-fix 227** — (#219, `84c8000`), Adam 2026-10-26 (DECISIONS 227): the sync queue treats a change row that names a log as hanging under that log (it cancels with the log's never-sent pair, the log's queued delete waits behind it, and an online delete of the log drops it), and an online delete of a head drops the stage upserts still queued under it. The stage shape is live in production since phase 1 (executed on master's own code: a set logged offline under a dropset, its first send failed, the dropset deleted online, refused `23503` for ever), so it ships with the release; no migration, no stored row changes.
 - Update notes: fixed, a bug live since phase 1: a set logged offline under a dropset whose first send failed, then the dropset deleted, left a "couldn't sync" notice that could not be cleared (queue-fix 227; DECISIONS 227).
 - Update notes: Coach (your account only) still says MESO and mesocycle in five places (its MESO tab, two empty-state lines, NO MESO on the week and session analyses), and a pre-1.1 program's priorities page says MESOCYCLE NOT FOUND (G50); every other screen says "program" (chunk 69; DECISIONS 154, 236).
-- Update notes, by 230's answer: the same notice through a session deleted in History, or a planned set removed on Plan, while one of its sets was still waiting to sync (live since phase 1; in the second case the set never reaches the server), and a set deleted while its first send was failing coming back: "fixed" if 230 (a) is built before the release, else "known" (DECISIONS 230).
+- **queue-fix 230** — (#230, `cd9e0fa`), Adam 2026-10-27 (DECISIONS 230 (a), 234). No migration, no stored row changes. What it fixes:
+  - An online delete of a record drops the queued writes that name it: a log's own upserts and patches, and a session's logs, change rows and own upserts (a coach note on the session is sent on with no session).
+  - A log refused because its planned set was removed on Plan is sent again with no planned set, and a change row refused the same way is dropped.
+  - The Library keeps an exercise that still has a set waiting to sync.
+  - Sign-out clears every table the phone keeps.
+
+  Each case, and whether it exists in 1.1. The verdicts were executed on master's own code (`a3ffbe8`) by the builder and again in the review, line for line the same:
+  - A set deleted online after its first send failed comes back at the next sync, a single log or a dropset's head and drop: **in 1.1** (fixed).
+  - A session deleted in History while one of its sets, or a note on it, waits to sync: the write is refused for ever (a "couldn't sync" notice RETRY can't clear), and a finish still queued brings the deleted session back: **in 1.1** (fixed).
+  - A planned set removed on Plan while a set logged under it waits to sync: the log is refused for ever and never reaches the server: **in 1.1** (fixed). The same through 1.1's week-view exercise removal, which is gone in 1.2.
+  - The Library's delete of an exercise whose only sets wait to sync: deleted for good, the sets refused for ever: **in 1.1** (fixed).
+  - A change row naming a planned set removed on Plan, or a session deleted in History: 1.2 only (1.1 has no change rows).
+  - An online UNLOG of a set whose log waits to sync: 1.2 only (1.1 has no UNLOG).
+  - Sign-out leaving chunk 63's drafts and added-set lists on the phone (234): 1.2 only (Dexie version 3).
+
+  The four 1.1 cases are live in production since phase 1, so the fix ships with the release. What it leaves: DECISIONS 238.
+- Update notes: fixed, a bug live since phase 1: a set deleted while its first sync attempt was failing came back at the next sync (queue-fix 230; DECISIONS 230).
+- Update notes: fixed, a bug live since phase 1: a session deleted in History while one of its sets, or a note on it, was waiting to sync left a "couldn't sync" notice that could not be cleared, and a finish still waiting to sync brought the deleted session back (queue-fix 230; DECISIONS 230).
+- Update notes: fixed, a bug live since phase 1: a planned set removed on Plan while a set logged under it was waiting to sync left the same notice, and the logged set never reached the server; it now syncs without its planned set, as a set that synced first always did (queue-fix 230; DECISIONS 230).
+- Update notes: fixed, a bug live since phase 1: an exercise deleted in the Library whose only sets were waiting to sync was deleted for good and left the same notice; it is now kept, as an exercise with history is, and its sets sync (queue-fix 230; DECISIONS 230).
+- Update notes, by 239's answer: a set logged offline whose first sync attempt failed could read as not logged once the workout was read again, and logging it again saved it twice (live since phase 1, by reading; executed on staging): "fixed" if 239 (a) is built before the release, else "known" (DECISIONS 239).
 
 ## Tests owed
 *Every missing-proof failure the reviewer merges (behaviour verified right, a test missing), one line each: chunk, PR, the test missing. One tests-only builder run before the release checklist adds them all, the way 176 does (RULES.md, "The 1.2 tests-owed rule").*
 
-*Emptied 2026-10-27 by the tests-owed run (#228, `44f41a3`): every line is done or owed nothing; each owed test failed under its named break (builder 16 of 16; review re-ran 10). The full lines are in HISTORY.md, "2026-10-27 tests-owed run review", word for word. Nothing is owed now.*
+*Emptied 2026-10-27 by the tests-owed run (#228, `44f41a3`): every line is done or owed nothing; each owed test failed under its named break (builder 16 of 16; review re-ran 10). The full lines are in HISTORY.md, "2026-10-27 tests-owed run review", word for word. Owed since: queue-fix 230's four (#230), the last lines below.*
 
 - **46r** (#177), R4 (a swap's card drawn before the card it replaced numbers on its own): done, #228 (`workoutRules.place.test.ts`).
 - **54a** (#186), R54-W1 (19.8 lbs typed again on a 9 kg set writes nothing; 20 writes 9.07): done, #228 (`PlanPage.weightTarget.test.tsx`).
@@ -102,6 +133,14 @@ To-dos:
 - **63** (#221), R4 (the same for an unlogged warmup): done, #228 (`ExerciseCard.unlog.test.tsx`).
 - 64 (#224): none.
 - 69 (#226): none.
+- **queue-fix 230** (#230): a pass already running when History deletes a session must not send the session's finish it had read (`removedByCleanup.add` in `dropQueuedWritesNamingSession`, `src/features/offline/useSyncQueue.ts`).
+  - The break it must catch: the review's M1, that line removed (the running pass sends the finish and the deleted session comes back). It passed all 16 tests of `useSyncQueue.deletes.test.tsx`.
+  - Behaviour verified right: the review's probe R-M1 (`<scratchpad>/rq230/zzr230.probe.test.tsx`, on the builder's harness) passes on the branch and fails under M1.
+- **queue-fix 230** (#230): a cleanup the phone's database refuses is logged and doesn't fail History's delete that was done (`useDeleteSession`'s `.catch`, `src/features/history/useHistory.ts`); the deletes file pins the same for `useDeleteSetLog`. The break: the review's M8 (no `.catch`), which passed the same 16 tests. Probe R-M8 fails under it.
+- **queue-fix 230** (#230): a session cleanup the phone's database cuts short after one removal never leaves the session's own upsert (the sort in `dropQueuedWritesNamingSession` that removes the `v2_sessions` upserts first).
+  - The break: the review's M11, the sort removed: the finish stays and brings the deleted session back. It passed the same 16 tests.
+  - Probe R-M11 (the second device delete refused) fails under it.
+- **queue-fix 230** (#230): what a recovery or History's cleanup removes from the queue loses its pending-sync marker (`removePending` in `recoverFromRemovedPlannedSet` and in `dropQueuedWritesNamingSession`); otherwise the row reads SYNC after its write landed or left. The breaks: the review's M12 and M13 (each `removePending` removed), which passed the same 16 tests. Probes R-M12 and R-M13 fail under them.
 
 ## Format for all new entries
 
@@ -772,19 +811,9 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (j) Readings of TASKS: `updateSetLog` isn't extended with `stage_index` (a head's is always 0 and a drop's never changes, so nothing would patch it); a logged head made Normal or Warmup keeps its old `pending_stages` row, which nothing reads once the log has no kind (46r's design, as 61's last-drop delete; on staging bench 03's row says dropset 1 under a Normal log).
 
 ### 230 Online deletes that still don't look at the queue, in 1.1 and 1.2: a deleted set comes back, and the never-clearing 23503 through a session deleted in History or a planned set removed on Plan (found by queue-fix 227's builder and review; executed on master's code and on the merged tree)
-**Ask:** fix these three shapes before the release, or ship with "known" lines in the update notes?
-**Recommendation:** (a), one small DATA fix chunk after 64 and before the release checklist; 63 and 64 don't wait. Two of the three change what the server ends with (a set the user deleted comes back; a set the user did never arrives), which 227's shapes never did.
-**Blocks:** the release (its update notes say "fixed" or "known"); no chunk.
-**Options:** (a) a small fix chunk before the release checklist: (i) `useDeleteSetLog` online also drops the deleted log's own queued upserts and patches once its request has gone through (they would bring back a log the user deleted); (ii) History's session delete, once its request has gone through, drops the queued writes that name the session (its logs, change rows and finish: the server's cascade took them); (iii) a queued log refused `23503` on `v2_set_logs_week_plan_set_id_fkey` is sent again with `week_plan_set_id` null, as the server's ON DELETE SET NULL leaves a log that landed first, never dropped (a queued change row naming a planned set that is gone is dropped: 042's cascade); each with a break on the queue's order fake and the real-IndexedDB proof; (b) instead, refuse those deletes while a queued write names the record, with a line saying why (as 1.1's exercise reassignment refuses while anything is unsynced, `checkReassignBlockers`): a screen change, so SPEC gets a line; (c) ship as is, with "known" lines in the update notes.
-**Answer:**
-**Evidence:** executed on master's own code (`git archive origin/master`; the builder's probe extended: `<scratchpad>/rq227/m11/src/features/offline/zzq227r.probe.test.ts`, output `<scratchpad>/rq227/prod-1.1-probe-review.raw`), with a fake server that models master's 001 keys on `v2_set_logs` (`session_id` → `v2_sessions` ON DELETE CASCADE, `week_plan_set_id` → `v2_week_plan_sets` ON DELETE SET NULL) beside 010's `parent_set_id`, and on the merged tree (`<scratchpad>/rq227/stg/src/features/offline/zzq227s.probe.test.ts`, the online deletes as `useDeleteSetLog` sends them; output `stage-1.1-shapes-probe.raw`):
-- M3 (the builder's): a head and its drop both queued, the head's first send failed, the dropset deleted online (each delete reads 0 rows): the next pass creates both on the server, though the user deleted them. Since #219 the head alone comes back (its drop's upsert leaves with the head's delete).
-- M4, History: a set logged offline whose first send fails in the reconnect pass, while the session's queued finish lands in the same pass (a finish doesn't wait behind its logs), so the session is in History; DELETE there (`SessionDetail`, `historyService.deleteSession`): the log is refused `23503` on every pass, gives up after five, RETRY resets it and it fails again, and `hasQueuedWritesFor` stays true. Control (no delete): the next pass lands it. Moot on the server: the user deleted the session.
-- M5, Plan: a set logged offline whose first send fails; its planned set removed on Plan (`weekPlanService.removeSet`; a session in progress is not read-only, in 1.1 and 1.2 alike: only a done one is): the log is refused `23503` for ever the same way. Control: lands. Not moot: the set never reaches the server; only the device holds it, and a sign-out wipes it.
-- On the merged tree M4 and M5 are unchanged and 1.1's head shape (M1) clears.
-- Same family, by reading (not executed): Plan's other planned-set deletes of an in-progress session's week (the week view's exercise removal); 1.1's Library delete of an exercise with no history on the server (`deleteExercise` counts the server's logs only, so a queued log naming the exercise is refused `23503` on `exercise_id`); and 1.2's change rows, which name planned sets and sessions too (042: cascade), so a queued `retyped` or `deleted` row naming a planned set removed online is refused the same way (moot: the cascade would have removed it).
-- Likelihood is low for each (a first send that fails, then the delete before the next pass), as for 227's.
-- Since 63 (by reading, chunk 63's review): an online UNLOG goes through `useDeleteSetLog`, so (i)'s shape reaches it too: a set unlogged online while its log's own first send is still queued comes back logged at the next pass, its draft hidden under the log.
+- What: online deletes that didn't look at the sync queue (1.1 and 1.2): a set deleted after its first send failed came back at the next pass; a session deleted in History, or a planned set removed on Plan, left a queued write refused `23503` for ever (a queued finish brought the deleted session back; the planned set's logged set never reached the server); the Library's delete of an exercise whose only sets were queued the same.
+- Answer: (Adam, 2026-10-27) "230: (a). One small DATA fix chunk now, with 234 folded in (sign-out clears both new phone-side tables). Full DATA review. For each case, record whether it exists in 1.1; those go in the update notes like 188f. The fix must never drop or block a user's other queued writes." Built as queue-fix 230 (#230, `cd9e0fa`, 2026-10-27): (i)–(iii) as recommended, and the Library's delete preflight counting the logs still queued; each case's 1.1 verdict executed on master's own code by the builder and again in the review (four exist in 1.1: "For the release", like 188f). No other queued write is dropped or held: the builder's 24 breaks and the review's 13, every case on the real `flushSyncQueue`, and real IndexedDB in Chromium before and after the fix (X1–X9). What it leaves: 238. Full text in HISTORY.md.
+- Date: 2026-10-27
 
 ### 231 Chunk 63's display choices on UNLOG and the draft, and its readings (provisional, D31; accepted as built)
 **Ask:** chunk 63's choices where SPEC, TASKS and board W2b give no single answer are accepted as built and listed for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
@@ -825,12 +854,9 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Evidence:** `SetRowWarmup.tsx` since 58a (61's header: "the ✕ and the tick's untick are today's removal of the log, kept until chunk 63's UNLOG"); TASKS 63's Scope names only the edit panel's UNLOG, so the builder left them (Escalation 13). Both call `onDeleteSet` (`useDeleteSetLog`) after an inline CANCEL / DELETE.
 
 ### 234 Sign-out doesn't wipe chunk 63's two Dexie tables (found in 63's review)
-**Ask:** should sign-out also clear `session_set_drafts` and `session_added_sets`?
-**Recommendation:** (a). `wipeOfflineCache` (`src/features/auth/useAuth.tsx`) clears the six older tables so that "cached data never leaks across accounts"; the two new ones keep a signed-out account's unlogged numbers and added-set lists until that session ends on this phone. Two lines, with 230's fix chunk.
-**Blocks:** nothing: no other account draws them (each row is keyed by its session), nothing is sent, and the same account signing in again sees its drafts as before.
-**Options:** (a) wipe them at sign-out; (b) keep them (the drafts are "on that phone", G46, and outlive a sign-out).
-**Answer:**
-**Evidence:** read in the review: `wipeOfflineCache` names `exercises`, `workout_days`, `week_plans`, `sessions`, `set_logs` and `sync_queue`.
+- What: sign-out wiped the six older Dexie tables but not chunk 63's `session_set_drafts` and `session_added_sets`, so a signed-out account's drafts and added-set lists stayed on the phone.
+- Answer: (Adam, 2026-10-27) "230: (a). One small DATA fix chunk now, with 234 folded in (sign-out clears both new phone-side tables)." Built in queue-fix 230 (#230, `cd9e0fa`): sign-out clears every table of the phone's database (`db.tables`), and nothing else on sign-out changes (Supabase's sign-out, then the query cache, then the wipe, as before; `useAuth.signOut.test.tsx` names the eight tables). Real IndexedDB in Chromium: before, the two tables stayed after the app's own sign-out; after, all eight stores are empty; on staging after the merge (the deployed `cd9e0fa`), with a draft row and an added-set list on the phone, the app's own SIGN OUT in Settings left all eight stores empty. 1.2 only (Dexie version 3). Full text in HISTORY.md.
+- Date: 2026-10-27
 
 ### 235 Chunk 64's display choices on FINISH (W18, W19) and its readings (provisional, D31; accepted as built)
 **Ask:** chunk 64's choices where SPEC 11, TASKS 64 and boards W18 and W19 give no single answer are accepted as built and listed for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
@@ -873,6 +899,39 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Options:** (a) keep "× AMRAP @ RIR 0" on a planned AMRAP row; (b) an AMRAP row hides its RIR (one condition in `targetsText`; W5's fixture could then keep `targetRir: 0`).
 **Answer:**
 **Evidence:** the builder's report (`<scratchpad>/build/tests-owed-builder-1.md`, section 3) and the review (#228, `44f41a3`): the only line that changed in any re-captured dump is `40 kg @ RIR 0` → `40 kg × AMRAP` (W5, W10, W10-closed, W11, W14).
+
+### 238 What queue-fix 230 leaves: the Library's delete after a set deleted offline, another phone's delete, a queued session start naming a deleted workout day or run, and writes stuck before the release (queue-fix 230's review)
+**Ask:** ship with these as known, with no update-note line, or change any of them before the release?
+**Recommendation:** (a): fix (1) with one line in a small DATA run of its own, and ship (2)–(4) as known, with no update-note line. For (1), the preflight counts every queued upsert of the exercise except a pair the next pass cancels, that is every write before the delete a never-sent upsert, as `dropNeverSentPairs` reads it. None of the four is made worse by queue-fix 230, and each is rarer than 230's own shapes.
+**Blocks:** nothing.
+**Options:** (a) as recommended; (b) all four known, nothing changed; (c) (1) and (3) fixed before the release ((3) like 230 (iii): a session row refused on one of its SET NULL keys is sent again with that column null).
+**Answer:**
+**Evidence:**
+- (1) The Library. Executed in the review: unit probes AP1 and AP2 on the branch and on staging's tree before the fix (`<scratchpad>/rq230/zzr230.probe.test.tsx`), and real Chromium (X8).
+  - `queuedSetsNamingExercise` leaves out any log with a queued delete. That is right only for a pair the next pass cancels.
+  - AP1: a log whose upsert was tried once, whose set was then deleted offline, and whose next pass failed again. AP2: a never-sent log renumbered (a queued patch) and then deleted offline. Either is still sent first.
+  - So the exercise reads as having no history and is deleted for good. The upsert is then refused `23503` on `exercise_id` for ever and holds its patch and delete: the notice shows, `hasQueuedWritesFor` stays true, and RETRY fails again.
+  - Without the Library delete the pair goes through (AP1c). It is identical before the fix, and 1.2 only: 1.1 has no queued delete or patch.
+- (2) Another phone's delete (the builder's, by reading). History on phone B, or a log deleted on phone B, while phone A's queue names the record: phone A is never told. A's log is then refused for ever (its session is gone), or A's upsert whose reply was lost brings back a log B deleted. 1.1 has this too.
+  - The planned-set case heals at A's flush, whichever phone removed the set.
+  - A flush-time rule on the session and log keys would drop a user's write on a refusal read from an error. Not taken without your word.
+- (3) Not executed, by reading only; the builder's fake doesn't model these three keys. A queued `v2_sessions` upsert is refused for ever once a workout day (`useDeleteWorkoutDay`, Programs) or a run (`mesoService`) it names is deleted before it lands. An offline START names `mesocycle_id`, `week_plan_id` and `workout_day_id` (001: ON DELETE SET NULL).
+- (4) A write that got stuck on a phone before the release stays until sign-out: a session, exercise or log refused on its own key. The planned-set case heals on RETRY (tested). The fix prevents these; it doesn't repair them.
+
+### 239 A set logged offline whose first send fails reads as not logged once the session is read again, and LOG on it saves it twice (older than 1.2; found in queue-fix 230's review, executed on staging)
+**Ask:** fix this before the release, or ship with a "known" line in the update notes?
+**Recommendation:** (a). It saves twice a set the user logged once, and the fix is in one place: the workout's read of the session.
+**Blocks:** the release (its update notes say "fixed" or "known"); not the release checklist's data rows; no chunk.
+**Options:** (a) a small DATA fix chunk before the release: the workout's read of the session keeps this phone's queued log upserts for it (drawn SYNC, as the offline LOG drew them), with a break that drops the merge and the real-Chromium proof on staging; (b) ship as is, with a "known" line in the update notes.
+**Answer:**
+**Evidence:**
+- Executed on staging: the deployed `cd9e0fa`, as the test account (`<scratchpad>/rq230/staging/dup/run-dup230.log`).
+  - Setup: + ADD SET on the bench card, offline, then LOG 34.5 × 6, which queues one upsert. Back online, that POST was answered 503 (the reconnect pass's first send fails) while the session's reads went through.
+  - The pass ends by reading the session again (`flushOnce` invalidates `['v2_session']`), and `fetchSession` reads the server alone. So row 08 is drawn open (empty boxes, LOG) while its upsert is still queued.
+  - LOG on it wrote a second log (`964cd416`, 201). The next pass sent the queued one (`67eabddd`, 201), and 58a's correction renumbered the second log to 9.
+  - Result: two logs of one set, 34.5 × 6, `added_place` 6 both. Both were deleted by API afterwards; the account is back to 214 logs and the plan's fingerprint is unchanged.
+- With the session's reads failing too (a flaky connection), the row stays on the screen marked SYNC (`<scratchpad>/rq230/staging/case230b/`).
+- 1.1, by reading (`git archive origin/master`): its flush invalidates the session the same way and its `fetchSession` reads the server alone. So a planned set logged offline whose first send failed reads open again there too. Not executed on master.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
@@ -1045,11 +1104,9 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Date: 2026-10-14
 
 ### 121 Before the release: prove production's migration history
-**Ask:** in your worktree `overload-v2-switch`, on an up-to-date `master`, check that `supabase\.temp\project-ref` holds production's ref, then run `npx --yes supabase@2.119.0 migration list --linked` (a Windows cmd line, read-only) and paste the output here. Expected: versions `000`–`041` in both the Local and Remote columns, 42 rows, nothing on one side only.
-**Recommendation:** do it once before the release's migrations PR. **When:** any time before the release. Read-only (Management API, your login).
-**Blocks:** the release's migrations-first PR to master.
-**Answer:** (Adam, 2026-10-21) "121: give me the exact read-only command to prove production's migration history, as a Windows cmd line, and what output to expect. I'll run it myself." The coordinator gave him the command above on 2026-10-21; 121 stays open until he pastes its output.
-**Evidence:** the project moved to the "business" org and its GitHub integration was reconnected on 2026-10-14. The docs-only merge #87 (`a3ffbe8`) produced a production deploy: one `Supabase Preview` run `success` in 4 s (10:57:55–10:57:59 UTC), two more left `in_progress` (the pattern seen since 027, Checks that lied #24), no output text. So a merge to master does run a deploy and it didn't fail; a full re-apply would have failed at once (`000` creates `public.exercises` with no `if not exists`). What GitHub can't show is that the history is intact: a partly lost history could re-run an idempotent file (e.g. 041's `create or replace`) silently. The deploy log (Dashboard → Branches → the production branch → #87's run) or `migration list` shows it; this environment can reach neither (supabase.com and api.supabase.com are blocked; no CLI link here by design).
+- What: before the release's migrations PR, prove production's migration history (`npx --yes supabase@2.119.0 migration list --linked`, run by Adam on an up-to-date master).
+- Answer: (Adam, 2026-10-21) "121: give me the exact read-only command to prove production's migration history, as a Windows cmd line, and what output to expect. I'll run it myself." His output (2026-10-27): "Local and Remote both list 000–041 (42 rows matching); Local only: 042, 043, 044, 045, 046, 047; nothing Remote-only." Reading: production's migration history is intact (000–041 applied, nothing production holds that git lacks). The checkout had staging's migration files (042–047 local-only), not master's; those six are exactly the release's pending migrations. Remote ending at 041 also confirms the link pointed at production (staging's remote would list 042–047). 121 answered: the release's migrations PR is unblocked on this point. Full text in HISTORY.md.
+- Date: 2026-10-27
 
 ### 120 Models for the 1.2 reviewer and builders
 - What: which models run the 1.2 reviewer (coordinator and batch reviewers) and the builders.
