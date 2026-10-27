@@ -328,7 +328,8 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
   })
   // DECISIONS 166 (a): auto-finish waits for what the workout's rows say is left: the finish warning's planned working sets AND the open drops of
   // planned sets and open planned warmups it leaves out (`nothingLeft`, 61's review 1, F2), so a planned set deleted during the workout no
-  // longer keeps the session from finishing, and an open planned drop or warmup still does.
+  // longer keeps the session from finishing, and an open planned drop or warmup still does. A set a swap moved from a planned set counts as
+  // planned (201 (a): its open drops and a moved planned warmup hold it too; 64's review 1, F1).
   useAutoFinishSession(session, weekPlan, workout.nothingLeft)
 
   const { containerRef: exercisesContainerRef, direction: scrollToCurrentSetDirection, scrollToCurrentSet } = useScrollToCurrentSet()
