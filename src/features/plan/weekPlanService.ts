@@ -620,11 +620,12 @@ async function fetchDeloadSetLogs(plannedSetIds: string[]): Promise<DeloadSetLog
   if (plannedSetIds.length === 0) return []
   const { data, error } = await supabase
     .from('v2_set_logs')
-    .select('week_plan_set_id, weight, is_skipped, is_warmup, parent_set_id')
+    .select('week_plan_set_id, exercise_id, weight, is_skipped, is_warmup, parent_set_id')
     .in('week_plan_set_id', plannedSetIds)
   if (error) throw error
   const rows = (data ?? []) as {
     week_plan_set_id: string | null
+    exercise_id: string
     weight: number | null
     is_skipped: boolean
     is_warmup: boolean
@@ -632,6 +633,7 @@ async function fetchDeloadSetLogs(plannedSetIds: string[]): Promise<DeloadSetLog
   }[]
   return rows.map((r) => ({
     weekPlanSetId: r.week_plan_set_id,
+    exerciseId: r.exercise_id,
     weight: r.weight,
     isSkipped: r.is_skipped,
     isWarmup: r.is_warmup,
@@ -1010,7 +1012,12 @@ export async function markSessionDeload(
     const source = m.source
     if (source.kind === 'matched') {
       const baseSets = (baseOccurrence?.sets ?? []).filter((s) => s.program_exercise_id === source.baseProgramExerciseId)
-      return baseSets.map((s) => toSourceSet(s, resolveLoggedWeightKg(baseLogs, s.id), m.markedProgramExerciseId))
+      // DECISIONS 240: the weight logged against a base set is the PLANNED exercise's own (the base slot's), never a swapped-in exercise's, whose logs carry the
+      // same planned set ids; those fall back to the planned weight like a set that was never logged.
+      const plannedExerciseId = (baseOccurrence?.exercises ?? []).find((e) => e.programExerciseId === source.baseProgramExerciseId)?.exerciseId
+      return baseSets.map((s) =>
+        toSourceSet(s, plannedExerciseId === undefined ? null : resolveLoggedWeightKg(baseLogs, s.id, plannedExerciseId), m.markedProgramExerciseId),
+      )
     }
     const ownSets = current.sets.filter((s) => s.program_exercise_id === m.markedProgramExerciseId)
     return ownSets.map((s) => toSourceSet(s, null))

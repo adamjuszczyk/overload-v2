@@ -795,7 +795,9 @@ export function reviewItems(input: ReviewInput): ReviewGroup[] {
         workoutDayId: lastPlan.workoutDayId,
         workoutName,
         date,
-        heading: [weekdayOf(date), workoutName.toUpperCase()].filter((part) => part !== '').join(' · '),
+        // A weekday run heads a group with the day it was done ("TUE · UPPER A"); a sequence run has no weekdays, so the group is headed with the slot, counted from 1 as Plan's
+        // chips are ("SLOT 2 · ROTATION A"; DECISIONS 242, SPEC Scheduling → Sequence: "The cycle replaces the week everywhere the week is used"). The slot is the last cycle's row's.
+        heading: [lastPlan.sequencePosition != null ? `SLOT ${lastPlan.sequencePosition + 1}` : weekdayOf(date), workoutName.toUpperCase()].filter((part) => part !== '').join(' · '),
         items: entries,
       },
     })

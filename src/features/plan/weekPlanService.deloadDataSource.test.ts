@@ -130,6 +130,9 @@ interface WorldLog {
   weekPlanSetId: string
   weight: number | null
   isSkipped?: boolean
+  // The exercise the set was DONE on (`v2_set_logs.exercise_id`). Left out, it is the planned set's own exercise (a set done as planned); a swap's log names
+  // the replacement (DECISIONS 240).
+  exerciseId?: string
 }
 
 function toSetRow(s: WorldSet) {
@@ -191,9 +194,28 @@ function buildFromMock(world: { weekPlans: WorldWeekPlan[]; logs: WorldLog[] }) 
     if (table === 'v2_set_logs') {
       return makeChain(table, (state) => {
         const ids = (state.inFilters.week_plan_set_id ?? []) as string[]
+        // The planned set's own exercise: its program exercise's, in the week that holds the set.
+        const plannedExerciseOf = (weekPlanSetId: string): string | undefined => {
+          for (const w of world.weekPlans) {
+            const set = w.sets.find((s) => s.id === weekPlanSetId)
+            if (set) return w.exercises.find((e) => e.programExerciseId === set.programExerciseId)?.exerciseId
+          }
+          return undefined
+        }
+        // Only the columns the request names come back, as PostgREST answers: a read that doesn't ask for `exercise_id` gets none.
+        const selects = calls.filter((c) => c.table === 'v2_set_logs' && c.method === 'select')
+        const asked = String(selects[selects.length - 1]?.args[0] ?? '').split(',').map((c) => c.trim())
         const rows = world.logs
           .filter((l) => ids.includes(l.weekPlanSetId))
-          .map((l) => ({ week_plan_set_id: l.weekPlanSetId, weight: l.weight, is_skipped: l.isSkipped ?? false, is_warmup: false, parent_set_id: null }))
+          .map((l) => ({
+            week_plan_set_id: l.weekPlanSetId,
+            exercise_id: l.exerciseId ?? plannedExerciseOf(l.weekPlanSetId),
+            weight: l.weight,
+            is_skipped: l.isSkipped ?? false,
+            is_warmup: false,
+            parent_set_id: null,
+          }))
+          .map((row) => Object.fromEntries(Object.entries(row).filter(([column]) => asked.includes(column))))
         return { data: rows, error: null }
       })
     }
@@ -448,6 +470,81 @@ describe('markSessionDeload — the logged weight comes from the CHOSEN base wee
     expect(insertedSets).toHaveLength(1)
     // Week 2's (more recent) own log, 130 -> 115, never week 1's 70 -> 62.5.
     expect(insertedSets[0]).toMatchObject({ program_exercise_id: 'pe-A', rep_min: 15, rep_max: 19, target_rir: 5, target_weight: 115 })
+  })
+})
+
+// DECISIONS 240 (found in the release checklist's RC24, executed on staging: a deload Back Squat read 135 kg where the normal week plans 112.5). 1.1's replacement
+// card logs the ORIGINAL's planned sets, so the base week's Leg Press logs (180 kg) carry the Back Squat's planned set ids; the weight "actually logged" for the squat is the
+// squat's own, and with none the set takes its planned weight, as a set that was never logged does. RULES_ABD: weight 90% rounded down to 2.5 kg.
+describe('markSessionDeload — a swapped-in exercise\'s log is not the planned exercise\'s weight (DECISIONS 240)', () => {
+  const rules = { weight: { percent: 90, rounding: 'down' as const, step: 2.5, stepUnit: 'kg' as const } }
+  const world = (logs: WorldLog[]) => ({
+    weekPlans: [
+      {
+        id: 'wp-base', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 1,
+        exercises: [
+          { programExerciseId: 'pe-squat', exerciseId: 'ex-squat' },
+          { programExerciseId: 'pe-row', exerciseId: 'ex-row' },
+        ],
+        sets: [
+          { id: 'base-squat-1', programExerciseId: 'pe-squat', setNumber: 1, targetRir: 2, repMin: 5, repMax: 5, targetWeight: 112.5 },
+          { id: 'base-row-1', programExerciseId: 'pe-row', setNumber: 1, targetRir: 2, repMin: 8, repMax: 8, targetWeight: 60 },
+        ],
+      },
+      {
+        id: 'wp-marked', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 3,
+        exercises: [
+          { programExerciseId: 'pe-squat', exerciseId: 'ex-squat' },
+          { programExerciseId: 'pe-row', exerciseId: 'ex-row' },
+        ],
+        sets: [
+          { id: 'marked-squat-1', programExerciseId: 'pe-squat', setNumber: 1, targetRir: 2, repMin: 5, repMax: 5, targetWeight: 115 },
+          { id: 'marked-row-1', programExerciseId: 'pe-row', setNumber: 1, targetRir: 2, repMin: 8, repMax: 8, targetWeight: 62.5 },
+        ],
+      },
+    ],
+    logs,
+  })
+  const weightOf = (programExerciseId: string) => insertedSets.find((s) => s.program_exercise_id === programExerciseId)?.target_weight
+
+  it('the base week\'s only log of the squat\'s planned set is a Leg Press log: the squat takes its planned 112.5 (90% -> 100), not 180 (90% -> 162.5); the row, done as planned, takes its own log', async () => {
+    fromMock.mockImplementation(
+      buildFromMock(world([
+        { weekPlanSetId: 'base-squat-1', weight: 180, exerciseId: 'ex-leg-press' }, // the swap's log, on the squat's planned set
+        { weekPlanSetId: 'base-row-1', weight: 70 }, // done as planned (the row's own exercise)
+      ])),
+    )
+    expect(await markSessionDeload('u1', 'wp-marked', rules)).toBe('calculated')
+    expect(insertedSets).toHaveLength(2)
+    expect(weightOf('pe-squat')).toBe(100) // 112.5 x 90% = 101.25 -> 100
+    expect(weightOf('pe-row')).toBe(62.5) // 70 x 90% = 63 -> 62.5: the row's own log still counts
+  })
+
+  it('with the swap\'s log first and the squat\'s own log after it, the squat\'s own weight is the base (100 -> 90), not the swap\'s (180)', async () => {
+    fromMock.mockImplementation(
+      buildFromMock(world([
+        { weekPlanSetId: 'base-squat-1', weight: 180, exerciseId: 'ex-leg-press' },
+        { weekPlanSetId: 'base-squat-1', weight: 100, exerciseId: 'ex-squat' },
+        { weekPlanSetId: 'base-row-1', weight: 70 },
+      ])),
+    )
+    expect(await markSessionDeload('u1', 'wp-marked', rules)).toBe('calculated')
+    expect(weightOf('pe-squat')).toBe(90)
+  })
+
+  it('a base week whose only logs are a swap\'s still happened, so it is the base: the planned weights are used for the swapped set', async () => {
+    fromMock.mockImplementation(buildFromMock(world([{ weekPlanSetId: 'base-squat-1', weight: 180, exerciseId: 'ex-leg-press' }])))
+    expect(await markSessionDeload('u1', 'wp-marked', rules)).toBe('calculated')
+    expect(weightOf('pe-squat')).toBe(100)
+    expect(weightOf('pe-row')).toBe(52.5) // never logged: planned 60 x 90% = 54 -> 52.5, from the base week (the marked week plans 62.5)
+  })
+
+  it('the read of the base week\'s logs asks for each log\'s exercise', async () => {
+    fromMock.mockImplementation(buildFromMock(world([{ weekPlanSetId: 'base-squat-1', weight: 180, exerciseId: 'ex-leg-press' }])))
+    await markSessionDeload('u1', 'wp-marked', rules)
+    const asked = calls.filter((c) => c.table === 'v2_set_logs' && c.method === 'select').map((c) => String(c.args[0]))
+    expect(asked).toHaveLength(1)
+    expect(asked[0].split(',').map((c) => c.trim())).toContain('exercise_id')
   })
 })
 

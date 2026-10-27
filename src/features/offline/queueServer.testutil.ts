@@ -30,6 +30,8 @@ export const KEYS: Record<string, Key[]> = {
 type Filters = Array<[string, unknown]>
 interface Thenable<T> {
   eq: (column: string, value: unknown) => Thenable<T>
+  /** `.single()`: the request's answer as it is (the session read answers one row, or `PGRST116`). */
+  single: () => Promise<T>
   then: (resolve: (value: T) => unknown, reject?: (reason: unknown) => unknown) => Promise<unknown>
 }
 
@@ -62,6 +64,7 @@ export class QueueServer {
     this.refused.length = 0
     this.failing.clear()
     this.held.clear()
+    this.onSessionRead = null
   }
 
   /** The next request with this tag stops at the server until `release()`; `reached` resolves when it is there. For a pass caught in flight. */
@@ -149,6 +152,36 @@ export class QueueServer {
     }
   }
 
+  /**
+   * DECISIONS 239. The workout's read of its session, as `fetchSession` makes it: `v2_sessions` with its logs (and each log's exercise) and its change rows embedded, one row by `.single()`.
+   * The answer is built when the request ARRIVES; `onSessionRead` (a test's hook) then runs before the answer is sent, so a pass that lands while the request is out can be played: the
+   * reply is the server as it was when the request left. A read fails like any request with `failing.set('select v2_sessions:<id>', n)`.
+   */
+  onSessionRead: (() => Promise<void> | void) | null = null
+
+  private async readSession(filters: Filters) {
+    const id = filters.length === 1 && filters[0][0] === 'id' ? (filters[0][1] as string) : null
+    const tag = `select v2_sessions:${id}`
+    const session = id ? this.get('v2_sessions', id) : undefined
+    const answer = session
+      ? {
+          ...session,
+          v2_set_logs: [...this.table('v2_set_logs').values()]
+            .filter((log) => log.session_id === id)
+            .map((log) => {
+              const exercise = this.get('exercises', log.exercise_id as string)
+              return { ...log, exercises: exercise && exercise.name !== undefined ? { ...exercise } : null }
+            }),
+          v2_session_set_changes: [...this.table('v2_session_set_changes').values()].filter((row) => row.session_id === id).map((row) => ({ ...row })),
+        }
+      : null
+    await this.gate(tag)
+    if (this.onSessionRead) await this.onSessionRead()
+    if (this.fails(tag)) return { data: null, error: { message: 'Failed to fetch' } }
+    this.requests.push(`${tag} -> ${answer ? 'ok' : '0 rows'}`)
+    return answer ? { data: answer, error: null } : { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' } }
+  }
+
   /** What the Supabase client's `from` answers for a table. A test's mock maps `from` onto this one (`verify-rls-tables.test.mjs` allows no other dynamic `from` call with a variable in `src/`). */
   query(table: string) {
     const server = this
@@ -159,6 +192,7 @@ export class QueueServer {
           filters.push([column, value])
           return chain
         },
+        single: () => run(filters),
         then: (resolve, reject) => run(filters).then(resolve, reject),
       }
       return chain
@@ -172,8 +206,9 @@ export class QueueServer {
         },
       }),
       delete: () => builder((filters) => server.remove(table, filters)),
-      select: (_columns?: string, options?: { count?: string; head?: boolean }) =>
+      select: (columns?: string, options?: { count?: string; head?: boolean }) =>
         builder(async (filters) => {
+          if (table === 'v2_sessions' && columns?.includes('v2_set_logs')) return server.readSession(filters) as never
           const rows = [...server.table(table).values()].filter((row) => filters.every(([column, value]) => row[column] === value))
           return options?.head ? { data: null, count: rows.length, error: null } : { data: rows, count: rows.length, error: null }
         }),
