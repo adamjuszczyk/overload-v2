@@ -23,7 +23,7 @@ LOG
 LAST 50 × 10 @ 2
 
 ↳
-40 kg @ RIR 0
+40 kg × AMRAP
 AFTER SET 03
 ADD SET
 Straight-Arm Pulldown
