@@ -96,7 +96,7 @@ export default function HistorySessions() {
         {/* Search */}
         <input
           type="text"
-          placeholder="Search sessions or mesos…"
+          placeholder="Search sessions or programs…"
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
@@ -113,7 +113,7 @@ export default function HistorySessions() {
           className="w-full px-3 py-2.5 rounded-xl text-sm outline-none appearance-none"
           style={inputStyle}
         >
-          <option value="">ALL MESOS</option>
+          <option value="">ALL PROGRAMS</option>
           {mesos.map(m => (
             <option key={m.id} value={m.id}>
               {m.name.toUpperCase()}
@@ -259,7 +259,7 @@ export default function HistorySessions() {
                   fontFamily: 'var(--font-mono)',
                 }}
               >
-                DELETE MESO
+                DELETE PROGRAM
               </button>
             </div>
           ) : (
@@ -268,13 +268,13 @@ export default function HistorySessions() {
                 className="text-xs font-bold mb-1"
                 style={{ color: 'var(--error)', fontFamily: 'var(--font-mono)' }}
               >
-                DELETE MESOCYCLE?
+                DELETE FINISHED PROGRAM?
               </p>
               <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
                 This will permanently delete{' '}
                 <strong style={{ color: 'var(--text-primary)' }}>{selectedMeso.name}</strong>'s
                 plan. This cannot be undone. Its logged sessions aren't deleted — they'll remain
-                in History, no longer linked to this mesocycle.
+                in History, no longer linked to this program.
               </p>
               <div className="flex gap-2">
                 <button
@@ -389,7 +389,7 @@ export default function HistorySessions() {
                     className="mt-0.5 text-xs"
                     style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
                   >
-                    {session.mesocycleName ?? 'NO MESO'}
+                    {session.mesocycleName ?? 'NO PROGRAM'}
                     {session.setCount > 0 ? ` · ${session.setCount} SETS` : ''}
                   </p>
 

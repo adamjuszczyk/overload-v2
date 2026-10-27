@@ -1013,7 +1013,7 @@ export function planProgramChange(input: ProgramChangeInput): ProgramChangePlan 
     draftById.set(dw.id, dw)
   }
   if (draftById.size !== workouts.length || workouts.some((w) => !draftById.has(w.id))) {
-    throw new RangeError("the draft's workouts must be the run's workouts, each once: a workout is never added or removed here")
+    throw new RangeError("the draft's workouts must be the program's workouts, each once: a workout is never added or removed here")
   }
 
   const runBlocks = new Map(runCopy.blocks.map((b) => [b.id, b]))
@@ -1420,7 +1420,7 @@ function planSchedule(out: Rows, input: ProgramChangeInput, workoutIds: readonly
   const ids = new Set(workoutIds)
   for (const day of WEEKDAYS) {
     const id = edit.schedule[day] ?? null
-    if (id !== null && !ids.has(id)) throw new RangeError(`the draft's ${day} names workout ${id}, which the run doesn't have`)
+    if (id !== null && !ids.has(id)) throw new RangeError(`the draft's ${day} names workout ${id}, which the program doesn't have`)
   }
   // "A workout needs at least one day": a workout that has days and is left with none is refused (one that never had
   // any isn't asked for one).

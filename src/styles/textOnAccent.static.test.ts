@@ -66,7 +66,7 @@ const NOT_REBUILT: Record<string, number> = {
   'features/gym/PreviewExerciseCard.tsx': 1, // Today's session preview
   'features/gym/SequenceTodayPage.tsx': 1, // Today, a sequence run
   'features/gym/SessionPreview.tsx': 1, // Today's session preview
-  'features/gym/TodayPage.tsx': 2, // Today: START SESSION and GO TO PROGRAM
+  'features/gym/TodayPage.tsx': 2, // Today: START SESSION and GO TO PROGRAMS
   'features/history/HistoryPage.tsx': 1, // History: the picked tab
   'features/history/HistorySessions.tsx': 3, // History: the status and muscle chips
   'features/library/ExerciseForm.tsx': 1, // Library

@@ -436,14 +436,14 @@ export default function TodayPage() {
         <p className="text-sm mb-4" style={{ color: 'var(--text-secondary)' }}>
           {result.type === 'no_program'
             ? 'Create a program to get started'
-            : 'Start a mesocycle to begin training'}
+            : 'Start a program to begin training'}
         </p>
         <button
           onClick={() => navigate('/program')}
           className="px-6 py-3 rounded-xl font-black text-sm tracking-widest"
           style={{ backgroundColor: 'var(--accent)', color: 'var(--base)', fontFamily: 'var(--font-mono)' }}
         >
-          GO TO PROGRAM →
+          GO TO PROGRAMS →
         </button>
       </div>
     </div>
