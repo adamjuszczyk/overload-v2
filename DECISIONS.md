@@ -1,17 +1,18 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-26, chunk 63's review (merged, #221).*
-- *Chunk 63 (Unlog) is merged (#221, `f5637df`): UNLOG keeps a set's numbers as a draft on the phone (Dexie version 3; the upgrade proven on real IndexedDB and end to end on staging), and logging it again is an exact undo. New: 231 (D31, accepted as built), 232 (UNLOG's disabled note: TASKS' "Log its drops first" reads backwards against SPEC 18c), 233 (a logged warmup's ✕ and the tick list's untick delete the log with no draft; SPEC doesn't require an unlog), 234 (sign-out leaves the two draft tables). Tests owed: three (63). 230 still blocks the release.*
+*Rewritten at every boundary. Last: 2026-10-27, chunk 64's review 2 (merged, #224).*
+- *Chunk 64 (Finishing) is merged (#224, `9ebb6c9`) on its second attempt: FINISH SESSION opens W18 (W19 for a reopened session); the finish warning lists a set a swap moved from a planned set (201 (a)), and its open drops and a moved planned warmup hold auto-finish (166 (a); review 1's F1, fixed). New: 235 (D31, accepted as built, with the reopened reading). Tests owed: none. TASKS 64's Staging list goes to the release checklist (it ends the seed's in-progress session). 230 still blocks the release.*
 
 What blocks, in order:
-1. **230** (a decision, below): the release waits for its answer (fixed before it, or "known" lines in the update notes). Recommended: (a), one small DATA fix chunk after 64 and before the release checklist; 63 and 64 don't wait.
+1. **230** (a decision, below): the release waits for its answer (fixed before it, or "known" lines in the update notes). Recommended: (a), one small DATA fix chunk after 64 and before the release checklist; 69 doesn't wait.
 2. **121** (a to-do, below): the release's migrations PR waits for it.
 Nothing else blocks a chunk or the release.
 
 Decisions that block a chunk: none.
 
 Decisions (none blocks; for Adam's review pass after the release checklist):
+- **235** — chunk 64's display choices on FINISH (D31), (a)–(i), and its readings (j)–(l): (j) a session is a reopened one (W19, no box) when it carries a note or a rating from the earlier COMPLETE, since 1.2 adds no marker. Recommended: accept all, as built. Blocks: nothing.
 - **232** — UNLOG's disabled note says TASKS 63's "Log its drops first", where SPEC 18c's way on is to unlog the drops ("can't be unlogged until they are"). Recommended: (a), "Unlog its drops first" (one constant, `UNLOG_BLOCKED_NOTE`). Blocks: nothing (display).
 - **233** — a logged warmup's ✕ (rows mode) and the tick list's untick still delete its log with no draft, as since 58a; SPEC's unlog is the edit panel's UNLOG, which a logged warmup has since 63. Recommended: (a), drop the ✕ (board W2b draws none) and make the untick an unlog (no confirm, SPEC 18c). Blocks: nothing (nothing a user expects to keep is lost).
 - **234** — sign-out wipes the six older Dexie tables but not 63's two, so a signed-out account's drafts and added-set lists stay on the phone (no other account draws them). Recommended: (a), wipe them too (two lines), with 230's fix chunk. Blocks: nothing.
@@ -95,6 +96,7 @@ To-dos:
 - **63** (#221): a drop logged again after its UNLOG leaves no draft on the phone (`logStage`'s `withDraft` in `src/features/gym/useExerciseCardState.ts`). The break it must catch is the review's R2, `logStage` writing without `withDraft`, which passed all 53 tests of `ExerciseCard.unlog.test.tsx`, `sessionDrafts.test.tsx`, `GymSession.reload.test.tsx` and `SetEditPanel.test.tsx`. Behaviour verified right: the review's probe `<scratchpad>/build/r63/probe/zzReview63.probe.test.tsx` (R2) passes on the branch and fails under the break, and on staging bench 04's drop, unlogged and logged again, left no draft in IndexedDB.
 - **63** (#221): the re-LOG of an unlogged set on an lbs exercise sends the draft's exact kg when the weight is left as shown (`resolveEditedWeightKg` in `SetRowCurrent.tsx`'s LOG): 9 kg shows as 19.8 lbs and must go back as 9, not 8.98 (RULES, 54a's round-trip rule). The break it must catch is the review's R3, `toStorageWeight` for every LOG, which passed the same 53 tests (every unlog test is in kg). Same probe (R3).
 - **63** (#221): the same for an unlogged warmup's re-LOG (`SetRowWarmup.tsx`'s `handleLog`). The break it must catch is the review's R4, which passed the same 53 tests. Same probe (R4).
+- **64** (#224): none. The review re-ran 10 of attempt 2's 12 breaks (R1, the pre-fix predicate, fails 8 tests) and 11 of attempt 1's (P2, P3, P9a, P12a–f, P13b, P16: COMPLETE's session-row writes and the drafts clear included): all caught, each by named failing tests; review 1's probe passes.
 
 ## Format for all new entries
 
@@ -824,6 +826,26 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Options:** (a) wipe them at sign-out; (b) keep them (the drafts are "on that phone", G46, and outlive a sign-out).
 **Answer:**
 **Evidence:** read in the review: `wipeOfflineCache` names `exercises`, `workout_days`, `week_plans`, `sessions`, `set_logs` and `sync_queue`.
+
+### 235 Chunk 64's display choices on FINISH (W18, W19) and its readings (provisional, D31; accepted as built)
+**Ask:** chunk 64's choices where SPEC 11, TASKS 64 and boards W18 and W19 give no single answer are accepted as built and listed for your review pass after the release checklist (the 1.2 cost rule: listed, no follow-ups).
+**Recommendation:** accept all. (a)–(i) are display; (j)–(l) are readings that decide which board variant is drawn or which row is the moved one, never what COMPLETE writes or what a number counts.
+**Blocks:** nothing.
+**Options:** (a)–(l) below, each accepted or changed by letter; for (j), (b) a marker of a reopen instead (a column and a later migration, or a phone-side flag, which a reload or another phone loses).
+**Answer:**
+**Evidence:** the builder's reports (`<scratchpad>/build/chunk-64-builder-1.md` section 3, `chunk-64-builder-2.md`) and the reviews (`chunk-64-review-1.md`: its Question 1; review 2, #224).
+- (a) WARMUPS counts the warmup logs that were done; SKIPPED is always drawn, muted at 0 (the board draws it at 0).
+- (b) A chosen ENERGY or PUMP chip is the accent outline on `--accent-muted` with `--accent` text (the pickers' look; the board's darker accent text has no token).
+- (c) The footer is pinned at the bottom of the scroll area (sticky), and COMPLETE isn't dimmed while it reads SAVING… (W19 draws it undimmed).
+- (d) A failed COMPLETE says "Couldn't complete the session." and under it the real reason (SPEC Errors (15); no board draws it).
+- (e) The finish screen opens at the top of the scroller; BACK TO SESSION puts the scroller back; GO BACK puts the first listed set at the top quarter (the jump button's math).
+- (f) A deload session's eyebrow reads "DELOAD · WEEK 2 · TUESDAY · 52:40", a sequence run's "CYCLE 2 · SLOT 2 · 52:40" (the workout header's own parts).
+- (g) The note box is 96 px high with no resize handle; placeholder "How did it feel?" as today.
+- (h) "NICE WORK", the check icon and the "(OPTIONAL)" words go with the old screen (the board has none).
+- (i) The button reads COMPLETE, the board's word (it read COMPLETE SESSION).
+- (j) How a reopened session is known (SPEC 11: "A reopened session finishes through W19"; TASKS 64 names no marker; 1.2 adds no column, Migration: none; `reopenSession` sets only `status` and `completed_at`): a session is a reopened one when it carries a note or an energy or pump rating, what the earlier COMPLETE saved (`finishView.ts`, `isReopened`). The miss, a session completed with no note and no rating and then reopened, draws W18, with its box if planned sets are open, which hides no work; COMPLETE writes the same either way (the payload tests cover both). To see W19 on staging, the first COMPLETE saves a note or a rating.
+- (k) A moved set is found in the swap's record by the place it took (179). Two sets of one exercise hold one place only when two phones add at once (173); a set of that place on the swap's card would then be read as the moved one.
+- (l) A planned set moved twice gets a second record that names `{ addedPlace }`, so on the third card it would read as an added set; not reachable, since a swap's card offers no second swap (199 (a), `canSwap`).
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
