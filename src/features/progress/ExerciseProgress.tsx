@@ -187,7 +187,7 @@ function ExerciseCharts({ exercise, onBack }: { exercise: Exercise; onBack: () =
             className="text-xs font-bold tracking-widest"
             style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}
           >
-            PROGRESS · THIS MESO
+            PROGRESS · THIS PROGRAM
           </p>
           <p
             className="text-lg font-black"

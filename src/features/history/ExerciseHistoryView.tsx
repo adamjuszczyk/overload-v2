@@ -371,7 +371,7 @@ export default function ExerciseHistoryView({ exerciseId }: Props) {
             fontFamily: 'var(--font-mono)',
           }}
         >
-          <option value="">ALL MESOS</option>
+          <option value="">ALL PROGRAMS</option>
           {mesos.map((m) => (
             <option key={m.id} value={m.id}>
               {m.name.toUpperCase()}
