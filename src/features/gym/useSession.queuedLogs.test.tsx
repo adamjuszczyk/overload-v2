@@ -257,12 +257,17 @@ describe('a set logged offline whose first send fails is still in the session th
     queue().push({ id: world.nextId++, table: 'v2_set_logs', operation: 'upsert', payload: { id: 'bad', session_id: 's1' }, createdAt: new Date().toISOString() }) // damaged: no time, no exercise
     queue().push({ id: world.nextId++, table: 'v2_set_logs', operation: 'upsert', payload: { id: 'bad2', session_id: 's1', user_id: 'u1', exercise_id: 'bench', set_number: 1 }, createdAt: new Date().toISOString() }) // no logged_at
     queue().push({ id: world.nextId++, table: 'v2_coach_notes', operation: 'upsert', payload: { id: 'n1', session_id: 's1', body: 'x' }, createdAt: new Date().toISOString() }) // not a log
+    // a log with only the columns a log cannot be drawn without (an older producer's, say): drawn, with the nullable columns null and the flags off
+    queue().push({ id: world.nextId++, table: 'v2_set_logs', operation: 'upsert', payload: { id: 'sparse', session_id: 's1', user_id: 'u1', exercise_id: 'bench', set_number: 4, logged_at: '2026-10-26T18:30:00Z' }, createdAt: new Date().toISOString() })
     await act(async () => {
       await queryClient.refetchQueries({ queryKey: ['v2_session', 's1'] })
     })
     await settle() // TanStack tells its observers on a later tick
     expect(view.result.current.isError).toBe(false)
-    expect(idsOf(view)).toEqual(['L1'])
+    expect(idsOf(view).sort()).toEqual(['L1', 'sparse'])
+    expect(logOf(view, 'sparse')).toMatchObject({
+      weight: null, reps: null, rir: null, note: null, weekPlanSetId: null, parentSetId: null, restSeconds: null, isDropset: false, isSkipped: false,
+    })
     const other = mount('s2')
     await waitFor(() => expect(other.result.current.data).toBeDefined())
     expect(idsOf(other)).toEqual(['X'])
