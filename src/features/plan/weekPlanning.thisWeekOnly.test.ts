@@ -55,6 +55,20 @@ describe('thisWeekOnly — false while the week matches the default', () => {
     expect(thisWeekOnly(four, base)).toBe(true) // the week has a fourth set the default no longer has
   })
 
+  // Chunk 54b's review (R11): weekDiff.test.ts's "a removed stage, and the stages of a removed head, are not part of it either" went with 1.1's module; 42's
+  // tests above drop only a removed head.
+  it('a stage the default dropped (removed_at on a stage program set) is not part of the default either (break: the stages are taken from every set, the dropped ones included)', () => {
+    // set 1 is a dropset with two drops in the default; the second was dropped since
+    const base = [
+      pset('p1', 'e', 1, { repMin: 8, repMax: 10, stageKind: 'dropset' }),
+      pset('p1a', 'e', 1, { parentProgramSetId: 'p1', stageIndex: 1, repMin: 8, repMax: 10 }),
+      pset('p1b', 'e', 1, { parentProgramSetId: 'p1', stageIndex: 2, repMin: 8, repMax: 10, removedAt: '2026-10-01T00:00:00Z' }),
+    ]
+    const one = [wset('w1', 'e', 1, { repMin: 8, repMax: 10, stageKind: 'dropset' }), stage('w1a', 'w1', 'e', 1, { repMin: 8, repMax: 10 })]
+    expect(thisWeekOnly(one, base)).toBe(false) // the week's one drop is what the default holds now
+    expect(thisWeekOnly([...one, stage('w1b', 'w1', 'e', 2, { repMin: 8, repMax: 10 })], base)).toBe(true) // a second drop is the week's own
+  })
+
   it('the rows may come in any order: heads are ranked by set number, stages by stage index', () => {
     const base = [
       pset('p2', 'e', 2, { repMin: 8, repMax: 10, stageKind: 'dropset' }),

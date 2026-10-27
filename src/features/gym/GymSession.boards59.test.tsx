@@ -35,14 +35,14 @@ const planSet = (id: string, setNumber: number, extra: Record<string, unknown> =
   id, weekPlanId: 'wp-1', userId: 'user-1', programExerciseId: 'pe-1', setNumber, targetRir: 2,
   isDropset: false, parentWeekPlanSetId: null, stageIndex: 0, isWarmup: false, ...extra,
 })
-// Board W5's session: Lat Pulldown 01 and 02 logged, its 03 a dropset with one drop (52.5 kg, 8–10, RIR 1; the drop 40 kg to AMRAP).
+// Board W5's session: Lat Pulldown 01 and 02 logged, its 03 a dropset with one drop (52.5 kg, 8–10, RIR 1; the drop 40 kg × AMRAP, no RIR, as the board draws it).
 const weekPlan: WeekPlan = {
   id: 'wp-1', userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-1', weekNumber: 2, isDeload: false, notes: null,
   sets: [
     planSet('set-1', 1),
     planSet('set-2', 2),
     planSet('set-3', 3, { stageKind: 'dropset', targetWeight: 52.5, repMin: 8, repMax: 10, targetRir: 1 }),
-    planSet('set-3-drop', 3, { isDropset: true, parentWeekPlanSetId: 'set-3', stageIndex: 1, targetWeight: 40, repMin: null, repMax: null, targetRir: 0 }),
+    planSet('set-3-drop', 3, { isDropset: true, parentWeekPlanSetId: 'set-3', stageIndex: 1, targetWeight: 40, repMin: null, repMax: null, isAmrap: true, targetRir: null }),
   ] as WeekPlan['sets'],
   exercises: [pe1],
   createdAt: '2026-01-01T00:00:00Z',
@@ -233,6 +233,8 @@ describe('W5 — swapped and added exercises', () => {
     expect(machine.textContent).toContain('BACK · SWAPPED FROM LAT PULLDOWN')
     expect(machine.textContent).toContain('DROPSET · 1 DROP')
     expect(machine.textContent).toContain('AFTER SET 03')
+    // the moved dropset's drop shows the targets of its own planned drop, as the board draws it (DECISIONS 164; break: the stage branch of `targetsOf` gives nothing)
+    expect(machine.textContent).toContain('40 kg × AMRAP')
     expect(machine.textContent).toContain('ADD SET')
     expect((within(machine).getByLabelText('Weight') as HTMLInputElement).value).toBe('52.5')
     expect((within(machine).getByLabelText('Reps') as HTMLInputElement).placeholder).toBe('8–10')

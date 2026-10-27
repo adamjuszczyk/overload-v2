@@ -236,6 +236,41 @@ describe('PlanPage — weight target editor (chunk 19)', () => {
     expect(updateSetMutate).not.toHaveBeenCalled()
   })
 
+  // Chunk 54a's review (R54-W1): 102.06 kg above is 225 lbs exactly, so that test passes whichever way the box converts. A stored kg that does not
+  // survive the display's rounding is the case the guard is for: 9 kg shows as 19.8 lbs, and 19.8 converted again is 8.98 kg, not 9.
+  it('9 kg shows as 19.8lbs, and 19.8 typed again writes nothing (the stored kg stays 9); 20 writes lbsToKg(20) (break: every edit converts the typed figure)', () => {
+    updateSetMutate.mockClear()
+    mockState.plans = [makePlan([makeSet({ targetWeight: 9 })])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByRole('button', { name: '19.8lbs' }))
+    const same = screen.getByLabelText('Weight target') as HTMLInputElement
+    expect(same.value).toBe('19.8')
+    fireEvent.change(same, { target: { value: '19.8' } })
+    fireEvent.blur(same)
+    expect(updateSetMutate).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '19.8lbs' }))
+    const other = screen.getByLabelText('Weight target')
+    fireEvent.change(other, { target: { value: '20' } })
+    fireEvent.blur(other)
+    expect(updateSetMutate.mock.calls).toEqual([[{ id: 'set-1', changes: { targetWeight: lbsToKg(20) } }]])
+  })
+
+  // Chunk 54a's review (R54-W3): every test above commits with a blur.
+  it('Enter in the weight box writes the typed weight without a blur first (break: the Enter handler removed)', () => {
+    updateSetMutate.mockClear()
+    mockState.plans = [makePlan([makeSet({ targetWeight: 102.06 })])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByRole('button', { name: '225lbs' }))
+    const input = screen.getByLabelText('Weight target') as HTMLInputElement
+    input.focus()
+    fireEvent.change(input, { target: { value: '230' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(updateSetMutate.mock.calls).toEqual([[{ id: 'set-1', changes: { targetWeight: lbsToKg(230) } }]])
+  })
+
   it('a dropset stage also gets its own, independent weight target (reviewer\'s note: stages already edit RIR-style fields, so weight/reps follow)', () => {
     updateSetMutate.mockClear()
     mockState.plans = [makePlan([

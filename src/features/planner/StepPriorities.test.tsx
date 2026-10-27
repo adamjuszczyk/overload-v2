@@ -135,6 +135,19 @@ describe('StepPriorities — the writes (W: the same hook, the same arguments)',
     expect(mutateMock).toHaveBeenLastCalledWith({ tagType: 'muscle_subgroup', tagValue: 'upper_chest', mark: 'focus' }, expect.anything())
   })
 
+  // Chunk 68's review (R4): PP1 draws an inherited mark as words ("INHERITED: FOCUS"), not as a pressed button, so a tap on FOCUS there is a mark of its own
+  // and not the group's mark turned off.
+  it('a subgroup that inherits its group\'s mark shows no mark of its own, and tapping that mark writes it, never null (break: the segment shows the inherited mark)', () => {
+    read.rows = [row('muscle_group', 'chest', 'focus')]
+    render(<StepPriorities programId="prog-1" />)
+    fireEvent.click(screen.getByLabelText('Expand CHEST'))
+
+    expect(screen.getAllByText('INHERITED: FOCUS').length).toBeGreaterThan(0)
+    expect(marks('Priority for Upper chest').getByText('FOCUS').getAttribute('aria-pressed')).toBe('false')
+    fireEvent.click(marks('Priority for Upper chest').getByText('FOCUS'))
+    expect(mutateMock).toHaveBeenLastCalledWith({ tagType: 'muscle_subgroup', tagValue: 'upper_chest', mark: 'focus' }, expect.anything())
+  })
+
   it('the marks are off while one is being written (a second tap in that time is not sent)', () => {
     setMarkPending = true
     render(<StepPriorities programId="prog-1" />)

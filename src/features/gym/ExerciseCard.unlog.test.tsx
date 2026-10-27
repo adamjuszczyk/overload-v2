@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { cleanup, fireEvent, screen, within, act } from '@testing-library/react'
 import type { SessionSetChange, SetLog } from '../../types'
-import { headLogOf, logOf, plannedDrop, plannedSet, renderCard, rowLabels, rowStates } from './cardHarness.testutil'
+import { exerciseOf, headLogOf, logOf, plannedDrop, plannedSet, renderCard, rowLabels, rowStates } from './cardHarness.testutil'
 import { spyWriters } from './setWriters.testutil'
 import { fakeDraftStore, newDraftWorld, type DraftWorld } from './draftStore.testutil'
 import { useRestTimerStore } from './restTimerStore'
@@ -520,5 +520,57 @@ describe('the drafts of a set\'s drops follow their drops (DECISIONS 147 (b); th
     await settle()
     expect(draftIds(world)).toEqual(['session-1|p:set-1:d1', 'session-1|p:set-1:d2'])
     expect([...world.drafts.values()].map((d) => [d.id, (d.values as { weight: number }).weight])).toEqual(expect.arrayContaining([['session-1|p:set-1:d1', 45], ['session-1|p:set-1:d2', 40]]))
+  })
+})
+
+// Chunk 63's review (R3, R4): every test above is in kg, where the draft's figure and the figure on the screen agree. On an lbs exercise 9 kg shows as
+// 19.8 lbs, and 19.8 converted again is 8.98 kg (RULES, 54a's round-trip rule): a LOG that leaves the weight as shown must send the draft's own kg.
+describe('LOG again on an lbs exercise sends the draft\'s own kg when the weight is left as shown (9 kg shows as 19.8 lbs and goes back as 9, not 8.98)', () => {
+  const lbs = exerciseOf({ weightUnit: 'lbs' })
+
+  it('a working set: the unlogged 9 kg reads 19.8 in the box, and LOG sends weight 9 (break: every LOG converts the shown figure)', async () => {
+    const world = newDraftWorld()
+    const r = recorder()
+    const { container, setLogs } = renderCard({ plannedSets: [plannedSet(1), plannedSet(2)], logs: [headLogOf(1, { weight: 9, reps: 10, rir: 1 })], store: fakeDraftStore(world), props: { programExercise: lbs, onLog: r.onLog, onDeleteSet: r.onDeleteSet, writers: r.writers } })
+    await settle()
+    await press(unlogButtonOf(container, 'set:set-1'))
+    setLogs([])
+    await settle()
+    expect(boxes(container, 'set:set-1')).toEqual(['19.8', '10', '1'])
+    await press(within(rowOf(container, 'set:set-1')).getByText('LOG'))
+    expect(r.requests[0]).toMatchObject({ weekPlanSetId: 'set-1', weight: 9, reps: 10, rir: 1 })
+  })
+
+  it('a warmup (rows mode): the same, LOG sends the warmup with weight 9 (break: the warmup row converts the shown figure again)', async () => {
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, warmupDisplay: 'rows' })
+    const world = newDraftWorld()
+    const r = recorder()
+    const { container, setLogs } = renderCard({ plannedSets: [plannedSet(1, { isWarmup: true }), plannedSet(2)], logs: [headLogOf(1, { isWarmup: true, weight: 9, reps: 10 })], store: fakeDraftStore(world), props: { programExercise: lbs, onLog: r.onLog, onDeleteSet: r.onDeleteSet, writers: r.writers } })
+    await settle()
+    await press(unlogButtonOf(container, 'set:set-1'))
+    setLogs([])
+    await settle()
+    expect((within(rowOf(container, 'set:set-1')).getByLabelText('Weight') as HTMLInputElement).value).toBe('19.8')
+    await press(within(rowOf(container, 'set:set-1')).getByText('LOG'))
+    expect(r.requests[0]).toMatchObject({ weekPlanSetId: 'set-1', isWarmup: true, weight: 9, reps: 10 })
+  })
+})
+
+// Chunk 63's review (R2): the drop's own LOG after its UNLOG is a write of its own (`logStage`), and clears the draft like the head's does.
+describe('a drop logged again after its UNLOG leaves no draft on the phone', () => {
+  it('unlog drop 2, log it again with the draft\'s numbers: the draft is gone (break: logStage writes without clearing the draft)', async () => {
+    const world = newDraftWorld()
+    const r = recorder()
+    const plan = [plannedSet(1, { stageKind: 'dropset' }), plannedDrop(1, 1), plannedDrop(1, 2)]
+    const logs = () => [headLogOf(1, { stageKind: 'dropset' }), dropLog(1, 1, { weight: 50, reps: 10 }), dropLog(1, 2, { weight: 40, reps: 12, rir: 1 })]
+    const { container, setLogs } = renderCard({ plannedSets: plan, logs: logs(), store: fakeDraftStore(world), props: { onLog: r.onLog, onDeleteSet: r.onDeleteSet, writers: r.writers } })
+    await settle()
+    await press(unlogButtonOf(container, 'set:set-1:stage:2'))
+    expect(draftIds(world)).toEqual(['session-1|p:set-1:d2'])
+    setLogs(logs().slice(0, 2)) // the session's answer: the drop's log is gone
+    await settle()
+    await press(within(rowOf(container, 'set:set-1:stage:2')).getByText('LOG'))
+    expect(r.requests[0]).toMatchObject({ weight: 40, reps: 12, rir: 1 })
+    expect(draftIds(world)).toEqual([])
   })
 })

@@ -282,6 +282,29 @@ describe('changesSinceSource — the week against its sources', () => {
     expect(d.removedExercises).toEqual([]) // the week-only exercise isn't a default exercise to be missed
   })
 
+  // Chunk 54b's review (R11), the marks' side: this path filters the run copy's dropped rows before `programHeads` does, so the break that fails
+  // `thisWeekOnly.test.ts` leaves this one passing; it fails when the stages of a dropped row get through both.
+  it('stable: a stage the run copy dropped is not a stage of the default, so a week with the one drop that is left has nothing added or removed', () => {
+    const copy: RunCopy = {
+      exercises: [{ id: 'e', exerciseId: 'bench', position: 0 }],
+      sets: [
+        pset('p1', 'e', 1, { stageKind: 'dropset' }),
+        pset('p1a', 'e', 1, { parentProgramSetId: 'p1', stageIndex: 1 }),
+        pset('p1b', 'e', 1, { parentProgramSetId: 'p1', stageIndex: 2, removedAt: '2026-10-01T00:00:00Z' }),
+      ],
+    }
+    const week = [wset('w1', 'e', 1, { stageKind: 'dropset' }), stage('w1a', 'w1', 'e', 1)]
+    const d = changesSinceSource({
+      planningType: 'stable',
+      weekNumber: 2,
+      week: { isDeload: false, exercises: [pe('e', 'bench', 0)], sets: week },
+      slotWeeks: [],
+      runCopy: copy,
+    })!
+    expect(setFlags(d, 'e', 'w1a')?.added).toBe(false)
+    expect(flagsOf(d, 'e').removedStages.size).toBe(0) // the dropped drop is not "removed from the week": the default no longer has it
+  })
+
   it('a week with no last week (nothing planned before, or only deload and empty weeks) shows no highlighting', () => {
     const week = { isDeload: false, exercises: ex, sets: sets('e', 1) }
     const wd = (slotWeeks: WeekPlan[]) => changesSinceSource({ planningType: 'week_dependent', weekNumber: 3, week, slotWeeks, runCopy: null })
