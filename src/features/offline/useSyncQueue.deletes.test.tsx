@@ -30,7 +30,7 @@ interface QueueItem {
   sessionId?: string
   parentSetId?: string
 }
-const world = vi.hoisted(() => ({ online: false, queue: [] as unknown[], nextId: 1, queueDeleteFails: 0, deviceDeleted: [] as string[] }))
+const world = vi.hoisted(() => ({ online: false, queue: [] as unknown[], nextId: 1, queueDeleteGoes: 0, queueDeleteFails: 0, deviceDeleted: [] as string[] }))
 const queue = () => world.queue as QueueItem[]
 const server = new QueueServer()
 
@@ -43,8 +43,10 @@ vi.mock('../../lib/db', () => ({
       orderBy: () => ({ toArray: async () => structuredClone([...queue()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id - b.id)) }),
       toArray: async () => structuredClone([...queue()]),
       add: async (item: Omit<QueueItem, 'id'>) => void queue().push({ ...item, id: world.nextId++ }),
+      // The device’s database cutting a cleanup short: `queueDeleteGoes` removals go through, then the next `queueDeleteFails` are refused.
       delete: async (id: number) => {
-        if (world.queueDeleteFails > 0) {
+        if (world.queueDeleteGoes > 0) world.queueDeleteGoes--
+        else if (world.queueDeleteFails > 0) {
           world.queueDeleteFails--
           throw new Error('UnknownError')
         }
@@ -79,6 +81,7 @@ beforeEach(() => {
   world.online = false
   world.queue = []
   world.nextId = 1
+  world.queueDeleteGoes = 0
   world.queueDeleteFails = 0
   world.deviceDeleted = []
   server.reset()
@@ -147,6 +150,8 @@ async function reconnectPass() {
   await flushSyncQueue()
 }
 const notice = () => useOfflineStore.getState().syncFailures.length
+/** Whether the row of this record reads SYNC (the pending-sync marker the producer set when it queued the write). */
+const pending = (id: string) => useOfflineStore.getState().pendingIds.has(id)
 
 // ─── (i) a log deleted online while its own first send is queued ──────────────────────────────────────────────────────────────────────────────────────────────────
 describe('230 (i): a set deleted online after its first send failed does not come back', () => {
@@ -342,6 +347,77 @@ describe('230 (ii): a session deleted in History takes the queued writes that na
     expect(useOfflineStore.getState().syncFailures.map((f) => f.recordId)).toEqual(['L9'])
     expect(await hasQueuedWritesFor('s3')).toBe(false)
   })
+
+  // Owed since queue-fix 230's review (DECISIONS "Tests owed", M1): the session cleanup tells a pass that is already running, as the log cleanup does (the (i) test of the same name).
+  it('a pass already running when History deletes the session does not send the finish it had read: the cleanup removed it from the queue, not from that pass’s list', async () => {
+    server.put('v2_sessions', { id: 's3', status: 'in_progress' })
+    await logOffline('s1', 'X') // first in the queue: its request is the one the pass is waiting on
+    await finishQueued('s3') // the finish of the session about to be deleted
+    await logOffline('s2', 'M') // behind the finish: another session’s log
+    const inFlight = server.hold('upsert v2_set_logs:X')
+    world.online = true
+    const pass = flushSyncQueue()
+    await inFlight.reached
+
+    await deleteSessionInHistory('s3') // the pass holds the finish in the list it read
+    inFlight.release()
+    await pass
+
+    expect(server.requests.some((r) => r.startsWith('upsert v2_sessions:s3'))).toBe(false) // never sent
+    expect(server.has('v2_sessions', 's3')).toBe(false) // the session did not come back
+    expect(serverLogs()).toEqual(['M', 'X']) // M, behind the finish in the same pass, was sent
+    expect(queue()).toEqual([])
+  })
+
+  // Owed since queue-fix 230's review (DECISIONS "Tests owed", M8): History’s delete is no worse than before the fix when the cleanup is refused, as the log’s delete is (the last (i) test).
+  it('a cleanup the phone’s own database refuses is logged and does not fail History’s delete that was done: the session is gone and the delete resolves', async () => {
+    server.put('v2_sessions', { id: 's3', status: 'completed' })
+    await logOffline('s3', 'L3')
+    failFirstSend('upsert v2_set_logs:L3')
+    await reconnectPass()
+    world.queueDeleteFails = 1
+
+    await deleteSessionInHistory('s3') // resolves: the request went through
+
+    expect(errorLog).toHaveBeenCalledWith('[sync] could not drop the queued writes of a deleted session', expect.any(Error))
+    expect(server.has('v2_sessions', 's3')).toBe(false)
+    expect(queued()).toEqual(['upsert v2_set_logs:L3']) // what the cleanup could not remove stays, as before the fix
+  })
+
+  // Owed since queue-fix 230's review (DECISIONS "Tests owed", M11): the order of the cleanup is the rule that makes a half-done one safe.
+  it('a cleanup the phone’s own database cuts short after one removal has taken the session’s finish first: the finish never brings the session back', async () => {
+    server.put('v2_sessions', { id: 's3', status: 'completed' })
+    await logOffline('s3', 'L3')
+    await finishQueued('s3') // queued behind the log, so the queue’s own order would remove the log first
+    failFirstSend('upsert v2_set_logs:L3', 'upsert v2_sessions:s3')
+    await reconnectPass()
+    expect(queued()).toEqual(['upsert v2_set_logs:L3', 'upsert v2_sessions:s3'])
+    world.queueDeleteGoes = 1 // the first removal goes, the second is refused
+    world.queueDeleteFails = 1
+
+    await deleteSessionInHistory('s3') // resolves: the request went through
+
+    expect(queued()).toEqual(['upsert v2_set_logs:L3']) // the session’s own upsert was the one removed
+    const sent = server.requests.length
+    await flushSyncQueue()
+    expect(server.requests.slice(sent).some((r) => r.startsWith('upsert v2_sessions:s3'))).toBe(false)
+    expect(server.has('v2_sessions', 's3')).toBe(false)
+  })
+
+  // Owed since queue-fix 230's review (DECISIONS "Tests owed", M13): a write the cleanup removed no longer reads SYNC.
+  it('the cleanup clears the pending-sync marker of each write it dropped, not another session’s log that is still waiting', async () => {
+    server.put('v2_sessions', { id: 's3', status: 'completed' })
+    await logOffline('s3', 'L3')
+    await logOffline('s2', 'L9')
+    failFirstSend('upsert v2_set_logs:L3', 'upsert v2_set_logs:L9')
+    await reconnectPass()
+    expect([pending('L3'), pending('L9')]).toEqual([true, true])
+
+    await deleteSessionInHistory('s3')
+
+    expect(queued()).toEqual(['upsert v2_set_logs:L9'])
+    expect([pending('L3'), pending('L9')]).toEqual([false, true])
+  })
 })
 
 // ─── (iii) a planned set removed on Plan while the logged set that names it is queued ──────────────────────────────────────────────────────────────────────────────
@@ -375,6 +451,24 @@ describe('230 (iii): a planned set removed on Plan: its logged set is sent with 
     expect(queue()).toEqual([])
     expect(notice()).toBe(0)
     expect(await hasQueuedWritesFor('s1')).toBe(false)
+  })
+
+  // Owed since queue-fix 230's review (DECISIONS "Tests owed", M12): the recovered log leaves the queue by this path, not the one a normal send takes.
+  it('the recovered log loses its pending-sync marker once it has landed; a log whose send fails again in the same pass keeps its own', async () => {
+    server.put('v2_week_plan_sets', { id: 'P5' })
+    await logOffline('s1', 'L5', { weekPlanSetId: 'P5' })
+    await logOffline('s1', 'B', { setNumber: 2 }) // another log of the session, queued behind it
+    failFirstSend('upsert v2_set_logs:L5', 'upsert v2_set_logs:B')
+    await reconnectPass()
+    expect([pending('L5'), pending('B')]).toEqual([true, true])
+    await removeSet('P5')
+    failFirstSend('upsert v2_set_logs:B') // the connection drops again on B in the next pass
+
+    await flushSyncQueue()
+
+    expect(server.get('v2_set_logs', 'L5')?.week_plan_set_id).toBeNull() // L5 landed with no planned set
+    expect(queued()).toEqual(['upsert v2_set_logs:B'])
+    expect([pending('L5'), pending('B')]).toEqual([false, true])
   })
 
   it('the request that sends it again fails: the queue keeps the log with no planned set, so the next pass sends it at once', async () => {
