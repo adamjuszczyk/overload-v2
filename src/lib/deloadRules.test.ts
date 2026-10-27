@@ -259,29 +259,49 @@ describe('resolveDeloadExerciseMapping', () => {
 
 describe('occurrenceHasWorkingLog / resolveLoggedWeightKg', () => {
   it('"happened" requires a non-skipped, non-warmup, non-stage logged set', () => {
-    expect(occurrenceHasWorkingLog([{ weekPlanSetId: 's1', weight: 100, isSkipped: false, isWarmup: false, parentSetId: null }], ['s1'])).toBe(true)
+    expect(occurrenceHasWorkingLog([{ weekPlanSetId: 's1', exerciseId: 'ex-1', weight: 100, isSkipped: false, isWarmup: false, parentSetId: null }], ['s1'])).toBe(true)
   })
 
   it('a skipped log does not count as happened', () => {
-    expect(occurrenceHasWorkingLog([{ weekPlanSetId: 's1', weight: null, isSkipped: true, isWarmup: false, parentSetId: null }], ['s1'])).toBe(false)
+    expect(occurrenceHasWorkingLog([{ weekPlanSetId: 's1', exerciseId: 'ex-1', weight: null, isSkipped: true, isWarmup: false, parentSetId: null }], ['s1'])).toBe(false)
   })
 
   it('a warmup log does not count as happened', () => {
-    expect(occurrenceHasWorkingLog([{ weekPlanSetId: 's1', weight: 20, isSkipped: false, isWarmup: true, parentSetId: null }], ['s1'])).toBe(false)
+    expect(occurrenceHasWorkingLog([{ weekPlanSetId: 's1', exerciseId: 'ex-1', weight: 20, isSkipped: false, isWarmup: true, parentSetId: null }], ['s1'])).toBe(false)
   })
 
   it('a stage log (parentSetId set) does not count as happened — stages are never independent sets', () => {
-    expect(occurrenceHasWorkingLog([{ weekPlanSetId: 's1', weight: 20, isSkipped: false, isWarmup: false, parentSetId: 'head' }], ['s1'])).toBe(false)
+    expect(occurrenceHasWorkingLog([{ weekPlanSetId: 's1', exerciseId: 'ex-1', weight: 20, isSkipped: false, isWarmup: false, parentSetId: 'head' }], ['s1'])).toBe(false)
   })
 
   it('resolveLoggedWeightKg finds the first non-skipped log for that exact planned set, else null', () => {
     const logs = [
-      { weekPlanSetId: 's1', weight: 100, isSkipped: false, isWarmup: false, parentSetId: null },
-      { weekPlanSetId: 's2', weight: null, isSkipped: true, isWarmup: false, parentSetId: null },
+      { weekPlanSetId: 's1', exerciseId: 'ex-1', weight: 100, isSkipped: false, isWarmup: false, parentSetId: null },
+      { weekPlanSetId: 's2', exerciseId: 'ex-1', weight: null, isSkipped: true, isWarmup: false, parentSetId: null },
     ]
-    expect(resolveLoggedWeightKg(logs, 's1')).toBe(100)
-    expect(resolveLoggedWeightKg(logs, 's2')).toBeNull() // only a skipped log — no usable weight
-    expect(resolveLoggedWeightKg(logs, 's3')).toBeNull() // nothing logged at all
+    expect(resolveLoggedWeightKg(logs, 's1', 'ex-1')).toBe(100)
+    expect(resolveLoggedWeightKg(logs, 's2', 'ex-1')).toBeNull() // only a skipped log — no usable weight
+    expect(resolveLoggedWeightKg(logs, 's3', 'ex-1')).toBeNull() // nothing logged at all
+  })
+
+  // DECISIONS 240. The swap's log points at the planned set of the exercise it replaced; only a log of the planned set's OWN exercise is that exercise's weight.
+  it('resolveLoggedWeightKg skips a log of another exercise on the planned set (a swap\'s), takes the planned exercise\'s own after it, and has nothing for a set only the swap logged', () => {
+    const swapFirst = [
+      { weekPlanSetId: 's1', exerciseId: 'ex-leg-press', weight: 180, isSkipped: false, isWarmup: false, parentSetId: null },
+      { weekPlanSetId: 's1', exerciseId: 'ex-squat', weight: 100, isSkipped: false, isWarmup: false, parentSetId: null },
+      { weekPlanSetId: 's2', exerciseId: 'ex-leg-press', weight: 180, isSkipped: false, isWarmup: false, parentSetId: null },
+    ]
+    expect(resolveLoggedWeightKg(swapFirst, 's1', 'ex-squat')).toBe(100)
+    expect(resolveLoggedWeightKg(swapFirst, 's2', 'ex-squat')).toBeNull()
+    expect(resolveLoggedWeightKg(swapFirst, 's1', 'ex-leg-press')).toBe(180) // each exercise reads its own
+    expect(resolveLoggedWeightKg(swapFirst, 's1', 'ex-other')).toBeNull()
+  })
+
+  it('resolveLoggedWeightKg refuses a call without the planned exercise, instead of reading every set as never logged', () => {
+    const logs = [{ weekPlanSetId: 's1', exerciseId: 'ex-1', weight: 100, isSkipped: false, isWarmup: false, parentSetId: null }]
+    // @ts-expect-error — the planned exercise is required (this line fails `npm run typecheck`, not Vitest, if the parameter becomes optional)
+    expect(() => resolveLoggedWeightKg(logs, 's1')).toThrow(TypeError)
+    expect(() => resolveLoggedWeightKg(logs, 's1', '')).toThrow(TypeError)
   })
 })
 

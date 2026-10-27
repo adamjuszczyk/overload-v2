@@ -83,9 +83,12 @@ describe('the sheet (board 4)', () => {
     expect(eyebrow()).toContain('LAST WEEK · 0 THINGS')
   })
 
-  it('a sequence run says cycle', async () => {
-    openSheet({ unit: 'cycle' })
-    await screen.findByText('MON · UPPER A')
+  it('a sequence run says cycle, and heads each group with its slot as Plan names it (SLOT 1 · UPPER A), not the weekday it was done (DECISIONS 242)', async () => {
+    // A sequence run's plan rows carry their position (Upper A first, counted from 0 in the row, from 1 on the screen).
+    const slots = (week: number) => [plan('ua', week), plan('la', week), plan('ub', week)].map((p, i) => ({ ...p, sequencePosition: i }))
+    openSheet({ unit: 'cycle', lastWeek: slots(2), thisWeek: slots(3) })
+    await screen.findByText('SLOT 1 · UPPER A')
+    expect(screen.queryByText('MON · UPPER A')).toBeNull()
     expect(eyebrow()).toContain('LAST CYCLE · 5 THINGS')
     expect(screen.getByText('Where last cycle went differently from its plan. Take it over or leave it.')).toBeTruthy()
   })

@@ -560,3 +560,51 @@ async function lastQueuedWriteIsPatch(logId: string, setNumber: number): Promise
   const last = own[own.length - 1]
   return last !== undefined && last.operation === 'patch' && (last.payload as { set_number?: unknown }).set_number === setNumber
 }
+
+// DECISIONS 239. The set logs of one session that this phone still has to send, as the workout's read of the session must draw them. `flushOnce` ends by reading the
+// session again (`invalidateQueries(['v2_session'])`) and `fetchSession` reads the server alone: a log whose send failed in the pass, or has not been tried yet when the
+// reconnect makes TanStack read the session, is on this phone and nowhere on the server, so the read drew its set open again (and LOG on it wrote a second log, on staging).
+// Returns the rows as the queue will send them, in queue order: each log's last queued upsert with the patches queued after it applied (`{ id, set_number }`,
+// `{ id, stage_kind: null }`), and none for a log with a delete queued (a log and its own delete are cancelled together by the next pass, `dropNeverSentPairs`; until then
+// the user has deleted it). Only rows of this session, and only rows the screen can draw: an item of any other shape is left out, never thrown on (a damaged item must not
+// stop the workout from loading). It reads the queue and changes nothing in it, so a read drops, holds and sends nothing.
+export async function queuedSetLogsFor(sessionId: string): Promise<Array<Record<string, unknown>>> {
+  const items = await db.sync_queue.orderBy('createdAt').toArray()
+  const deleted = new Set<string>()
+  for (const item of items) {
+    const id = payloadOf(item).id
+    if (item.table === 'v2_set_logs' && item.operation === 'delete' && typeof id === 'string') deleted.add(id)
+  }
+  const rows = new Map<string, Record<string, unknown>>()
+  for (const item of items) {
+    const id = payloadOf(item).id
+    if (item.table !== 'v2_set_logs' || typeof id !== 'string' || deleted.has(id)) continue
+    if (item.operation === 'upsert') {
+      if (isQueuedLogRow(item.payload, sessionId)) rows.set(id, { ...(item.payload as Record<string, unknown>) })
+    } else if (item.operation === 'patch') {
+      const row = rows.get(id)
+      if (!row) continue
+      try {
+        Object.assign(row, patchOf(item.payload).changes)
+      } catch {
+        // A patch of a shape the flush would refuse: the flush says so. The read leaves the row as its upsert has it.
+      }
+    }
+  }
+  return [...rows.values()]
+}
+
+// What a log needs to be drawn and ordered: a queued upsert without these is not a log of the session.
+function isQueuedLogRow(payload: unknown, sessionId: string): boolean {
+  const p = payload as Record<string, unknown> | null
+  return (
+    p !== null &&
+    typeof p === 'object' &&
+    p.session_id === sessionId &&
+    typeof p.id === 'string' &&
+    typeof p.user_id === 'string' &&
+    typeof p.exercise_id === 'string' &&
+    typeof p.set_number === 'number' &&
+    typeof p.logged_at === 'string'
+  )
+}
