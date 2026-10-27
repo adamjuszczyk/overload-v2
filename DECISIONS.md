@@ -1,62 +1,36 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-27, the release checklist on staging (the data rows).*
-- *The release checklist's data rows ran on staging: 31 of the 32 DATA rows (RC44 is yours, on production). 28 PASS, 3 FAIL, none blocked. The 12 screen-only rows are on your list below. Row by row: CONTEXT.md, "Release checklist on staging".*
-- *New: 240, 241 and 242 (below). 239 stays open.*
+*Rewritten at every boundary. Last: 2026-10-27, fix 239–242's review (merged, #235).*
+- *Fix 239–242 is merged (#235, `f6da7c8`): 239, 240, 241 and 242 are answered and built (their entries below; "For the release" has their update-note lines). RC24, RC25, RC26 and RC37 were re-run on staging after it: all four PASS, none needed a re-seed. The checklist's 31 run rows all PASS (CONTEXT.md, "Release checklist on staging").*
+- *Whether each is in 1.1, re-run on master's own code: 239 and 241 are (241 through Plan's MOVE: its entry's "1.2 only" was wrong); 240's defect is in 1.1's code, but 1.1's own swaps never write the data that reaches it; 242 is 1.2 only.*
+- *Review-pass items 220–238 are on the new "1.2.1 list" below, as built (your answer of 2026-10-27).*
+- *New: 243 (the mirror case of 239) and 244 (a session moved to a day and not done there). Neither blocks.*
 - *Tests owed: none.*
 
-The failures, and one finding, in order:
-1. **241** (RC25 FAIL; a decision, below): a session moved from Plan's ⋯ to a day before its own (Wednesday's workout to today, Tuesday) is gone from Today until it is moved back, because Today reads sessions by their own date. 1.2 only (1.1 could not move a session earlier). Executed on staging. Recommended: (a), a small DATA fix before the release: Today's read also takes the sessions moved into its days. Blocks: the release's update notes ("fixed" or "known").
-2. **239** (RC37 FAIL; a decision, open since queue-fix 230's review): a set logged offline whose first send fails reads as not logged once the workout is read again, and LOG on it saves the set twice. RC37 saw the same shape on staging (LOG not pressed again). Recommended: (a), a small DATA fix before the release. Blocks: the release's update notes.
-3. **240** (found in RC24; a decision, below): a deload's base weight comes from a swapped-in exercise's log when that log carries the original's planned set, as 1.1's replacement card logs it. On staging a deload Back Squat read 135 kg (75% of the Leg Press's 180 kg), planned at 112.5 kg in the normal week. Live since phase 1. Recommended: (a), one condition in `resolveLoggedWeightKg`, in the same small run as 239 and 241. Blocks: nothing new.
-4. **242** (RC26 FAIL, a label; a decision, below): REVIEW on a sequence run heads its group "TUE · ROTATION A" (the weekday the slot was done), where Plan says "SLOT 2 · ROTATION A". Recommended: (a), the slot, one line. Blocks: nothing (display).
+What waits on you, in order:
+1. **Your screen-row check on staging** (step 6 of your sequence): the 12 screen-only rows and the six display points below. Flag any item of the 1.2.1 list you want changed for 1.2; the rest stay as built.
+   - The rows (they write nothing; the account each needs): RC6 (test: no exercise action in the week view; CHANGE THE PROGRAM from the bottom button and from EDIT PROGRAM), RC7 (test: done sessions and past weeks read-only), RC9 (test and stable: the CHANGED SINCE marks; the stable run is a fresh week 1 since RC20, and week 1 is unmarked by rule), RC22 (test and empty: the PROGRAMS tab; the empty account is empty, so PR2 and PR3 show), RC28 (test: the rest bar and its jump button, in a session in progress; nothing is in progress now: start Wednesday's Lower A or Friday's Upper B), RC34 (test: stage rows and + ADD ROUND, which need a superset in progress: Upper A's, next on Monday in week 4), RC38 (test: Settings), RC39 (test and empty: "program" and "cues" everywhere, the pre-1.1 page the one exception), RC40 (test: error lines), RC41 (test and stable: Removals), RC42 (production: COACH, yours only) and RC43 (test: the 6 tabs).
+   - The six display points (seen in passing; none is a decision yet):
+     - (1) W11 and the workout's add picker opened offline sit on "LOADING…" for good (the exercise list's read pauses offline).
+     - (2) An ADDED TODAY card with no set logged is gone after a reload (as in 1.1).
+     - (3) A swap's open moved set lives on the phone that swapped. On another phone no card draws it, W18 doesn't name it and nothing holds auto-finish (201 (a) reaches the swapping phone only).
+     - (4) A stepper stops at its kind's default: myo-reps REST BETWEEN can't go back to the seed's 0:10, and WITHIN ROUND can't go back to 0.
+     - (5) After a logged added set is deleted, each later added set's renumber PATCH is sent twice, with the same value.
+     - (6) The seed's lateral raise logs (entered in kg) read "LAST 9 × 15" on the row while W16 shows 19.8 lbs: the seed's unit convention (app-written logs carry no entered unit).
+2. **243** (a decision; blocks nothing, by your rule as I read it): an offline UNLOG, delete or renumber of a set the server holds reads as undone until the next sync when its first send fails, and in one rarer shape the screen writes a set number that its next draw corrects. Recommended: (b), known for 1.2, fixed in 1.2.1 (two lines). If a wrong number that the next draw corrects counts as written wrong, (a): fix it before the release.
+3. **Before step 5** (TASKS-1.2 "Release"): RC44's read-only count of your sequence runs that hit 203's case (production, your id only) with the before counts and fingerprint, then your yes on 046 (the merge of step 5's migrations PR is the consent, DECISIONS 202); the manual backup; a time when nobody is training (step 4). R5's two read-only queries are information, not gates.
+4. **After step 6:** the 30 rows marked P, on production, on your account, as part of your training (step 7): RC1, RC2, RC3, RC5, RC6, RC7, RC10, RC11, RC12, RC13, RC16, RC19, RC20, RC22, RC23, RC24, RC27, RC28, RC29, RC30, RC31, RC32, RC33, RC34, RC36, RC38, RC39, RC41, RC42 and RC43.
+5. **Re-seed:** none is needed for the release or for any checklist row. `staging-smoke.mjs` reads 49 of 51 until one: the test account's "in-progress session" (0 since RC36 completed the seed's) and the stable account's "the run is a stable weekday program" (2 run copies since RC20 and RC21). Its stable "week 1 done (3 completed sessions)" still passes: it counts the account's completed sessions, which are the finished run's three, so it has not described the active run (a fresh week 1, nothing done) since RC20 and fails only if those sessions go. Re-seed (and paste 046) before the next review that must read the smoke 51 of 51; nothing planned before the release does.
+6. **244** (a decision; blocks nothing): a session moved to a day and not done there is not listed as missed on the days after (phase 1's behaviour, kept by 241's fix; SPEC silent). Recommended: (b), as it is for 1.2, decided for 1.2.1.
 
-The release (121, and the release's own gates):
+The release:
 - 121 is closed with your output (2026-10-27): production's migration history is intact.
-- Before the release (TASKS-1.2 "Release"): R5's two read-only queries on production, your id only (F5, G50). They are information, not gates.
-- The gates, where the Release section puts them:
-  - the update notes, which wait for 239's and 241's answers (and 240's, if it is fixed);
-  - the manual backup;
-  - RC44's read-only count of your sequence runs that hit 203's case (production, your id only), and the before counts and fingerprint;
-  - your yes on 046: the merge of step 5's migrations PR is the consent (DECISIONS 202);
-  - a time when nobody is training (step 4).
-- After step 6: the 30 rows marked P, on production, on your account, as part of your training (step 7): RC1, RC2, RC3, RC5, RC6, RC7, RC10, RC11, RC12, RC13, RC16, RC19, RC20, RC22, RC23, RC24, RC27, RC28, RC29, RC30, RC31, RC32, RC33, RC34, RC36, RC38, RC39, RC41, RC42 and RC43.
-
-Your review pass on staging: the screen-only rows (they write nothing; the account each needs):
-- RC6 (test: no exercise action in the week view; CHANGE THE PROGRAM from the bottom button and from EDIT PROGRAM), RC7 (test: done sessions and past weeks read-only), RC9 (test and stable: the CHANGED SINCE marks), RC22 (test and empty: the PROGRAMS tab; the empty account is empty again, so PR2 and PR3 show), RC28 (test: the rest bar and its jump button, in a session in progress: Wednesday's Lower A or Friday's Upper B), RC34 (test: stage rows and + ADD ROUND, which need a superset in progress: Upper A's, next on Monday in week 4), RC38 (test: Settings), RC39 (test and empty: "program" and "cues" everywhere, the pre-1.1 page the one exception), RC40 (test: error lines), RC41 (test and stable: Removals), RC42 (production: COACH, yours only) and RC43 (test: the 6 tabs).
-- Seen in passing (display, for the same pass; none is a decision yet):
-  - (1) W11 and the workout's add picker opened offline sit on "LOADING…" for good (the exercise list's read pauses offline).
-  - (2) An ADDED TODAY card with no set logged is gone after a reload (as in 1.1).
-  - (3) A swap's open moved set lives on the phone that swapped. On another phone no card draws it, W18 doesn't name it and nothing holds auto-finish (201 (a) reaches the swapping phone only).
-  - (4) A stepper stops at its kind's default: myo-reps REST BETWEEN can't go back to the seed's 0:10, and WITHIN ROUND can't go back to 0.
-  - (5) After a logged added set is deleted, each later added set's renumber PATCH is sent twice, with the same value.
-  - (6) The seed's lateral raise logs (entered in kg) read "LAST 9 × 15" on the row while W16 shows 19.8 lbs: the seed's unit convention (app-written logs carry no entered unit).
+- The update notes' lines for 239–242 are in "For the release"; 240's wording is yours (its line says plainly what 1.1's flows could reach).
 
 Decisions that block a chunk: none.
 
-Decisions for your review pass on staging (none blocks):
-- **238** — what queue-fix 230 leaves; none is made worse by the fix, and each is rarer than 230's shapes:
-  - (1) The Library's delete preflight leaves out a log whose set was deleted offline after its upsert had been tried, or after a renumber. Such an exercise is still deleted for good and its log refused for ever (1.2 only).
-  - (2) Another phone's delete.
-  - (3) A queued session start naming a workout day or run deleted on Programs.
-  - (4) Writes already stuck on a phone before the release.
-
-  Recommended: (a), (1) fixed by one line in a small DATA run of its own, and (2)–(4) known, with no update-note line. Blocks: nothing.
-- **237** — a planned AMRAP row reads "× AMRAP @ RIR 0" (SPEC: an AMRAP set's RIR defaults to 0, and the row shows the plan's RIR), where board W5 draws the moved drop "40 kg × AMRAP"; W5's fixture plans that drop with no RIR, so its picture matches the board and hides the difference. Recommended: accept as built. Blocks: nothing (display).
-- **236** — chunk 69's display choices on the wording sweep (D31), (a)–(f): GO TO PROGRAMS → kept on `/program` (a), "(ACTIVE)" kept (b), two thrown messages reworded (c), and (f) Coach's MESO words left as they are, per your 154 ("Coach stays exactly as it is"), listed for the update notes. Recommended: accept all, as built. Blocks: nothing.
-- **235** — chunk 64's display choices on FINISH (D31), (a)–(i), and its readings (j)–(l): (j) a session is a reopened one (W19, no box) when it carries a note or a rating from the earlier COMPLETE, since 1.2 adds no marker. Recommended: accept all, as built. Blocks: nothing.
-- **232** — UNLOG's disabled note says TASKS 63's "Log its drops first", where SPEC 18c's way on is to unlog the drops ("can't be unlogged until they are"). Recommended: (a), "Unlog its drops first" (one constant, `UNLOG_BLOCKED_NOTE`). Blocks: nothing (display).
-- **233** — a logged warmup's ✕ (rows mode) and the tick list's untick still delete its log with no draft, as since 58a; SPEC's unlog is the edit panel's UNLOG, which a logged warmup has since 63. Recommended: (a), drop the ✕ (board W2b draws none) and make the untick an unlog (no confirm, SPEC 18c). Blocks: nothing (nothing a user expects to keep is lost).
-- **231** — chunk 63's display choices (D31), (a)–(e), and its readings, (f)–(n). Recommended: accept all, as built. Blocks: nothing.
-- **228** — an open warmup row in the workout has no ⋯ (boards W1 and W2b draw none), so it can't be retyped or deleted before it is logged, where SPEC 19 and 18b put SET TYPE and DELETE in the set's ⋯. Recommended: (a), the ⋯ on an open warmup row in rows mode (SPEC wins over a board). Blocks: nothing.
-- **229** — chunk 62's display choices (D31), (a)–(h), and two readings, (i) a weight typed where a log had none now stored in kg and (j) TASKS' `stage_index` not patched and a Normal log's old `pending_stages` row left unread. Recommended: accept all, as built. Blocks: nothing.
-- **225** — answered on 2026-10-26: for your review pass. Chunk 61's display choices (D31), (a)–(h), and one reading (i). Recommended: accept all, as built.
-- **224** — chunk 68's display choices (D31), (a)–(k): the first workout open and one card at a time (a), one exercise open with the arrows on the open member (b), a held day dimmed but tappable (c), START off until the runs are read (d), a failed add's line over the screen (e), subgroup names in sentence case (f), warmup items unnumbered (h); the boards' "Check your connection" lines follow SPEC Errors (15). Recommended: accept all, as built. Blocks: nothing.
-- **223** — chunk 67's display choices (D31), (a)–(l): one workout open at a time (a), exercises start closed (b), "NO EXERCISES YET" (d), a row numbered by its rank with a warmup counted (e), ALL's eyebrow "SET 01" (f), the 132 px REST AFTER column (g), the staged chip in the accent on `--accent-muted` (k), taps on the type picker ignored while a change is read back (l). Recommended: accept all, as built. Blocks: nothing.
-- **222** — on a card that starts with an open warmup, the warmup row keeps 58a's accent W and filled LOG while working set 01 has the current set's accent frame (G54), so two rows read as primary; board W2b draws the warmup in the frame. Recommended: (b), draw an open warmup like any other open row (one condition in `SetRowWarmup.tsx`). Blocks: nothing (display).
-- **221** — chunk 60's display choices (D31), (a)–(i): "SET 04" naming outside a superset, the other open rows as W1 draws them (outlined LOG, compact CUE), the question asked after the row checks its numbers, START SET on the current row only, CANCEL keeping the typed numbers, every open row's ⋮ with SKIP THIS SET before 61 (SPEC C9), a drop out of order asking with 46r's words. Recommended: accept all, as built. Blocks: nothing.
-- **220** — chunk 59's display choices (D31), (a)–(k): the skip line's words beyond W10's one case (a superset member's sets named 01, 02, 03 beside rows A1–A3), SKIP N SETS counting drops, the swap line's plural and empty case, the skip row's inline confirm, the card's SWAPPED FROM and ADDED TODAY on its muscle line, the pickers' words and exclusions, the real reason under "Couldn't swap.". Recommended: accept all, as built. Blocks: nothing.
+Decisions for your review pass on staging (none blocks; 220–238 are on the 1.2.1 list):
 - **218** — board W1's row caption with the earlier-this-week numbers ("MON 17.5 × 15 @ 1" beside LAST) is in neither 58a's nor 58b's scope and isn't built; SPEC's "those too (W16, W17)" is met by the sheet and the card line's "· ALSO MON". Recommended: (a), add it (one span in the row's LAST line from the sessions the line already reads). Blocks: nothing (display).
 - **217** — chunk 58b's display choices (D31), (a)–(m), including N OF M SETS counted over the rows the screen draws (a), the weekday of a moved session's new day (b), the failed row keeping its pen (e) and the history icon opening the sheet, with FULL HISTORY one tap further (h). Recommended: accept all, as built. Blocks: nothing.
 - **216** — answered on 2026-10-22: for your review pass. Chunk 58a's display choices (D31), (a)–(l). Recommended: accept all, as built.
@@ -122,9 +96,36 @@ To-dos:
 - Update notes: fixed, a bug live since phase 1: a session deleted in History while one of its sets, or a note on it, was waiting to sync left a "couldn't sync" notice that could not be cleared, and a finish still waiting to sync brought the deleted session back (queue-fix 230; DECISIONS 230).
 - Update notes: fixed, a bug live since phase 1: a planned set removed on Plan while a set logged under it was waiting to sync left the same notice, and the logged set never reached the server; it now syncs without its planned set, as a set that synced first always did (queue-fix 230; DECISIONS 230).
 - Update notes: fixed, a bug live since phase 1: an exercise deleted in the Library whose only sets were waiting to sync was deleted for good and left the same notice; it is now kept, as an exercise with history is, and its sets sync (queue-fix 230; DECISIONS 230).
-- Update notes, by 239's answer: a set logged offline whose first sync attempt failed could read as not logged once the workout was read again, and logging it again saved it twice (live since phase 1, by reading; executed on staging): "fixed" if 239 (a) is built before the release, else "known" (DECISIONS 239).
-- Update notes, by 241's answer: a session moved in Plan to a day before its own (Wednesday's workout to Tuesday) didn't show on Today until it was moved back (1.2 only; executed on staging): "fixed" if 241 (a) is built before the release, else "known" (DECISIONS 241).
-- Update notes, if 240 (a) is built: fixed, a bug live since phase 1: a deload week whose base week had an exercise swapped (1.1's replacement card) took that exercise's deload weight from the replacement's logs, for example a squat at 75% of a leg press weight (DECISIONS 240).
+- **fix 239–242** — (#235, `f6da7c8`), Adam 2026-10-27 (DECISIONS 239–242: "fix all four in one small DATA run"). No migration, no stored row changes. What it fixes, and whether each is in 1.1 (re-run on master's own code, `a3ffbe8`, by the builder and in the review):
+  - 239: a set logged offline whose first sync attempt failed read as not logged once the workout read its session again, and LOG on it saved it twice: **in 1.1** (fixed).
+  - 241: a session moved in Plan to a day before its own was not on Today until it was moved back: **in 1.1**, through Plan's MOVE (chunk 24, phase 1) (fixed).
+  - 240: a deload's base weight could come from another exercise's log on the same planned set: **the code is in 1.1** (since chunk 22), but 1.1's own swaps log the replacement's sets with no planned set (since 2026-09-04), so 1.1's flows don't write the data that reaches it (fixed).
+  - 242: REVIEW's group heading on a sequence run: 1.2 only (REVIEW is new in 1.2).
+
+  239 and 241 are live in production since phase 1, so the fix ships with the release, like 188f. What it leaves: DECISIONS 243 and 244.
+- Update notes: fixed, a bug live since phase 1: a set logged offline whose first sync attempt failed could read as not logged once the workout was read again, and logging it again saved it twice (fix 239–242; DECISIONS 239).
+- Update notes: fixed, a bug live since phase 1: a session moved in Plan to a day before its own (Wednesday's workout to Tuesday) didn't show on Today until it was moved back (fix 239–242; DECISIONS 241).
+- Update notes (Adam: "240 goes in the update notes as a 1.1 bug fixed, like 188f"; the wording is his): fixed, a defect in the deload calculation since phase 1: a deload week could take an exercise's weight from another exercise's log on the same planned set, for example a squat at 75% of a leg press weight. Plainly: 1.1's own flows could not reach it. Since 2026-09-04 its swaps log the replacement's sets with no planned set, so only logs written before that fix, or changed outside the app (the staging seed's are), have that shape (fix 239–242; DECISIONS 240).
+- Update notes: 242 is 1.2 only (REVIEW is new in 1.2), so no "fixed" line: REVIEW's own line says a sequence run's groups are headed with their slot, as Plan names it ("SLOT 2 · ROTATION A") (DECISIONS 242).
+
+## 1.2.1 list
+*Adam, 2026-10-27: "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." Each item below is as built in 1.2 unless Adam flags it during that check; where its recommendation changes something, that change is for 1.2.1. The entries stay under "Open", with his answer in each.*
+
+- **220** — chunk 59's display choices (D31), (a)–(k): as built.
+- **221** — chunk 60's display choices (D31), (a)–(i): as built.
+- **222** — an open warmup row keeps 58a's accent beside the current set's frame: as built; for 1.2.1, (b) (draw an open warmup like any other open row).
+- **223** — chunk 67's display choices (D31), (a)–(l): as built.
+- **224** — chunk 68's display choices (D31), (a)–(k): as built.
+- **225** — chunk 61's display choices (D31), (a)–(h), and its reading (i): as built.
+- **228** — an open warmup row in the workout has no ⋯: as built; for 1.2.1, (a) (the ⋯ on an open warmup row in rows mode).
+- **229** — chunk 62's display choices (D31), (a)–(h), and its readings (i), (j): as built.
+- **231** — chunk 63's display choices (D31), (a)–(e), and its readings (f)–(n): as built.
+- **232** — UNLOG's disabled note says "Log its drops first": as built; for 1.2.1, (a) ("Unlog its drops first").
+- **233** — a logged warmup's ✕ and the tick list's untick delete its log with no draft: as built; for 1.2.1, (a) (no ✕; the untick an unlog).
+- **235** — chunk 64's display choices (D31), (a)–(i), and its readings (j)–(l): as built.
+- **236** — chunk 69's display choices (D31), (a)–(f): as built.
+- **237** — a planned AMRAP row reads "× AMRAP @ RIR 0": as built.
+- **238** — what queue-fix 230 leaves, (1)–(4): known, as built; for 1.2.1, (1) fixed by one line in a small DATA run.
 
 ## Tests owed
 *Every missing-proof failure the reviewer merges (behaviour verified right, a test missing), one line each: chunk, PR, the test missing. One tests-only builder run before the release checklist adds them all, the way 176 does (RULES.md, "The 1.2 tests-owed rule").*
@@ -696,7 +697,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** accept all. Each is display (words, layout, which rows a sheet draws); none changes what is counted or written.
 **Blocks:** nothing.
 **Options:** (a)–(k) below, each accepted or changed by letter.
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** from the builder's report (`<scratchpad>/build/chunk-59-builder-1.md`, section 3), the review's reading of the dumps and pictures against the boards, and the real screens on staging (`3d2c7fa`, as the test account).
 - (a) The skip line beyond W10's one case ("Set 03 and its drop will be marked skipped."): "Set 03 will…", "Set 03 and its 2 drops will…", "Sets 02 and 03 and their drops will…" (also when only one of them has drops: on staging the pushdown read "Sets 01 and 02 and their drops will be marked skipped."), and "The drop of set 03 will…" for a drop under a logged set. A warmup is named W1. A superset member's sets are named by number: on staging Seated Cable Row read "Sets 01, 02 and 03 will be marked skipped." beside its rows A1–A3.
 - (b) SKIP N SETS counts every skip written, a drop included (the board's SKIP 2 SETS is set 03 and its drop).
@@ -715,7 +716,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** accept all. Each is display or follows a SPEC line already there; none changes what is counted or written (a LOG, confirmed or not, stores the row's number, 151/170, break-proven).
 **Blocks:** nothing.
 **Options:** (a)–(i) below, each accepted or changed by letter.
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** from the builder's report (`<scratchpad>/build/chunk-60-builder-1.md`, section 3) and the review's reading of the code, the dumps and the W7b picture against the board (#208, `2fd23fa`).
 - (a) A row that isn't in a superset is named "SET 04" in the sheet's eyebrow and on its button ("LAT PULLDOWN · SET 04", "LOG SET 04"), as 46r's `rowLabel` names it in the title ("Log set 04 before set 02?").
 - (b) The line under the sheet's title keeps the sheet frame's 16 px rhythm (the board pulls it up 4 px).
@@ -732,7 +733,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** (b): draw an open warmup like any other open row (muted W, outlined LOG), so the screen has one primary row, the current set (G54: a warmup never takes part in the current set). One condition in `SetRowWarmup.tsx`; for your display pass, not now.
 **Blocks:** nothing (display; which row is current and what LOG does are right and tested).
 **Options:** (a) as built: the warmup keeps 58a's accent W and filled LOG, so two rows read as primary; (b) an open warmup is styled as a non-current open row; (c) the warmup just before the current set in its card keeps the accent, as board W2b ("WARMUPS AS ROWS") draws the first unlogged warmup in the accent frame.
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** board W2b draws the first unlogged warmup in the accent frame and working set 01 plain; SPEC Current set and G54 say a warmup never takes part, so 60 gives the accent frame and `data-current-set` to working set 01 (SPEC decides behaviour). `SetRowWarmup` (58a) is untouched. Board W1 draws the curl's warmup LOG outlined when it isn't the next row, which fits (b) or (c). The builder's report, 3(a), third point.
 
 ### 223 Chunk 67's display choices on the stepped planner's step 3 (provisional, D31; accepted as built)
@@ -740,7 +741,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** accept all. Each is display, or follows a line of TASKS 67 or SPEC that is already there. None changes what is counted or written: the writes are the existing `plannerService` functions in the order the table allows, and they are break-proven.
 **Blocks:** nothing.
 **Options:** (a)–(l) below, each accepted or changed by letter.
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** taken from the builder's report (`<scratchpad>/build/chunk-67-builder-1.md`, section 3) and from the review's reading of the code and of the PP3, PP3b and PP6 dumps against the boards (#210).
 - (a) One workout is open at a time, the first by default. Tapping a closed card opens it and closes the other. The open card has no collapse control (PP3 draws none).
 - (b) Exercises start closed. An exercise with no sets has no chevron (PP3: Dips).
@@ -766,7 +767,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** accept all. Each one is display, or follows a line of TASKS 68 or SPEC that is already there. None changes what is written. Every write is the hook and the arguments it was before the chunk. START goes through chunk 65's start sheet (214 (a)). The writes are break-proven (the review re-ran 40 of the builder's writer breaks, all caught).
 **Blocks:** nothing.
 **Options:** (a)–(k) below, each accepted or changed by letter.
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** taken from the builder's report (`<scratchpad>/build/chunk-68-builder-1.md`, section 3) and from the review's reading of the code and of the PP5 and PR8 dumps (#212).
 - (a) The first workout is open to begin with, and one card is open at a time. A workout just added opens. This is the same choice as 223 (a) for step 3, except that PP2 draws a collapse control on the open card, so step 2 has one.
 - (b) One exercise is open at a time. Its move arrows are on whichever member is open, and the write moves the whole superset as before (the old row showed the arrows on a superset's first member only). A block's SUPERSET REST is in the open member's panel (it was one row after the block's last member).
@@ -787,7 +788,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 
 ### 225 Chunk 61's display choices on the set ⋯ sheet, the edit panel and W9, and one reading (provisional, D31; accepted as built)
 - What: chunk 61's display choices (D31), (a)–(h), and one reading (i): two phones delete one planned set and the second is refused with the reason, 042's design.
-- Answer: (Adam, 2026-10-26) "225: for my review pass." Full text in HISTORY.md.
+- Answer: (Adam, 2026-10-26) "225: for my review pass." Full text in HISTORY.md. (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 - Date: 2026-10-26
 
 ### 226 Re-seed staging before chunk 62's review (to-do)
@@ -805,7 +806,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** (a): where a board and SPEC disagree, SPEC wins and the gap comes to you (SPEC, Design boards [1.2]); without it, a set made Warmup by mistake before it is logged can't be made Normal again until it is logged. One ⋯ on the open warmup row in rows mode, opening W7's sheet with SET TYPE and DELETE SET (62's picker and 61's delete, unchanged). For your review pass, or with 227's fix chunk.
 **Blocks:** nothing (nothing is written wrong; a logged warmup is retyped and deleted through the pen's panel).
 **Options:** (a) the ⋯ on an open warmup row in rows mode (the tick list's row is one button and keeps none); (b) as built: an open warmup is retyped or deleted only once it is logged ("Skip the rest of this exercise" skips it too, 163 (a)); (c) (a) in both modes.
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** the builder's question 1 (`<scratchpad>/build/chunk-62-builder-1.md`, section 3): it built neither, as SPEC says a builder never picks. SPEC C9 lists the set's ⋯ during a workout (SET TYPE, CUES, FORM, the unit, SKIP THIS SET, DELETE) with no warmup exception, and G55 gives Plan's warmup rows a ⋯ (Normal and Warmup). An open warmup row has had no ⋯ in either mode since 58a (`SetRowWarmup.tsx`). Not D31: it decides whether an action exists.
 
 ### 229 Chunk 62's display choices on SET TYPE in the workout, and two readings (provisional, D31; accepted as built)
@@ -813,7 +814,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** accept all. Each is display or follows TASKS 62 or SPEC; only (i) changes a write, and it stores in kg what was stored in the typed unit.
 **Blocks:** nothing.
 **Options:** (a)–(j) below, each accepted or changed by letter.
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** the builder's report (`<scratchpad>/build/chunk-62-builder-1.md`, section 3) and the review's staging steps (#217).
 - (a) The ⋯ sheet closes when SET TYPE is tapped (the picker replaces it); the edit panel stays open under the picker after a change on a logged set.
 - (b) 19c's question is W9's dialog with its own button: "Delete the 1 logged drop?" / "Delete the 2 logged drops?" ("stage" for any other kind), W9's note, DELETE DROP / DELETE 2 DROPS; a failure shows inside it with the real reason.
@@ -836,7 +837,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** accept all. (a)–(e) are display; (f)–(n) are readings of TASKS 63 that keep every write inside SPEC 18c, G46 and RULES, and none loses or wrongly writes data. The note's words are 232.
 **Blocks:** nothing.
 **Options:** (a)–(n) below, each accepted or changed by letter.
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** the builder's report (`<scratchpad>/build/chunk-63-builder-1.md`, section 3), the review's notes (`<scratchpad>/build/chunk-63-review-1.md`) and its staging steps (#221).
 - (a) A draft's numbers are drawn in `--text-muted` (`data-draft` on the box) until that box is typed in (SPEC [P2] pre-fill: "visibly different from typed values"); LOG takes them as they are.
 - (b) The unit the set was logged in comes back with the draft (the row's unit override), so a set logged with the lbs override shows lbs again.
@@ -858,7 +859,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** (a). SPEC says a set with logged drops "can't be unlogged until they are" (UNLOG "is disabled and says so"): the drops are already logged, and the way on is to unlog (or delete) them, so "Log its drops first" asks for what is already done. One constant, `UNLOG_BLOCKED_NOTE` in `src/features/gym/setOptionsView.ts`, and the tests that pin it; with your review pass.
 **Blocks:** nothing (display: SPEC names no words, so it is D31, not a behaviour fix).
 **Options:** (a) "Unlog its drops first"; (b) keep "Log its drops first"; (c) other words, such as "Unlog or delete its drops first".
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** built verbatim from TASKS 63's Scope ("disabled with 'Log its drops first'"). On staging, bench 04's panel (an added dropset with its drop logged) shows UNLOG disabled with the note; the drop's own UNLOG works, and once the drop is unlogged the head's UNLOG is enabled. A drop with a later drop logged shows the same sentence.
 
 ### 233 A logged warmup's ✕ (rows mode) and the tick list's untick still delete its log with no draft (since 58a; chunk 63's builder, Q2)
@@ -866,7 +867,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** (a). SPEC doesn't require it: its unlog is the edit panel's UNLOG (18c, 18d), which a logged warmup in rows mode has since 63, with its draft. And nothing a user expects to keep is lost today: both ask first and say DELETE; a tick-list log holds the plan's numbers (tick-off only), which the next tick logs again; the ✕ is an explicit DELETE. But neither is SPEC 18b's delete either (W9, the set out of the session): a planned warmup comes back as an open row. Board W2b draws a logged warmup row with the pen and the tick only. So: drop the ✕ (the pen's panel has UNLOG and DELETE), and make the untick an unlog (SPEC 18c: "No confirm; logging again undoes it"). One handler each in `SetRowWarmup.tsx`; with your review pass, or with 228's ⋯.
 **Blocks:** nothing.
 **Options:** (a) as recommended; (b) keep both as built; (c) the untick an unlog, the ✕ kept.
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** `SetRowWarmup.tsx` since 58a (61's header: "the ✕ and the tick's untick are today's removal of the log, kept until chunk 63's UNLOG"); TASKS 63's Scope names only the edit panel's UNLOG, so the builder left them (Escalation 13). Both call `onDeleteSet` (`useDeleteSetLog`) after an inline CANCEL / DELETE.
 
 ### 234 Sign-out doesn't wipe chunk 63's two Dexie tables (found in 63's review)
@@ -879,7 +880,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** accept all. (a)–(i) are display; (j)–(l) are readings that decide which board variant is drawn or which row is the moved one, never what COMPLETE writes or what a number counts.
 **Blocks:** nothing.
 **Options:** (a)–(l) below, each accepted or changed by letter; for (j), (b) a marker of a reopen instead (a column and a later migration, or a phone-side flag, which a reload or another phone loses).
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** the builder's reports (`<scratchpad>/build/chunk-64-builder-1.md` section 3, `chunk-64-builder-2.md`) and the reviews (`chunk-64-review-1.md`: its Question 1; review 2, #224).
 - (a) WARMUPS counts the warmup logs that were done; SKIPPED is always drawn, muted at 0 (the board draws it at 0).
 - (b) A chosen ENERGY or PUMP chip is the accent outline on `--accent-muted` with `--accent` text (the pickers' look; the board's darker accent text has no token).
@@ -899,7 +900,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** accept all, as built; Coach's remaining words go in the update notes ("For the release").
 **Blocks:** nothing.
 **Options:** (a)–(f) below, each accepted or changed by letter; for (f), sweep Coach's strings too (Coach's frozen files change; `check-frozen-code.mjs` would need its baseline moved).
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** the builder's report (`<scratchpad>/build/chunk-69-builder-1.md`, section 3) and the review (#226): the check fails on staging `4171b58` (15 strings) and passes on the merge; the review's audit of the strings the check skips as code (one lowercase token) found 9, all keys or comparisons, none drawn.
 - (a) Today's GO TO PROGRAMS → still goes to `/program`, which opens Plan on PROGRAMS (TASKS wrote `/plan` on PROGRAMS; with no program running `/plan` opens there too); pinned in `TodayPage.noProgram.test.tsx`.
 - (b) "Active" stays: History's program filter marks the running program "(ACTIVE)" and Progress's selector "(active)"; SPEC's name for it is "current program", but the retired words are meso, mesocycle and run.
@@ -913,7 +914,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** (a), accept as built: the row shows what the plan holds, and RIR 0 is what SPEC plans for an AMRAP set.
 **Blocks:** nothing (display).
 **Options:** (a) keep "× AMRAP @ RIR 0" on a planned AMRAP row; (b) an AMRAP row hides its RIR (one condition in `targetsText`; W5's fixture could then keep `targetRir: 0`).
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:** the builder's report (`<scratchpad>/build/tests-owed-builder-1.md`, section 3) and the review (#228, `44f41a3`): the only line that changed in any re-captured dump is `40 kg @ RIR 0` → `40 kg × AMRAP` (W5, W10, W10-closed, W11, W14).
 
 ### 238 What queue-fix 230 leaves: the Library's delete after a set deleted offline, another phone's delete, a queued session start naming a deleted workout day or run, and writes stuck before the release (queue-fix 230's review)
@@ -921,7 +922,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Recommendation:** (a): fix (1) with one line in a small DATA run of its own, and ship (2)–(4) as known, with no update-note line. For (1), the preflight counts every queued upsert of the exercise except a pair the next pass cancels, that is every write before the delete a never-sent upsert, as `dropNeverSentPairs` reads it. None of the four is made worse by queue-fix 230, and each is rarer than 230's own shapes.
 **Blocks:** nothing.
 **Options:** (a) as recommended; (b) all four known, nothing changed; (c) (1) and (3) fixed before the release ((3) like 230 (iii): a session row refused on one of its SET NULL keys is sent again with that column null).
-**Answer:**
+**Answer:** (Adam, 2026-10-27) "Review-pass items 220–238: move them to a 1.2.1 list, all as built, unless I flag one during my screen-row check. They don't block the release." On the 1.2.1 list, as built.
 **Evidence:**
 - (1) The Library. Executed in the review: unit probes AP1 and AP2 on the branch and on staging's tree before the fix (`<scratchpad>/rq230/zzr230.probe.test.tsx`), and real Chromium (X8).
   - `queuedSetsNamingExercise` leaves out any log with a queued delete. That is right only for a pair the next pass cancels.
@@ -935,60 +936,51 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - (4) A write that got stuck on a phone before the release stays until sign-out: a session, exercise or log refused on its own key. The planned-set case heals on RETRY (tested). The fix prevents these; it doesn't repair them.
 
 ### 239 A set logged offline whose first send fails reads as not logged once the session is read again, and LOG on it saves it twice (older than 1.2; found in queue-fix 230's review, executed on staging)
-**Ask:** fix this before the release, or ship with a "known" line in the update notes?
-**Recommendation:** (a). It saves twice a set the user logged once, and the fix is in one place: the workout's read of the session.
-**Blocks:** the release (its update notes say "fixed" or "known"); not the release checklist's data rows; no chunk.
-**Options:** (a) a small DATA fix chunk before the release: the workout's read of the session keeps this phone's queued log upserts for it (drawn SYNC, as the offline LOG drew them), with a break that drops the merge and the real-Chromium proof on staging; (b) ship as is, with a "known" line in the update notes.
-**Answer:**
-**Evidence:**
-- Executed on staging: the deployed `cd9e0fa`, as the test account (`<scratchpad>/rq230/staging/dup/run-dup230.log`).
-  - Setup: + ADD SET on the bench card, offline, then LOG 34.5 × 6, which queues one upsert. Back online, that POST was answered 503 (the reconnect pass's first send fails) while the session's reads went through.
-  - The pass ends by reading the session again (`flushOnce` invalidates `['v2_session']`), and `fetchSession` reads the server alone. So row 08 is drawn open (empty boxes, LOG) while its upsert is still queued.
-  - LOG on it wrote a second log (`964cd416`, 201). The next pass sent the queued one (`67eabddd`, 201), and 58a's correction renumbered the second log to 9.
-  - Result: two logs of one set, 34.5 × 6, `added_place` 6 both. Both were deleted by API afterwards; the account is back to 214 logs and the plan's fingerprint is unchanged.
-- With the session's reads failing too (a flaky connection), the row stays on the screen marked SYNC (`<scratchpad>/rq230/staging/case230b/`).
-- 1.1, by reading (`git archive origin/master`): its flush invalidates the session the same way and its `fetchSession` reads the server alone. So a planned set logged offline whose first send failed reads open again there too. Not executed on master.
+- What: a set logged offline whose first send failed while the phone's reads went through was drawn open again once the workout read its session (from the server alone), and LOG on it saved the set twice.
+- Answer: (Adam, 2026-10-27) "239, 240, 241, 242: fix all four in one small DATA run, full DATA review. 242: show the slot ("SLOT 2 · ROTATION A"), as recommended. For each, record whether it exists in 1.1; 240 goes in the update notes as a 1.1 bug fixed, like 188f." Built as (a) in fix 239–242 (#235, `f6da7c8`): the workout's read of its session (`readActiveSession`) adds this phone's unsent set-log upserts for it, read from the sync queue before the server. Results: the builder's 11 breaks of it and the review's two (a read that drops, or holds back, what it read) each caught; in real Chromium on the real IndexedDB the old and new builds sent the same requests in every pass and left the same queue after every read, and only the new one drew the set as logged after the failed pass and after a reload; on staging (RC37's re-run) an added set logged offline stayed a logged row marked SYNC, with no LOG, through five failing passes and a reload, and RETRY sent it once. **In 1.1: yes** (executed on master's own code: after a pass that failed the first log's send, the session read again drew the second log only). What it leaves: 243. Full text in HISTORY.md.
+- Date: 2026-10-27
 
 ### 240 A deload's base weight comes from a swapped-in exercise's log when that log carries the original's planned set (live since phase 1, chunk 22; found in the release checklist's RC24, executed on staging)
-**Ask:** fix this before the release, or ship it as known?
-**Recommendation:** (a). A deload set can come out heavier than the normal week's (on staging a deload Back Squat read 135 kg where the normal week plans 112.5 kg), and the fix is one condition in one function.
-**Blocks:** nothing new (live in production since phase 1). The update notes say "fixed" if (a) is built.
-**Options:** (a) a small DATA fix, in the same run as 239 (a) and 241 (a) if those are built: `DeloadSetLogRecord` carries the log's `exercise_id`, and `resolveLoggedWeightKg` (`src/lib/deloadRules.ts`) counts only a log of the base set's own exercise. A replacement's logs are then skipped and the set falls back to its planned weight (`loggedWeight ?? plannedWeight`), as a base set with no log does. A test with a swapped base week, and its break; (b) ship as is, with a "known" line in the update notes (by reading, it fades once every base week is a 1.2 week); (c) ship as is, with no line.
-**Answer:**
-**Evidence:**
-- Executed on staging (the release checklist's RC24, the test account; `<scratchpad>/build/rc/out/rc24`). Week 3's Lower A marked as deload from the session's ⋯. Its base occurrence is week 1's Lower A (week 2's was a deload).
-  - In week 1 the seed swapped Back Squat for Leg Press, and the Leg Press logs (180 kg) carry the squat's planned set ids. That is the seed's copy of 1.1's shape: 1.1's replacement card logs the original's planned sets.
-  - The calculated Back Squat set read 135 kg = 180 × 75%; week 3 plans the squat at 112.5 kg. Unmarked afterwards (content equal to before).
-- The code: `resolveLoggedWeightKg(logs, plannedSetId)` takes "the first non-skipped log pointing at this exact planned set", by `week_plan_set_id` only (`DeloadSetLogRecord` has no exercise). `weekPlanService.ts` calls it for every matched base set. It dates from chunk 22 (`d632427`, 2026-10-08), so it is on master.
-- 1.2's own swaps don't feed it, by reading: a swap for today logs the original's remaining planned sets as skipped (RC35: the skip went through POST v2_set_logs), and the moved sets are added sets of the new exercise (179), with no planned set. So it bites where a base week holds 1.1-era replacement logs: production runs with a 1.1 swap in their last normal week, and the seed.
+- What: a deload's base weight came from a swapped-in exercise's log on the original's planned set: on staging a deload Back Squat read 135 kg, 75% of a Leg Press log's 180 kg.
+- Answer: (Adam, 2026-10-27) "239, 240, 241, 242: fix all four in one small DATA run, full DATA review. 242: show the slot ("SLOT 2 · ROTATION A"), as recommended. For each, record whether it exists in 1.1; 240 goes in the update notes as a 1.1 bug fixed, like 188f." Built as (a) in fix 239–242 (#235, `f6da7c8`): `DeloadSetLogRecord.exerciseId`, and `resolveLoggedWeightKg(logs, plannedSetId, plannedExerciseId)` counts only a log of the planned set's own exercise (the third argument required, refused at run time). Results: the builder's four breaks caught; on staging (RC24's re-run) week 3's deload Back Squat reads 82.5 kg, 75% of week 1's planned 110 kg, in the week's mark and in the session's. **In 1.1: the defect, yes; the data that reaches it, no.** On master's own code a base week whose only log on the squat's planned set is a Leg Press log gave the deload squat 160 kg where its plan gives 102.5 (executed). But master's swapped card logs the replacement's sets with no planned set (since the 2026-09-04 fix), so 1.1's flows don't write that shape; the seed's Leg Press logs are an `UPDATE` (read). This entry's "as 1.1's replacement card logs it" was wrong. Its update-note line says so plainly ("For the release"). Full text in HISTORY.md.
+- Date: 2026-10-27
 
-### 241 A session moved from Plan to a day before its own is gone from Today until it is moved back (1.2; found in the release checklist's RC25, executed on staging)
-**Ask:** fix this before the release, or ship with a "known" line in the update notes?
-**Recommendation:** (a). MOVE offers "today or a later day this week" for any session of the current week, so moving a later session to today, the common case and half of SPEC's "swapping two days = two moves", loses it from Today. The fix is in one read.
-**Blocks:** the release's update notes ("fixed" or "known"), like 239; no chunk.
-**Options:** (a) a small DATA fix. `fetchSessionsInRange` (`src/features/gym/sessionService.ts`) also returns the rows whose `moved_to_date` falls in the window (a PostgREST `or` of the two date ranges), so Today's scheduler (`useScheduler.ts`, its read from the lookback to today), the rest-day screen and Plan's MOVE control see a session moved in from a later day. Tests on the read and the resolver, a break that drops the `or`, and the move re-run on staging; (b) MOVE offers only the session's own day and the later ones (chunk 54b's Staging list read it so: "offers only Friday and later days of week 3"). One filter in the move sheet, but no workout can then be done earlier; (c) ship as is, with a "known" line.
-**Answer:**
-**Evidence:**
-- Executed on staging (the release checklist's RC25, the test account, Tuesday 2026-10-27; `<scratchpad>/build/rc/out/rc29b`, `today`, `rc29c`).
-  - Plan week 3 → Wednesday's Lower A ⋯ → MOVE THIS SESSION → "PICK TODAY OR A LATER DAY THIS WEEK" → TUE 27. That sent POST v2_sessions (status planned, date 2026-10-28, moved_to_date 2026-10-27); Plan shows the move.
-  - Today on Tuesday: "REST DAY · NEXT UP Lower A TOMORROW".
-  - With the browser clock on Wednesday: "REST DAY · NEXT UP Upper B IN 2 DAYS". Lower A has moved off Wednesday, and Tuesday holds no scheduled workout, so nothing reads as missed.
-  - MOVE BACK (WED 28) deleted the row and Lower A showed again. A move to a later day (Friday's Upper B to Saturday) is right.
-- Why: `useScheduler.ts` reads `fetchSessionsInRange(lookbackStart, today)`, which filters on the row's own `date`. A row dated tomorrow is never read, so its `moved_to_date` of today is never seen. On Wednesday the row is read, and its day (`moved_to_date ?? date`) is Tuesday, in the past.
-- 1.2 only: 1.1 moved a session only from Today, its own session to a later day or a missed one to today, never to a day before the row's own date.
+### 241 A session moved from Plan to a day before its own is gone from Today until it is moved back (found in the release checklist's RC25, executed on staging; in 1.1 too, through Plan's MOVE)
+- What: a session moved from Plan to a day before its own (Wednesday's Lower A to Tuesday) was gone from Today until it was moved back, because Today read sessions by their own date.
+- Answer: (Adam, 2026-10-27) "239, 240, 241, 242: fix all four in one small DATA run, full DATA review. 242: show the slot ("SLOT 2 · ROTATION A"), as recommended. For each, record whether it exists in 1.1; 240 goes in the update notes as a 1.1 bug fixed, like 188f." Built as (a) in fix 239–242 (#235, `f6da7c8`): `fetchSessionsInRange` returns the rows dated in the window or moved into it (a PostgREST `or` of the two ranges). Results: the builder's five breaks caught, and the app's exact `or` accepted by staging's PostgREST (the builder's read); on staging (RC25's re-run) Today on Tuesday reads "MOVED FROM WED · WEEK 3 · Lower A · PREVIEW SESSION · START SESSION", also after a reload, and MOVE BACK deletes the row ("NEXT UP Lower A TOMORROW" again). **In 1.1: yes**, through Plan's MOVE (chunk 24, phase 1: its sheet offers today and the later days of the session's own week, the days before the row's own date included; executed on master's own code). This entry's "1.2 only" was wrong. Left as it was: 244. Full text in HISTORY.md.
+- Date: 2026-10-27
 
 ### 242 REVIEW on a sequence run heads its group with the weekday the slot was done ("TUE · ROTATION A"), where Plan names the slot (found in the release checklist's RC26)
-**Ask:** the slot in the heading, or keep the weekday?
-**Recommendation:** (a). RC26 and SPEC (Scheduling → Sequence: "The cycle replaces the week everywhere the week is used (… labels, … REVIEW …)") put cycles and slots on a sequence run, and the sheet's own eyebrow already says LAST CYCLE. One line.
-**Blocks:** nothing (display).
-**Options:** (a) on a sequence run the heading reads "SLOT n · ROTATION A", from the last cycle's plan row's sequence position, numbered as Plan's chips are (the heading line in `review.ts`; the sequence test in `ReviewSheet.test.tsx`, which expects "MON · UPPER A", changes with it); (b) keep the weekday, accepted as built: it is the day the slot was done.
+- What: REVIEW on a sequence run headed its group with the weekday the slot was done ("TUE · ROTATION A") where Plan names the slot.
+- Answer: (Adam, 2026-10-27) "239, 240, 241, 242: fix all four in one small DATA run, full DATA review. 242: show the slot ("SLOT 2 · ROTATION A"), as recommended. For each, record whether it exists in 1.1; 240 goes in the update notes as a 1.1 bug fixed, like 188f." Built as (a) in fix 239–242 (#235, `f6da7c8`): on a plan row with a sequence position a group is headed `SLOT n · NAME`, n counted from 1 as Plan's chips are; a weekday run keeps the weekday. Results: the builder's three breaks caught; on staging (RC26's re-run) the sheet reads "SLOT 2 · ROTATION A". **1.2 only** (REVIEW is new in 1.2; master has no `review.ts`). Full text in HISTORY.md.
+- Date: 2026-10-27
+
+### 243 An offline UNLOG, delete or renumber of a set the server holds reads as undone until the next sync when its first send fails (1.2; the mirror case of 239, found by fix 239–242's builder, reproduced in its review)
+**Ask:** fix it before the release, or ship it as known and fix it in 1.2.1?
+**Recommendation:** (b), known for 1.2 and fixed in 1.2.1: two lines in `withQueuedSetLogs` (a log the server holds is left out when its delete is queued, and takes its queued renumber), as 239's fix already does for the phone's own logs. Nothing is lost: the queued write stays queued and goes at the next pass, and the screen catches up then. The one wrong write found, a set number in a rarer shape, is put right by the screen's next draw.
+**Blocks:** nothing, by your rule as I read it: nothing is lost, and nothing stays written wrong. If a wrong number that the next draw corrects counts as written wrong, it blocks, and (a).
+**Options:** (a) fix it before the release: a small DATA run (the two lines; the builder's probe and the review's as tests, a break each), then the same review; (b) as recommended; (c) (b) with a "known" line in the update notes.
 **Answer:**
 **Evidence:**
-- Staging (the sequence account; `<scratchpad>/build/rc/out/rc26b`). Cycle 1 followed its plan, so no REVIEW line showed. Today's Rotation A (cycle 2, slot 2) was done with set 1 at 60 kg × 6 (planned 5 reps) and completed.
-  - Cycle 3 then read "LAST CYCLE · 1 thing went differently · REVIEW →". The sheet: "LAST CYCLE · 1 THING · What went differently · Where last cycle went differently from its plan.", under "TUE · ROTATION A": "BACK SQUAT · SET 01 · Did 60 kg × 6 · planned 5 reps · IGNORE · USE 60 × 6".
-  - Nothing pressed. The session and its two logs were deleted by API afterwards; the account is as before.
-- `review.ts` builds every group's heading as the weekday of `moved_to_date ?? date`, then the workout's name. The run's unit reaches only the eyebrow and the line.
-- Seen with it, by reading only (not pressed): cycle 3's slot 2 lists Leg Press with no sets (203's accepted case), so this item has no row to write to. `applyReviewAction` then returns the `used` decision with no writes, so USE would take the item away and change nothing. The same holds on any run for an item whose exercise this week's plan no longer lists. For your review pass, whichever of (a) and (b).
+- What happens: 1.2's offline UNLOG and DELETE SET queue a delete, and a delete's renumber queues patches (chunks 57, 58a, 61, 63). Back online, the write's first send fails while the session's reads go through. The pass ends by reading the session again (`flushOnce`), and the server still holds the log as it was. So the set the user unlogged or deleted reads as logged again, and a renumbered set reads its old number, until the next pass sends the write. 239's fix merges only the phone's own unsent upserts (239 (a)'s words), so it leaves this as it was.
+- Executed in the review, the same before and after the fix:
+  - The builder's probe (the real hooks, queue and flush): the workout draws `[["D1",1],["P1",2]]` while `delete D1` and `patch P1 → 1` wait in the queue (attempts 1); after the next pass it draws `[["P1",1]]`, and the server holds P1 only.
+  - The workout screen (the real `GymSession`): set 2 unlogged offline, its delete's first send failing: after the pass set 2 is a logged row again, and after the next pass it is open, with the server's log gone. The screen queued nothing by itself, with the new read and with the old one.
+  - Real Chromium on the real IndexedDB, old and new builds (X5): a mixed queue (an UNLOG and a renumber of logs the server holds, two new logs and another session's log), three of its first sends failing. Both builds sent the same requests in each pass, left the same queue at each step and ended with the same server; both drew the unlogged set and the old number until the next pass.
+  - UNLOG and LOG again of one set, offline, both first sends failing (X6, and the workout screen): one row drawn, with the old log's numbers, until the next pass; nothing written by the screen. With only the delete failing (X7), staging's code already holds and draws both logs, since the server has them.
+- The wrong write, executed through the real rules (`resolveRows` and 58a's `numberCorrections`, with the card's list and without it): DELETE SET on an added set (04) offline, which renumbers the next one (05 → 04), then a new set added and logged (05), all three first sends failing. After the pass the rows read 04 (the deleted set), 05 (the renumbered one, still 05 on the server) and 06 (the new one), and the correction writer queues the new log's number as 6. The next pass stores 6; the next draw lists 6 → 5 and corrects it (also executed). The number stays wrong only if no workout screen draws that session again; FINISH and auto-finish are the workout screen's (read). The old read drew the new set open in that shape (239: LOG on it wrote it twice), or not at all without the card's list. With the mirror fixed, the rows read 04 and 05 and nothing is queued.
+- 1.1: no. Master's queue holds upserts only, with no queued delete or patch (`a3ffbe8`, read).
+
+### 244 A session moved to a day and not done there is not listed as missed afterwards (since phase 1; SPEC silent; found by fix 239–242's builder, executed in its review)
+**Ask:** should a session moved to a day and not done there count as missed on the days after (the missed-session prompt, with "Do it now" and "Mark skipped"), or stay as it is?
+**Recommendation:** (b), as it is for 1.2, decided for 1.2.1: it is phase 1's behaviour for a move to a later day, 241's fix doesn't change it, and SPEC's prompt names missed days without saying whether a moved session's new day is one.
+**Blocks:** nothing.
+**Options:** (a) for 1.2.1: Today's missed check also takes a session's new day (`moved_to_date`), so a session moved to Tuesday and not done there is a missed session on Wednesday; (b) as recommended.
+**Answer:**
+**Evidence:**
+- Executed on staging (fix 239–242's review, RC25's re-run): Wednesday's Lower A moved to Tuesday; with the browser clock on Wednesday, Today reads "REST DAY · 1 OF 3 SESSIONS DONE THIS WEEK · NEXT UP Upper B IN 2 DAYS". Lower A is nowhere on Today until Plan's MOVE moves it again.
+- Why: the missed check walks the schedule's weekdays (`useScheduler.ts`). A day with no scheduled workout is never missed, and the move gave up the session's own day. A move to a later day that isn't done there (Friday's Upper B to Saturday) is the same, since phase 1 (chunk 24). The builder's test pins today's answer (`rest_day`), so a change shows.
+- SPEC (Scheduling → Weekday): "Missed-session prompt: stays, but only for missed days of the current week." It doesn't say whether a moved session's new day is one.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
