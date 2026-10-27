@@ -1,0 +1,46 @@
+{
+  "migration": "042_p12_schema.sql",
+  "new": [
+    "v2_run_schedules",
+    "v2_session_set_changes",
+    "v2_week_review_decisions"
+  ],
+  "columns": {
+    "v2_run_schedules": [
+      "created_at",
+      "from_week",
+      "id",
+      "mesocycle_id",
+      "schedule",
+      "user_id"
+    ],
+    "v2_session_set_changes": [
+      "created_at",
+      "id",
+      "is_warmup",
+      "kind",
+      "session_id",
+      "set_log_id",
+      "stage_count",
+      "stage_kind",
+      "updated_at",
+      "user_id",
+      "week_plan_set_id"
+    ],
+    "v2_user_settings": [
+      "log_in_order",
+      "stage_volume_rule"
+    ],
+    "v2_week_plan_sets": [
+      "target_rir_max"
+    ],
+    "v2_week_review_decisions": [
+      "created_at",
+      "decision",
+      "id",
+      "item_key",
+      "user_id",
+      "week_plan_id"
+    ]
+  }
+}
