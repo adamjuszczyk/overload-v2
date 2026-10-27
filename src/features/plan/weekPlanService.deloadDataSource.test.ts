@@ -203,7 +203,8 @@ function buildFromMock(world: { weekPlans: WorldWeekPlan[]; logs: WorldLog[] }) 
           return undefined
         }
         // Only the columns the request names come back, as PostgREST answers: a read that doesn't ask for `exercise_id` gets none.
-        const asked = String(calls.filter((c) => c.table === 'v2_set_logs' && c.method === 'select').at(-1)?.args[0] ?? '').split(',').map((c) => c.trim())
+        const selects = calls.filter((c) => c.table === 'v2_set_logs' && c.method === 'select')
+        const asked = String(selects[selects.length - 1]?.args[0] ?? '').split(',').map((c) => c.trim())
         const rows = world.logs
           .filter((l) => ids.includes(l.weekPlanSetId))
           .map((l) => ({

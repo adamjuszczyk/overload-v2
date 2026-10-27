@@ -99,6 +99,9 @@ async function todayAt(today: string) {
   await waitFor(() => expect(view.result.current.isLoading).toBe(false))
   return view.result.current.result
 }
+/** What Today answers, with the missed queue printed (a fixture day that reads as missed shows in the failure, RULES.md, Checks that lied #21). */
+type TodayResult = Awaited<ReturnType<typeof todayAt>>
+const kind = (result: TodayResult) => (result?.type === 'missed_sessions' ? `missed_sessions[${result.queue.map((m) => m.date).join(',')}]` : (result?.type ?? 'no result'))
 
 // The days of week 2 that came before, done, so that no earlier scheduled day reads as missed (the scheduler's prompt would take over Today).
 const mondayDone = () => session('s-mon', 'wd-ua', on(2, 'monday'), null, 'completed')
@@ -108,7 +111,7 @@ describe('Today finds a session moved to a day before its own (DECISIONS 241)', 
   it('Wednesday\'s Lower A moved to Tuesday (today): Tuesday lists it as the planned session, not "rest day, next up Lower A tomorrow"', async () => {
     h.rows = [mondayDone(), session('s-la', 'wd-la', on(2, 'wednesday'), on(2, 'tuesday'))]
     const result = await todayAt(on(2, 'tuesday'))
-    if (result?.type !== 'planned') throw new Error(`Tuesday should list the moved session, got ${result?.type}`)
+    if (result?.type !== 'planned') throw new Error(`Tuesday should list the moved session, got ${kind(result)}`)
     expect(result.session.id).toBe('s-la')
     expect(result.session).toMatchObject({ date: on(2, 'wednesday'), movedToDate: on(2, 'tuesday') })
     expect(result.workoutDay).toEqual(wdLowerA)
@@ -116,26 +119,25 @@ describe('Today finds a session moved to a day before its own (DECISIONS 241)', 
 
   it('the day it left is not Wednesday\'s any more: with the browser clock on Wednesday the row is read by its own date and the slot is not suggested again (as before)', async () => {
     h.rows = [mondayDone(), session('s-la', 'wd-la', on(2, 'wednesday'), on(2, 'tuesday'))]
-    const result = await todayAt(on(2, 'wednesday'))
-    expect(result?.type).toBe('rest_day')
+    expect(kind(await todayAt(on(2, 'wednesday')))).toBe('rest_day')
   })
 
   it('a session moved to a LATER day still shows on that day (the case that was always right) and not on its own', async () => {
     h.rows = [mondayDone(), wednesdayDone(), session('s-ub', 'wd-ub', on(2, 'friday'), on(2, 'saturday'))]
-    expect((await todayAt(on(2, 'saturday')))?.type).toBe('planned')
+    expect(kind(await todayAt(on(2, 'saturday')))).toBe('planned')
     queryClient.clear()
-    expect((await todayAt(on(2, 'friday')))?.type).toBe('rest_day') // Friday's slot was vacated: no suggestion, no second Upper B
+    expect(kind(await todayAt(on(2, 'friday')))).toBe('rest_day') // Friday's slot was vacated: no suggestion, no second Upper B
   })
 
   it('a session dated later in the week and moved to a day that is still ahead is not read for today: Wednesday\'s Lower A moved to Thursday is not Tuesday\'s', async () => {
     h.rows = [mondayDone(), session('s-la', 'wd-la', on(2, 'wednesday'), on(2, 'thursday'))]
-    expect((await todayAt(on(2, 'tuesday')))?.type).toBe('rest_day')
+    expect(kind(await todayAt(on(2, 'tuesday')))).toBe('rest_day')
   })
 
   it('two sessions on the day: the moved-in one is listed beside the day\'s own', async () => {
     h.rows = [session('s-la', 'wd-la', on(2, 'wednesday'), on(2, 'monday'))]
     const result = await todayAt(on(2, 'monday')) // Monday's own Upper A is suggested, and Lower A moved here is listed with it
-    if (result?.type !== 'due_today') throw new Error(`expected both sessions listed, got ${result?.type}`)
+    if (result?.type !== 'due_today') throw new Error(`expected both sessions listed, got ${kind(result)}`)
     expect(result.sessions.map((entry) => entry.type)).toEqual(['planned', 'suggest_no_plan'])
   })
 })

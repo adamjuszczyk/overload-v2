@@ -166,15 +166,22 @@ export function toSession(row: DbSession): Session {
   }
 }
 
+// A queued row as a `v2_set_logs` row: the columns a log may leave out, or hold as `undefined` (a structured clone keeps an `undefined` value), are null (or false), as the table
+// would hold them. The row's required columns are checked by `queuedSetLogsFor` before it gets here.
+function asDbSetLog(row: Record<string, unknown>): DbSetLog {
+  const read = { ...row }
+  for (const column of ['weight', 'reps', 'rir', 'note', 'parent_set_id', 'week_plan_set_id', 'rest_seconds']) read[column] = read[column] ?? null
+  for (const column of ['is_dropset', 'is_skipped']) read[column] = read[column] ?? false
+  return read as unknown as DbSetLog
+}
+
 // DECISIONS 239. The set logs this phone still has to send for the session (`queuedSetLogsFor`: the sync queue's rows, in the shape the table takes) are part of what the
 // workout draws, whatever the server answered: the server has never seen them, so its read of the session leaves them out. A log the server already holds is not added a
 // second time (a reply lost on a locked phone leaves the upsert queued beside the row; the server's copy has the exercise joined). The logs stay in `loggedAt` order,
 // as `toSession` leaves them.
 export function withQueuedSetLogs(session: Session, queued: ReadonlyArray<Record<string, unknown>>): Session {
   const held = new Set((session.setLogs ?? []).map((log) => log.id))
-  const missing = queued
-    .filter((row) => !held.has(row.id as string))
-    .map((row) => toSetLog({ weight: null, reps: null, rir: null, note: null, parent_set_id: null, week_plan_set_id: null, rest_seconds: null, is_dropset: false, is_skipped: false, ...row } as unknown as DbSetLog))
+  const missing = queued.filter((row) => !held.has(row.id as string)).map((row) => toSetLog(asDbSetLog(row)))
   if (missing.length === 0) return session
   return { ...session, setLogs: [...(session.setLogs ?? []), ...missing].sort((a, b) => a.loggedAt.localeCompare(b.loggedAt)) }
 }
