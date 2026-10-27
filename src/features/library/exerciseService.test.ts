@@ -12,6 +12,9 @@ const fromMock = vi.fn()
 vi.mock('../../lib/supabase', () => ({
   supabase: { from: (...args: unknown[]) => fromMock(...args) },
 }))
+// DECISIONS 230: the delete preflight also counts the logs this phone still has queued; the queue's own rule is tested in offline/useSyncQueue.deletes.test.tsx.
+const queuedSets = vi.hoisted(() => ({ count: 0 }))
+vi.mock('../offline/useSyncQueue', () => ({ queuedSetsNamingExercise: async () => queuedSets.count }))
 
 const { createExercise, updateExercise, previewExerciseDelete, deleteExercise, restoreExercise } = await import(
   './exerciseService'
@@ -46,6 +49,7 @@ const BASE_ROW = {
 
 beforeEach(() => {
   fromMock.mockReset()
+  queuedSets.count = 0
 })
 
 describe('updateExercise — the don\'t-blank-on-omit contract', () => {
@@ -254,6 +258,23 @@ describe('previewExerciseDelete', () => {
     expect(result.outcome).toBe('lost')
     expect(result.setCount).toBe(12)
     expect(result.programNames).toEqual([])
+    expect(programsChain.select).not.toHaveBeenCalled()
+  })
+
+  it('230: no log on the server but two still queued on this phone: outcome "lost" with their count — never "gone"', async () => {
+    queuedSets.count = 2
+    const setLogsChain = makeChain({ count: 0, error: null })
+    const programsChain = makeChain({ error: null, data: [] })
+    fromMock.mockImplementation((table: string) => {
+      if (table === 'v2_set_logs') return setLogsChain
+      if (table === 'v2_program_exercises') return programsChain
+      throw new Error(`unexpected table ${table}`)
+    })
+
+    const result = await previewExerciseDelete('ex-1')
+
+    expect(result.outcome).toBe('lost')
+    expect(result.setCount).toBe(2)
     expect(programsChain.select).not.toHaveBeenCalled()
   })
 })

@@ -1222,25 +1222,26 @@ describe('flushSyncQueue — a log’s delete waits behind the change rows that 
   })
 })
 
-describe('dropQueuedWritesNamingLog — an online delete of a log drops the change rows still queued for it (227 (iii))', () => {
-  it('drops the upserts of the rows that name the log, and nothing else', async () => {
+describe('dropQueuedWritesNamingLog — an online delete of a log drops the log’s own queued upserts and patches and the change rows still queued for it (227 (iii), 230 (i))', () => {
+  it('drops the log’s own upsert and the upserts of the rows that name it, and nothing else', async () => {
     useOfflineStore.getState().addPending('r1')
     enqueueRow('r1', 'l1', 'row1', { attempts: 1 })
     enqueueRow('r1', 'l1', 'row1b') // a second queued write of the same row
     enqueueRow('r2', 'l2', 'row2') // another log of the same session
     enqueueRow('r3', 'l3', 'row3', {}, 's2') // another session
     enqueue('v2_session_set_changes', { id: 'r4', session_id: 's1', kind: 'retyped', week_plan_set_id: 'p1', set_log_id: null, tag: 'retyped' })
-    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' }) // the log's own upsert is not a row that names it
+    enqueue('v2_set_logs', { id: 'l1', session_id: 's1', weight: 100, tag: 'log1' }) // the log's own upsert (230 (i): the user deleted the log; this would create it again)
+    enqueue('v2_set_logs', { id: 'l2', session_id: 's1', weight: 90, tag: 'log2' }) // another log of the same session
     enqueue('v2_set_logs', { id: 'l5', session_id: 's1', parent_set_id: 'l1', weight: 80, tag: 'stage' }) // a stage under it is dropped too (1.1's shape)
     enqueue('v2_sessions', { id: 's1', status: 'completed', tag: 'finish' })
 
-    expect(await dropQueuedWritesNamingLog('l1')).toBe(3)
+    expect(await dropQueuedWritesNamingLog('l1')).toBe(4)
 
-    expect(queue.map((q) => q.payload.tag)).toEqual(['row2', 'row3', 'retyped', 'log1', 'finish'])
+    expect(queue.map((q) => q.payload.tag)).toEqual(['row2', 'row3', 'retyped', 'log2', 'finish'])
     expect(useOfflineStore.getState().pendingIds.has('r1')).toBe(false)
   })
 
-  it('and the upserts of the stage logs under that log (1.1’s shape of the defect), not those of another head, not the log’s own upsert, not a stage’s queued delete or patch', async () => {
+  it('and the upserts of the stage logs under that log (1.1’s shape of the defect), not those of another head, not a stage’s queued delete or patch; the log’s own upsert goes', async () => {
     enqueue('v2_set_logs', { id: 'st1', session_id: 's1', parent_set_id: 'l1', tag: 'stage1' })
     enqueue('v2_set_logs', { id: 'st2', session_id: 's1', parent_set_id: 'l1', tag: 'stage2' }, { attempts: 1 })
     enqueue('v2_set_logs', { id: 'st9', session_id: 's1', parent_set_id: 'l9', tag: 'stage9' })
@@ -1248,19 +1249,20 @@ describe('dropQueuedWritesNamingLog — an online delete of a log drops the chan
     enqueueDelete('v2_set_logs', 'st3', { sessionId: 's1', parentSetId: 'l1' })
     enqueuePatch('v2_set_logs', { id: 'st4', set_number: 3 }, { sessionId: 's1', parentSetId: 'l1' })
 
-    expect(await dropQueuedWritesNamingLog('l1')).toBe(2)
+    expect(await dropQueuedWritesNamingLog('l1')).toBe(3)
 
-    expect(queue.map((q) => q.payload.tag ?? q.payload.id)).toEqual(['stage9', 'log1', 'st3', 'st4'])
+    expect(queue.map((q) => q.payload.tag ?? q.payload.id)).toEqual(['stage9', 'st3', 'st4'])
   })
 
-  it('a delete or a patch of a log, queued, is not a row that names it', async () => {
+  it('the log’s own queued patch goes with it (it matches no row once the log is deleted); its queued delete stays (it matches no row either and is never refused); a row that names it goes', async () => {
     enqueueDelete('v2_set_logs', 'l1', { sessionId: 's1' })
     enqueuePatch('v2_set_logs', { id: 'l1', set_number: 2 }, { sessionId: 's1' })
+    enqueuePatch('v2_set_logs', { id: 'l2', set_number: 3 }, { sessionId: 's1' }) // another log's renumber stays
     enqueueRow('r1', 'l1', 'row1')
 
-    expect(await dropQueuedWritesNamingLog('l1')).toBe(1)
+    expect(await dropQueuedWritesNamingLog('l1')).toBe(2)
 
-    expect(queue.map((q) => q.operation)).toEqual(['delete', 'patch'])
+    expect(queue.map((q) => `${q.operation} ${q.payload.id as string}`)).toEqual(['delete l1', 'patch l2'])
   })
 
   it('names nothing: the queue is left as it was', async () => {
