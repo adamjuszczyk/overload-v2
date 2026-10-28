@@ -1338,6 +1338,10 @@ layout and wording come from the boards.
   changed; tapping a week shows what changed and its structure,
   and DELETE THIS FINISHED PROGRAM → PR15 ("Its weekly plan is deleted. Its
   sessions stay in History, and the saved program isn't touched.").
+  *1.2.1 (DECISIONS 249, Adam, 2026-10-28): DELETE THIS FINISHED PROGRAM becomes
+  a full delete (the run, its weeks, sessions, logs and copy program, and Coach's
+  rows that only describe it), and PR15 names what goes with counts; a saved
+  program's delete from YOUR PROGRAMS is a "deleted" mark. 1.2.1 list, item 1.*
 
 ### CHANGE THE PROGRAM [1.2]
 
