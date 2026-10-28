@@ -94,15 +94,14 @@ vi.mock('./useScrollToCurrentSet', () => ({
   useScrollToCurrentSet: () => ({ containerRef: { current: null }, direction: null, scrollToCurrentSet: () => {} }),
 }))
 vi.mock('./RestTimer', () => ({ default: () => null }))
-vi.mock('./SessionComplete', () => ({ default: () => null }))
+vi.mock('./FinishScreen', () => ({ default: () => null }))
 vi.mock('./WorkoutSidebarSheet', () => ({ default: () => null }))
-// A functional stub (not `() => null` — D30's own precedent — since this
-// file's own swap test needs to actually confirm one), same shape as
-// SupersetBlock.test.tsx's own.
-vi.mock('./SwapExerciseSheet', () => ({
-  default: ({ onConfirm, onClose }: { onConfirm: (ex: Exercise) => void; onClose: () => void }) => (
+// A functional stub of the shared exercise picker (chunk 59: the swap and the add use it; its own states are chunk 41's), since this
+// file's swap test needs to actually pick one.
+vi.mock('../../components/ExercisePickerSheet', () => ({
+  default: ({ onPick, onClose }: { onPick: (ex: Exercise) => void; onClose: () => void }) => (
     <div>
-      <button onClick={() => onConfirm(REPLACEMENT)}>CONFIRM PICK</button>
+      <button onClick={() => onPick(REPLACEMENT)}>CONFIRM PICK</button>
       <button onClick={onClose}>close sheet</button>
     </div>
   ),
@@ -158,7 +157,7 @@ vi.mock('./useSession', () => ({
   }),
   useSessionSwaps: () => ({ data: sessionSwaps }),
   useRecordExerciseSwap: () => ({
-    mutate: vi.fn((params: { programExerciseId: string; originalExercise: Exercise; replacementExercise: Exercise }) => {
+    mutateAsync: vi.fn(async (params: { programExerciseId: string; originalExercise: Exercise; replacementExercise: Exercise }) => {
       sessionSwaps = [...sessionSwaps, {
         id: `swap-${sessionSwaps.length + 1}`,
         sessionId: 'session-1',
@@ -188,16 +187,15 @@ describe('GymSession — superset current-set zigzag (TASKS.md chunk 13 note 3)'
     session = { ...session, setLogs: [] }
     const { container, rerender } = renderSession()
 
-    const unloggedBefore = container.querySelector('[data-unlogged-set]') as HTMLElement
-    const labelBefore = unloggedBefore.parentElement!.parentElement!.querySelector('p')!.textContent!
-    expect(labelBefore).toContain('BENCH PRESS') // A1 is first
+    // Chunk 58a: the current set is the one row with boxes (`data-current-set`), named by its round and member letter.
+    const labelOf = (el: HTMLElement) => el.querySelector('span')!.textContent
+    const currentBefore = container.querySelector('[data-current-set]') as HTMLElement
+    expect(labelOf(currentBefore)).toBe('A1') // A1 is first
 
-    const weightInput = within(unloggedBefore).getAllByRole('textbox')[0]
-    const repsInput = within(unloggedBefore).getByRole('spinbutton')
-    fireEvent.change(weightInput, { target: { value: '60' } })
-    fireEvent.change(repsInput, { target: { value: '10' } })
+    fireEvent.change(within(currentBefore).getByLabelText('Weight'), { target: { value: '60' } })
+    fireEvent.change(within(currentBefore).getByLabelText('Reps'), { target: { value: '10' } })
     await act(async () => {
-      fireEvent.click(within(unloggedBefore).getByText('LOG'))
+      fireEvent.click(within(currentBefore).getByText('LOG'))
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -208,10 +206,10 @@ describe('GymSession — superset current-set zigzag (TASKS.md chunk 13 note 3)'
       </MemoryRouter>,
     )
 
-    const unloggedAfter = container.querySelector('[data-unlogged-set]') as HTMLElement
-    expect(unloggedAfter).not.toBe(unloggedBefore)
-    const labelAfter = unloggedAfter.parentElement!.parentElement!.querySelector('p')!.textContent!
-    expect(labelAfter).toContain('BARBELL ROW') // B1 is next, not A2
+    const currentAfter = container.querySelector('[data-current-set]') as HTMLElement
+    expect(currentAfter).not.toBe(currentBefore)
+    expect(container.querySelectorAll('[data-current-set]')).toHaveLength(1)
+    expect(labelOf(currentAfter)).toBe('B1') // B1 is next, not A2
   })
 })
 
@@ -221,11 +219,11 @@ describe('GymSession — review fix: starting a swap on a block member makes it 
     sessionSwaps = []
     const { container, rerender } = renderSession()
 
-    // Both members' own SWAP triggers live inside the block
-    // (useExerciseCardState — the review fix) — A is first.
-    const swapButtons = screen.getAllByLabelText('Swap exercise for this session')
-    expect(swapButtons).toHaveLength(2)
-    fireEvent.click(swapButtons[0])
+    // Both members' own ⋯ live inside the block (chunk 59: the swap is its "Swap for today" row) — A is first.
+    const options = screen.getAllByLabelText('Exercise options')
+    expect(options).toHaveLength(2)
+    fireEvent.click(options[0])
+    fireEvent.click(screen.getByText('Swap for today'))
 
     await act(async () => {
       fireEvent.click(screen.getByText('CONFIRM PICK'))
@@ -262,11 +260,12 @@ describe('GymSession — hardening: the block key includes member identity, not 
 
     const { container, rerender } = renderSession()
 
-    // Open B's (second member, index 1) own skip-confirm.
-    const skipButtons = screen.getAllByText('SKIP REST OF EXERCISE')
-    expect(skipButtons).toHaveLength(2)
-    fireEvent.click(skipButtons[1]) // B's own
-    expect(screen.getByText('CONFIRM SKIP')).toBeTruthy()
+    // Open B's (second member, index 1) own ⋯ and its skip-confirm.
+    const options = screen.getAllByLabelText('Exercise options')
+    expect(options).toHaveLength(2)
+    fireEvent.click(options[1]) // B's own
+    fireEvent.click(screen.getByText('Skip the rest of this exercise'))
+    expect(screen.getByText('SKIP 2 SETS')).toBeTruthy()
 
     // "A regroup from another device reaching this open session through a
     // refetch" (reviewer's own example) — the block's second member is now
@@ -291,10 +290,11 @@ describe('GymSession — hardening: the block key includes member identity, not 
     )
 
     // Deadlift must render in its own normal, fresh state — not carrying
-    // Barbell Row's confirm-skip UI (CANCEL/CONFIRM SKIP) onto itself.
+    // Barbell Row's open ⋯ and its confirm-skip (CANCEL / SKIP 2 SETS) onto itself.
     expect(container.textContent).toContain('Deadlift')
     expect(container.textContent).not.toContain('Barbell Row')
-    expect(screen.queryByText('CONFIRM SKIP')).toBeNull()
-    expect(screen.getAllByText('SKIP REST OF EXERCISE')).toHaveLength(2)
+    expect(screen.queryByText('SKIP 2 SETS')).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getAllByLabelText('Exercise options')).toHaveLength(2)
   })
 })

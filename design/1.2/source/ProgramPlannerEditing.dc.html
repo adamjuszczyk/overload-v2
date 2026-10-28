@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Program planner — editing in place</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 670px; box-sizing: border-box; background: {{c.raised}}; padding: 24px 16px; display: flex; flex-direction: column; gap: 32px; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">RENAME · SAVES ON ENTER OR TAP AWAY</span>
+    <div style="border-radius: 12px; border: 1px solid {{c.border}}; background: {{c.base}}; padding: 14px 16px; display: flex; align-items: center; gap: 12px">
+      <span style="flex: 0 0 auto; width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg></span>
+      <input aria-label="Program name" value="Bulk" style="flex: 1; min-width: 0; height: 48px; box-sizing: border-box; border-radius: 10px; border: 2px solid {{c.accent}}; background: {{c.surface}}; padding: 0 12px; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 20px; color: {{c.t1}}">
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">RENAME A WORKOUT</span>
+    <div style="border-radius: 12px; border: 1px solid {{c.border}}; background: {{c.surface}}; padding: 12px 8px 12px 16px; display: flex; align-items: center; gap: 8px">
+      <input aria-label="Workout name" value="Push 1" style="flex: 1; min-width: 0; height: 48px; box-sizing: border-box; border-radius: 10px; border: 2px solid {{c.accent}}; background: {{c.surface}}; padding: 0 12px; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 18px; color: {{c.t1}}">
+      <span style="flex: 0 0 auto; width: 44px; height: 44px; color: {{c.tm}}; display: flex; align-items: center; justify-content: center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"></path></svg></span>
+    </div>
+  </div>
+
+  <sc-for list="{{tempos}}" as="t" hint-placeholder-count="3">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">{{t.block}}</span>
+      <div style="border-radius: 12px; border: 1px solid {{c.border}}; background: {{c.surface}}; padding: 14px 16px; display: grid; grid-template-columns: 92px minmax(0, 1fr); column-gap: 0; row-gap: 8px; align-items: center">
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.12em; color: {{c.tm}}">TEMPO</span>
+        <sc-if value="{{t.editing}}" hint-placeholder-val="{{true}}">
+          <input aria-label="Tempo" aria-invalid="{{t.invalid}}" placeholder="3-1-1-0" value="{{t.value}}" style="height: 44px; box-sizing: border-box; border-radius: 8px; border: 2px solid {{t.bd}}; background: {{c.surface}}; padding: 0 12px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 14px; color: {{c.t1}}">
+        </sc-if>
+        <sc-if value="{{t.saved}}" hint-placeholder-val="{{false}}">
+          <button aria-label="Tempo" style="height: 44px; box-sizing: border-box; border-radius: 8px; border: 1px solid {{c.accent}}; background: {{c.accentMuted}}; display: flex; align-items: center; padding: 0 14px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 14px; color: {{c.accentText}}">{{t.value}}</button>
+        </sc-if>
+        <sc-if value="{{t.invalid}}" hint-placeholder-val="{{false}}">
+          <span></span>
+          <span role="alert" style="font-size: 12px; line-height: 1.4; color: {{c.error}}">Use 4 fields, e.g. 3-1-1-0 (X allowed)</span>
+        </sc-if>
+      </div>
+    </div>
+  </sc-for>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"$preview":{"width":390,"height":670}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', errorMuted: 'rgba(185,28,28,0.10)', success: '#166534', successMuted: 'rgba(22,101,52,0.10)', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', errorMuted: 'rgba(248,113,113,0.15)', success: '#4ade80', successMuted: 'rgba(74,222,128,0.12)', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const SW = { ORANGE: ['#d06c08', '#f28e42', '#a55506', '#f28e42'], AMBER: ['#b38007', '#dc9e12', '#8b640f', '#dc9e12'], LIME: ['#759a11', '#95bb46', '#587502', '#95bb46'], MINT: ['#13a377', '#1fc893', '#0d7a58', '#1fc893'], CYAN: ['#1a9bae', '#17c0d6', '#147684', '#17c0d6'], BLUE: ['#378bee', '#6eadfe', '#096acb', '#6eadfe'], INDIGO: ['#797aee', '#9ba0fe', '#5f5dce', '#9ba0fe'], VIOLET: ['#a36bdc', '#c190f6', '#884fbe', '#c190f6'], PINK: ['#cf59a2', '#ec81c0', '#b03c86', '#ec81c0'] };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const S = SW[this.props.accent] || SW.BLUE;
+    const D = theme === 'dark';
+    const c = Object.assign({}, P[theme], { accent: D ? S[1] : S[0], onAccent: '#0d0d0c', accentText: D ? S[3] : S[2], accentMuted: (D ? S[1] : S[0]) + '26' });
+    const tempos = [
+      { block: 'TEMPO · TYPING', editing: true, saved: false, invalid: false, value: '', bd: c.accent },
+      { block: 'TEMPO · INVALID · STAYS OPEN, NOT SAVED', editing: true, saved: false, invalid: true, value: '3-1-1', bd: c.error },
+      { block: 'TEMPO · SAVED', editing: false, saved: true, invalid: false, value: '3-1-1-0', bd: c.accent }
+    ];
+    return { c, tempos };
+  }
+}
+</script>
+</body>
+</html>

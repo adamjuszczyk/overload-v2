@@ -1,0 +1,58 @@
+Bulk
+1 · PRIORITIES
+2 · EXERCISES
+3 · VOLUME
+WEEKDAY
+SEQUENCE
+Push 1
+MON
+TUE
+WED
+THU
+FRI
+SAT
+SUN
++
+ADD AN EXERCISE
+WARMUP ROUTINE
+NO WARMUP ITEMS YET
++
+ADD ITEM
+Pull 1
+TUE
+Push 2
+THU
+Pull 2
+FRI
+Legs
+SAT
++
+ADD WORKOUT
+SAVE
+START
+PUSH 1
+Add exercise
+
+Tap to add. The list stays open for the next one.
+
+ALL
+CHEST
+BACK
+SHOULDERS
+BICEPS
+TRICEPS
+FOREARMS
+QUADS
+HAMSTRINGS
+GLUTES
+CALVES
+CORE
+OTHER
+Barbell Bench Press
+Bench Supported Incline Cable Fly
+Chest Press
+Dumbbell Bench Press
+Dumbbell Fly
+Incline Barbell Bench Press
+Incline Smith Press
+Push-Up

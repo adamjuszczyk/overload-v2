@@ -4,6 +4,7 @@ import { repTargetToColumns, columnsToRepTarget, formatRepTarget, type RepTarget
 import { fetchRunProgramExercises } from '../programs/runProgramExercises'
 import { createWorkoutDay } from '../programs/programService'
 import { fetchWarmupItems } from '../programs/warmupRoutineService'
+import { nextProgramPosition, type ProgramSetTypeOp } from './programSetRows'
 
 // Chunk 11 — the stepped program planner (TASKS.md "file layout: ...
 // plannerService.ts"). First user of v2_program_sets (CONTEXT rule:
@@ -18,7 +19,7 @@ import { fetchWarmupItems } from '../programs/warmupRoutineService'
 
 // ─── DB type + mapper ───────────────────────────────────────────────────────
 
-type DbProgramSet = {
+export type DbProgramSet = {
   id: string
   user_id: string
   program_exercise_id: string
@@ -38,7 +39,7 @@ type DbProgramSet = {
   removed_at?: string | null
 }
 
-function toProgramSet(row: DbProgramSet): ProgramSet {
+export function toProgramSet(row: DbProgramSet): ProgramSet {
   return {
     id: row.id,
     userId: row.user_id,
@@ -181,12 +182,41 @@ export async function addProgramSetStage(
 
 // A single row, head or stage — the SETS stepper's own shrink path
 // (setExerciseSetCount below) bulk-deletes heads directly; this is the
-// one-at-a-time delete STAGE's own remove button uses. Deleting a head
+// one-at-a-time delete a stage's removal (the set type picker's stepper,
+// `applyProgramSetTypeOps`) and the picker's REMOVE THIS SET use. Deleting a head
 // this way cascades its stages too (027: parent_program_set_id ... on
 // delete cascade), same as the week-plan/log-side stage cascade.
 export async function removeProgramSet(id: string): Promise<void> {
   const { error } = await supabase.from('v2_program_sets').delete().eq('id', id)
   if (error) throw error
+}
+
+// Chunk 67 — a set type picked on the stepped planner's set type picker is a list of writes (`programSetTypeChange`, programSetRows.ts, which
+// holds the order and why), each made with the function above it and each after the one before has been answered, so a change cut short
+// leaves a head that is a plain set, or has fewer stages: never a warmup with a kind or stages (v2_program_sets_warmup_check), never stages
+// under the wrong kind, never orphans. The first refusal stops the rest. Nothing here is atomic; the caller reads the sets again whatever the
+// outcome. The writes are the existing ones: removeProgramSet, updateProgramSetStageKind, updateProgramSetStageRest, updateProgramSetIsWarmup
+// and addProgramSetStage.
+export async function applyProgramSetTypeOps(userId: string, ops: readonly ProgramSetTypeOp[]): Promise<void> {
+  for (const op of ops) {
+    switch (op.kind) {
+      case 'removeStage':
+        await removeProgramSet(op.id)
+        break
+      case 'isWarmup':
+        await updateProgramSetIsWarmup(op.id, op.isWarmup)
+        break
+      case 'stageKind':
+        await updateProgramSetStageKind(op.id, op.stageKind)
+        break
+      case 'stageRest':
+        await updateProgramSetStageRest(op.id, op.stageRestSeconds)
+        break
+      case 'addStage':
+        await addProgramSetStage(userId, op.programExerciseId, op.parentId, op.position, op.stageIndex)
+        break
+    }
+  }
 }
 
 // ─── Set count — step 3's one required value ───────────────────────────────
@@ -217,11 +247,15 @@ export async function setExerciseSetCount(
   if (count > sorted.length) {
     const last = sorted[sorted.length - 1] ?? null
     const rows = []
-    for (let position = sorted.length + 1; position <= count; position++) {
+    // DECISIONS 213 (a) (Adam, 2026-10-22: "+ always adds after the highest position"): REMOVE THIS SET leaves its position empty, so a
+    // set's position is no longer its rank, and a new row takes the position after the highest one the exercise has, never `count + 1`
+    // (set 2 of positions 1, 2, 3 removed, then +, would repeat position 3).
+    const firstPosition = nextProgramPosition(sorted)
+    for (let i = 0; i < count - sorted.length; i++) {
       rows.push({
         user_id: userId,
         program_exercise_id: programExerciseId,
-        position,
+        position: firstPosition + i,
         is_warmup: false,
         rep_min: last?.repMin ?? null,
         rep_max: last?.repMax ?? null,

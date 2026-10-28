@@ -74,16 +74,14 @@ describe('findLastUsableWeek', () => {
 
 describe('resolveWeekSources — week 1 always comes from the program, for both planning types', () => {
   it('stable, week 1, no prior weeks', () => {
-    const d = resolveWeekSources({ planningType: 'stable', weekNumber: 1, weekStart: 'copy', priorWeeks: [] })
+    const d = resolveWeekSources({ planningType: 'stable', weekNumber: 1, priorWeeks: [] })
     expect(d.volume).toEqual({ kind: 'program' })
     expect(d.weightRir).toEqual({ kind: 'none' })
   })
 
-  it('week_dependent, week 1, regardless of week_start', () => {
-    for (const weekStart of ['copy', 'empty'] as const) {
-      const d = resolveWeekSources({ planningType: 'week_dependent', weekNumber: 1, weekStart, priorWeeks: [] })
-      expect(d.volume).toEqual({ kind: 'program' })
-    }
+  it('week_dependent, week 1', () => {
+    const d = resolveWeekSources({ planningType: 'week_dependent', weekNumber: 1, priorWeeks: [] })
+    expect(d.volume).toEqual({ kind: 'program' })
   })
 })
 
@@ -92,28 +90,16 @@ describe('resolveWeekSources — stable: volume is always the program, weight/RI
     const d = resolveWeekSources({
       planningType: 'stable',
       weekNumber: 2,
-      weekStart: 'copy', // irrelevant to stable
       priorWeeks: weeks([1, false]),
     })
     expect(d.volume).toEqual({ kind: 'program' })
     expect(d.weightRir).toEqual({ kind: 'week', weekNumber: 1 })
   })
 
-  it('week_start = empty makes no difference to a stable program\'s volume', () => {
-    const d = resolveWeekSources({
-      planningType: 'stable',
-      weekNumber: 2,
-      weekStart: 'empty',
-      priorWeeks: weeks([1, false]),
-    })
-    expect(d.volume).toEqual({ kind: 'program' })
-  })
-
   it('week 1 was deload: stable volume is still the program; weight/RIR is "none" (missing source)', () => {
     const d = resolveWeekSources({
       planningType: 'stable',
       weekNumber: 2,
-      weekStart: 'copy',
       priorWeeks: weeks([1, true]),
     })
     expect(d.volume).toEqual({ kind: 'program' })
@@ -124,7 +110,6 @@ describe('resolveWeekSources — stable: volume is always the program, weight/RI
     const d = resolveWeekSources({
       planningType: 'stable',
       weekNumber: 2,
-      weekStart: 'copy',
       priorWeeks: weeks([1, false, true]),
     })
     expect(d.volume).toEqual({ kind: 'program' })
@@ -135,7 +120,6 @@ describe('resolveWeekSources — stable: volume is always the program, weight/RI
     const d = resolveWeekSources({
       planningType: 'stable',
       weekNumber: 4,
-      weekStart: 'copy',
       priorWeeks: weeks([1, false], [2, false], [3, true]),
     })
     expect(d.weightRir).toEqual({ kind: 'week', weekNumber: 2 })
@@ -145,30 +129,27 @@ describe('resolveWeekSources — stable: volume is always the program, weight/RI
     const d = resolveWeekSources({
       planningType: 'stable',
       weekNumber: 4,
-      weekStart: 'copy',
       priorWeeks: weeks([1, false], [2, false], [3, false, true]),
     })
     expect(d.weightRir).toEqual({ kind: 'week', weekNumber: 2 })
   })
 })
 
-describe('resolveWeekSources — week-dependent, week_start = \'copy\' (the default)', () => {
+describe('resolveWeekSources — week-dependent, beyond week 1', () => {
   it('week 2 copies from the usable week 1', () => {
     const d = resolveWeekSources({
       planningType: 'week_dependent',
       weekNumber: 2,
-      weekStart: 'copy',
       priorWeeks: weeks([1, false]),
     })
     expect(d.volume).toEqual({ kind: 'week', weekNumber: 1 })
     expect(d.weightRir).toEqual({ kind: 'week', weekNumber: 1 })
   })
 
-  it('"missing source" — week_start is copy but nothing usable has ever been planned: empty, not an error', () => {
+  it('"missing source" — nothing usable has ever been planned: empty, not an error', () => {
     const d = resolveWeekSources({
       planningType: 'week_dependent',
       weekNumber: 2,
-      weekStart: 'copy',
       priorWeeks: [], // never planned
     })
     expect(d.volume).toEqual({ kind: 'empty' })
@@ -179,7 +160,6 @@ describe('resolveWeekSources — week-dependent, week_start = \'copy\' (the defa
     const d = resolveWeekSources({
       planningType: 'week_dependent',
       weekNumber: 2,
-      weekStart: 'copy',
       priorWeeks: weeks([1, true]),
     })
     expect(d.volume).toEqual({ kind: 'empty' })
@@ -190,7 +170,6 @@ describe('resolveWeekSources — week-dependent, week_start = \'copy\' (the defa
     const d = resolveWeekSources({
       planningType: 'week_dependent',
       weekNumber: 2,
-      weekStart: 'copy',
       priorWeeks: weeks([1, false, true]),
     })
     expect(d.volume).toEqual({ kind: 'empty' })
@@ -201,7 +180,6 @@ describe('resolveWeekSources — week-dependent, week_start = \'copy\' (the defa
     const d = resolveWeekSources({
       planningType: 'week_dependent',
       weekNumber: 4,
-      weekStart: 'copy',
       priorWeeks: weeks([1, false, true], [2, false, true], [3, false, true]),
     })
     expect(d.volume).toEqual({ kind: 'empty' })
@@ -215,7 +193,6 @@ describe('resolveWeekSources — week-dependent, week_start = \'copy\' (the defa
     const d = resolveWeekSources({
       planningType: 'week_dependent',
       weekNumber: 3,
-      weekStart: 'copy',
       priorWeeks: weeks([1, false], [2, true]),
     })
     expect(d.volume).toEqual({ kind: 'week', weekNumber: 1 })
@@ -229,7 +206,6 @@ describe('resolveWeekSources — week-dependent, week_start = \'copy\' (the defa
     const d = resolveWeekSources({
       planningType: 'week_dependent',
       weekNumber: 3,
-      weekStart: 'copy',
       priorWeeks: weeks([1, false], [2, false]),
     })
     expect(d.volume).toEqual({ kind: 'week', weekNumber: 2 })
@@ -242,7 +218,6 @@ describe('resolveWeekSources — week-dependent, week_start = \'copy\' (the defa
     const d = resolveWeekSources({
       planningType: 'week_dependent',
       weekNumber: 3,
-      weekStart: 'copy',
       priorWeeks: weeks([1, false], [2, false, true]),
     })
     expect(d.volume).toEqual({ kind: 'week', weekNumber: 1 })
@@ -257,7 +232,6 @@ describe('resolveWeekSources — week-dependent, week_start = \'copy\' (the defa
     const d = resolveWeekSources({
       planningType: 'week_dependent',
       weekNumber: 5,
-      weekStart: 'copy',
       priorWeeks: weeks([1, false], [2, true], [3, false], [4, false, true]),
     })
     expect(d.volume).toEqual({ kind: 'week', weekNumber: 3 })
@@ -265,25 +239,21 @@ describe('resolveWeekSources — week-dependent, week_start = \'copy\' (the defa
   })
 })
 
-describe('resolveWeekSources — week-dependent, week_start = \'empty\'', () => {
-  it('week > 1 is always empty, even when a perfectly good usable source exists', () => {
-    const d = resolveWeekSources({
-      planningType: 'week_dependent',
-      weekNumber: 2,
-      weekStart: 'empty',
-      priorWeeks: weeks([1, false]),
-    })
-    expect(d.volume).toEqual({ kind: 'empty' })
+// Chunk 53 (SPEC [1.2], Objects stored -> Settings: "The 'new week starts' setting is removed"): migration 045's v2_plan_week
+// does not read `week_start`, so this mirror does not either. A stored 'empty' (the column stays, unread) must change nothing:
+// the week beyond week 1 still copies the usable week before it.
+describe('resolveWeekSources — the removed "new week starts" setting is not an input', () => {
+  it('a stored week_start of "empty" is ignored: week 2 still copies the usable week 1', () => {
+    // Built as a variable so the stored value rides along without the call's own type naming it.
+    const withStoredSetting = { planningType: 'week_dependent' as const, weekNumber: 2, priorWeeks: weeks([1, false]), weekStart: 'empty' }
+    const d = resolveWeekSources(withStoredSetting)
+    expect(d.volume).toEqual({ kind: 'week', weekNumber: 1 })
+    expect(d.weightRir).toEqual({ kind: 'week', weekNumber: 1 })
   })
 
-  it('weight/RIR source is unaffected by week_start — it only gates volume', () => {
-    const d = resolveWeekSources({
-      planningType: 'week_dependent',
-      weekNumber: 2,
-      weekStart: 'empty',
-      priorWeeks: weeks([1, false]),
-    })
-    expect(d.weightRir).toEqual({ kind: 'week', weekNumber: 1 })
+  it('and for a stable program the volume is the program either way', () => {
+    const withStoredSetting = { planningType: 'stable' as const, weekNumber: 2, priorWeeks: weeks([1, false]), weekStart: 'empty' }
+    expect(resolveWeekSources(withStoredSetting).volume).toEqual({ kind: 'program' })
   })
 })
 
@@ -367,7 +337,7 @@ describe('a newly marked session is skipped as a copy source, end to end through
     expect(resolveManualCopySource(records, 3)).toEqual({ kind: 'week', weekNumber: 1 })
     // The automatic path (v2_plan_week's own TS mirror) agrees.
     expect(
-      resolveWeekSources({ planningType: 'week_dependent', weekNumber: 3, weekStart: 'copy', priorWeeks: records }).volume,
+      resolveWeekSources({ planningType: 'week_dependent', weekNumber: 3, priorWeeks: records }).volume,
     ).toEqual({ kind: 'week', weekNumber: 1 })
   })
 

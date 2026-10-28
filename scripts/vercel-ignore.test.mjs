@@ -117,3 +117,52 @@ test('a previous SHA that is not in the clone (shallow clone, old deploy): build
     rmSync(r.dir, { recursive: true, force: true });
   }
 });
+
+// Staging (2026-10-14): Vercel runs the same command for every branch, and
+// VERCEL_GIT_PREVIOUS_SHA is the last deployment of the SAME branch, so a
+// docs-only push to `staging` is skipped exactly as on master.
+test('the command reads no branch name, so staging is treated like master', () => {
+  assert.doesNotMatch(ignoreCommand, /VERCEL_GIT_COMMIT_REF|VERCEL_ENV|staging|master/);
+});
+
+test('a docs-only push on a staging branch, after its own last deploy, is skipped', () => {
+  const r = repo();
+  try {
+    r.git('checkout', '-q', '-b', 'staging');
+    const deployed = r.commit('app.ts', 'v1');
+    r.commit('CONTEXT.md', 'docs');
+    assert.equal(run(r.dir, deployed), 0);
+  } finally {
+    rmSync(r.dir, { recursive: true, force: true });
+  }
+});
+
+test('renaming a build doc (.md to .md, any folder) is skipped', () => {
+  const r = repo();
+  try {
+    r.commit('BUILD.md', 'process');
+    const deployed = r.commit('app.ts', 'v1');
+    mkdirSync(join(r.dir, 'docs/build'), { recursive: true });
+    r.git('mv', 'BUILD.md', 'docs/build/BUILD-1.2.md');
+    r.git('commit', '-q', '-m', 'rename');
+    assert.equal(run(r.dir, deployed), 0);
+  } finally {
+    rmSync(r.dir, { recursive: true, force: true });
+  }
+});
+
+test('a doc renamed to a non-.md name, or a design image, is built', () => {
+  const r = repo();
+  try {
+    r.commit('BUILD.md', 'process');
+    const deployed = r.commit('app.ts', 'v1');
+    r.git('mv', 'BUILD.md', 'BUILD.txt');
+    r.git('commit', '-q', '-m', 'rename');
+    assert.notEqual(run(r.dir, deployed), 0);
+    const deployed2 = r.git('rev-parse', 'HEAD');
+    r.commit('design/1.2/png/1-Main.png', 'image');
+    assert.notEqual(run(r.dir, deployed2), 0);
+  } finally {
+    rmSync(r.dir, { recursive: true, force: true });
+  }
+});

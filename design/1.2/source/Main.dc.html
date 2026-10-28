@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Plan — this week</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: {{H}}; box-sizing: border-box; background: {{c.base}}; display: flex; flex-direction: column; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+
+  <div style="padding: 14px 16px 14px; border-bottom: 1px solid {{c.bsub}}; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div role="tablist" aria-label="Plan or programs" style="display: flex; align-items: flex-end; gap: 20px; min-height: 44px">
+        <span role="tab" aria-selected="true" style="padding-bottom: 6px; border-bottom: 3px solid {{c.accent}}; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; line-height: 1; letter-spacing: -0.01em; color: {{c.t1}}">PLAN</span>
+        <a href="Programs.dc.html" role="tab" aria-selected="false" style="padding-bottom: 6px; border-bottom: 3px solid transparent; text-decoration: none; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; line-height: 1; letter-spacing: -0.01em; color: {{c.tm}}">PROGRAMS</a>
+      </div>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">{{program}} · CURRENT PROGRAM</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+      <button style="height: 56px; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; padding: 0 12px">
+        <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 800; font-size: 14px; color: {{c.t2}}">WEEK 1</span>
+        <span style="display: flex; align-items: center; gap: 4px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.tm}}">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>DONE</span>
+      </button>
+      <button aria-current="true" style="height: 56px; border-radius: 10px; border: 1px solid {{c.accent}}; background: {{c.accent}}; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; padding: 0 12px">
+        <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 800; font-size: 14px; color: {{c.onAccent}}">WEEK 2</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.onAccent}}">THIS WEEK</span>
+      </button>
+      <a href="PlanForward.dc.html" style="height: 56px; box-sizing: border-box; border-radius: 10px; border: 1px dashed {{c.bstrong}}; background: transparent; text-decoration: none; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; padding: 0 12px">
+        <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 800; font-size: 14px; color: {{c.t2}}">WEEK 3</span>
+        <span style="display: flex; align-items: center; gap: 4px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.tm}}">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>NOT PLANNED</span>
+      </a>
+    </div>
+  </div>
+
+  <div style="padding: 14px 16px 0; display: flex; flex-direction: column; gap: 14px">
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px">
+      <a href="PlanCopySheet.dc.html" style="height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 7px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.t1}}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg>COPY</a>
+      <a href="PlanVolumeSheet.dc.html" style="height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 7px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.t1}}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20V12M12 20V5M19 20v-9"></path></svg>VOLUME</a>
+      <a href="PlanWeekMenu.dc.html" aria-label="Week 2 options" style="height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 7px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.t1}}">WEEK
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg></a>
+    </div>
+
+    <sc-if value="{{showReview}}" hint-placeholder-val="{{true}}">
+      <a href="PlanReview.dc.html" style="min-height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.raised}}; text-decoration: none; display: flex; align-items: center; justify-content: space-between; gap: 10px">
+        <span style="display: flex; flex-direction: column; gap: 3px">
+          <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.tm}}">LAST WEEK</span>
+          <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 14px; color: {{c.t1}}">3 things went differently</span>
+        </span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.accentText}}">REVIEW →</span>
+      </a>
+    </sc-if>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.tm}}">
+      <span style="display: flex; align-items: center; gap: 7px"><span style="width: 12px; height: 12px; border-radius: 3px; background: {{c.accentMuted}}; border: 1px solid {{c.accent}}"></span>{{legend}}</span>
+    </div>
+
+    <div style="display: flex; gap: 8px; overflow: hidden">
+      <button style="flex: 0 0 auto; height: 52px; padding: 0 12px; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.raised}}; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 3px">
+        <span style="display: flex; align-items: center; gap: 4px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.tm}}">MON
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+        <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 14px; color: {{c.tm}}">PUSH 1</span>
+      </button>
+      <button aria-current="true" style="flex: 0 0 auto; height: 52px; padding: 0 12px; border-radius: 10px; border: 1px solid {{c.accent}}; background: {{c.accent}}; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 3px">
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.onAccent}}">TUE</span>
+        <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 14px; color: {{c.onAccent}}">PULL 1</span>
+      </button>
+      <sc-for list="{{days}}" as="d" hint-placeholder-count="3">
+        <button style="flex: 0 0 auto; height: 52px; padding: 0 12px; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 3px">
+          <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.tm}}">{{d.day}}</span>
+          <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 14px; color: {{c.t1}}">{{d.name}}</span>
+        </button>
+      </sc-for>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; padding-top: 4px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">TUESDAY</span>
+        <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 22px; line-height: 1.05; color: {{c.t1}}">PULL 1</span>
+      </div>
+      <a href="PlanSessionStates.dc.html" aria-label="Pull 1 options: move, deload" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
+      </a>
+    </div>
+
+    <sc-for list="{{exercises}}" as="ex" hint-placeholder-count="4">
+      <div style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 6px">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 4px">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <div style="display: flex; align-items: center; gap: 8px">
+              <span style="font-weight: 600; font-size: 17px; line-height: 1.25; color: {{c.t1}}">{{ex.name}}</span>
+              <sc-if value="{{ex.hasSS}}" hint-placeholder-val="{{false}}">
+                <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.1em; padding: 3px 6px; border-radius: 6px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.t2}}">{{ex.ss}}</span>
+              </sc-if>
+            </div>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">{{ex.muscle}}</span>
+          </div>
+          <button aria-label="Add set" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid {{c.accent}}; background: {{c.accentMuted}}; color: {{c.accentText}}; display: flex; align-items: center; justify-content: center; padding: 0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          </button>
+        </div>
+
+        <sc-for list="{{ex.rows}}" as="r" hint-placeholder-count="3">
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <sc-if value="{{r.hasKind}}" hint-placeholder-val="{{false}}">
+              <div style="padding-left: 31px">
+                <a href="SetKindPicker.dc.html" style="display: inline-block; text-decoration: none; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; padding: 3px 6px; border-radius: 6px; background: {{r.kBg}}; color: {{r.kFg}}; border: 1px solid {{r.kBd}}">{{r.kind}}</a>
+              </div>
+            </sc-if>
+            <div style="display: flex; align-items: center; gap: 5px; padding-left: {{r.indent}}">
+              <span style="width: 26px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; color: {{r.numFg}}">{{r.n}}</span>
+              <button style="width: 80px; height: 44px; border-radius: 10px; border: 1px solid {{r.wBd}}; background: {{r.wBg}}; color: {{r.wFg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 0">{{r.w}}<span style="font-size: 10px; font-weight: 500; color: {{r.uFg}}">kg</span></button>
+              <span style="width: 10px; text-align: center; font-size: 11px; color: {{c.td}}">×</span>
+              <a href="RepTargetPicker.dc.html" style="width: 72px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{r.rBd}}; background: {{r.rBg}}; color: {{r.rFg}}; text-decoration: none; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 14px">{{r.reps}}</a>
+              <a href="RirTargetPicker.dc.html" style="width: 80px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{r.qBd}}; background: {{r.qBg}}; color: {{r.qFg}}; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 4px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 13px"><span style="font-size: 9px; letter-spacing: 0.1em; color: {{r.qLab}}">RIR</span>{{r.rir}}</a>
+              <sc-if value="{{r.hasMore}}" hint-placeholder-val="{{true}}">
+                <a href="SetKindPicker.dc.html" aria-label="Set {{r.n}}: type, cues, remove" style="width: 24px; height: 44px; color: {{c.tm}}; display: flex; align-items: center; justify-content: center">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
+                </a>
+              </sc-if>
+            </div>
+            <sc-if value="{{r.hasTag}}" hint-placeholder-val="{{false}}">
+              <div style="padding-left: 31px">
+                <span style="display: inline-flex; align-items: center; gap: 4px; font-family: 'JetBrains Mono', monospace; font-size: 10px; padding: 2px 6px; border-radius: 6px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.t2}}"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"></path><circle cx="7" cy="7" r="1.5"></circle></svg>{{r.tag}}</span>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+
+        <sc-if value="{{ex.weekOnly}}" hint-placeholder-val="{{false}}">
+          <div style="margin-top: 4px; padding-top: 10px; border-top: 1px solid {{c.bsub}}; display: flex; justify-content: space-between; align-items: center; gap: 8px">
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.tm}}">THIS WEEK ONLY</span>
+            <a href="Planner.dc.html" style="min-height: 32px; display: flex; align-items: center; text-decoration: none; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.accentText}}">CHANGE EVERY WEEK →</a>
+          </div>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+
+  <div style="margin-top: auto; padding: 12px 16px; border-top: 1px solid {{c.bsub}}; background: {{c.base}}">
+    <a href="Planner.dc.html" style="height: 52px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.surface}}; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 10px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; letter-spacing: 0.15em; color: {{c.t1}}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg>
+      CHANGE THE PROGRAM FROM WEEK 2
+    </a>
+  </div>
+
+  <nav style="height: 64px; border-top: 1px solid {{c.bsub}}; background: {{c.surface}}; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center">
+    <sc-for list="{{nav}}" as="t" hint-placeholder-count="6">
+      <a href="#" aria-current="{{t.current}}" style="display: flex; flex-direction: column; align-items: center; gap: 5px; text-decoration: none; color: {{t.fg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.1em">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.d}}"></path></svg>{{t.label}}</a>
+    </sc-for>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"variant":{"editor":"enum","options":["week-dependent","stable"],"default":"week-dependent"},"$preview":{"width":390,"height":1600}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', success: '#166534', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', success: '#4ade80', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const SW = { ORANGE: ['#d06c08', '#f28e42', '#a55506', '#f28e42'], AMBER: ['#b38007', '#dc9e12', '#8b640f', '#dc9e12'], LIME: ['#759a11', '#95bb46', '#587502', '#95bb46'], MINT: ['#13a377', '#1fc893', '#0d7a58', '#1fc893'], CYAN: ['#1a9bae', '#17c0d6', '#147684', '#17c0d6'], BLUE: ['#378bee', '#6eadfe', '#096acb', '#6eadfe'], INDIGO: ['#797aee', '#9ba0fe', '#5f5dce', '#9ba0fe'], VIOLET: ['#a36bdc', '#c190f6', '#884fbe', '#c190f6'], PINK: ['#cf59a2', '#ec81c0', '#b03c86', '#ec81c0'] };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const S = SW[this.props.accent] || SW.BLUE;
+    const D = theme === 'dark';
+    const c = Object.assign({}, P[theme], { accent: D ? S[1] : S[0], onAccent: '#0d0d0c', accentText: D ? S[3] : S[2], accentMuted: (D ? S[1] : S[0]) + '26' });
+    const stable = this.props.variant === 'stable';
+
+    const plain = { bg: c.surface, bd: c.border, fg: c.t1, u: c.tm };
+    const warm = { bg: c.raised, bd: c.border, fg: c.t2, u: c.tm };
+    const hot = { bg: c.accentMuted, bd: c.accent, fg: c.accentText, u: c.accentText };
+    const row = (o) => {
+      const base = o.warm ? warm : plain;
+      const w = o.cw ? hot : base, r = o.cr ? hot : base;
+      const q = o.cq ? hot : { bg: c.raised, bd: c.border, fg: c.t1 };
+      const k = o.ck ? hot : { bg: c.raised, bd: c.border, fg: c.t2 };
+      return {
+        n: o.n, w: o.w, reps: o.reps, rir: o.rir || '–',
+        hasMore: !o.stage, indent: o.stage ? '14px' : '0px',
+        hasKind: !!o.kind, kind: o.kind || '', kBg: k.bg, kBd: k.bd, kFg: k.fg,
+        hasTag: !!o.tag, tag: o.tag || '',
+        numFg: o.warm || o.stage ? c.td : c.tm,
+        wBg: w.bg, wBd: w.bd, wFg: w.fg, uFg: w.u, rBg: r.bg, rBd: r.bd, rFg: r.fg,
+        qBg: q.bg, qBd: q.bd, qFg: q.fg, qLab: o.cq ? c.accentText : c.tm
+      };
+    };
+    const exercises = stable ? [
+      { name: 'Lat Pulldown', muscle: 'BACK', hasSS: false, ss: '', hasMark: false, weekOnly: true, rows: [
+        row({ n: '01', w: '55', reps: '8–10', rir: '2', tag: 'Push back' }),
+        row({ n: '02', w: '55', reps: '8–10', rir: '2' }),
+        row({ n: '03', w: '52.5', reps: '8–10', rir: '1', kind: 'DROPSET · 1 DROP', cw: true, cq: true, ck: true }),
+        row({ n: '↳', w: '40', reps: 'AMRAP', rir: '0', stage: true, cw: true, cr: true })
+      ]},
+      { name: 'Seated Cable Row', muscle: 'BACK', hasSS: true, ss: 'SUPERSET A · 1', hasMark: false, weekOnly: false, rows: [
+        row({ n: '01', w: '60', reps: '10–12', rir: '1–2' }),
+        row({ n: '02', w: '60', reps: '10–12', rir: '1–2' }),
+        row({ n: '03', w: '60', reps: '10–12', rir: '1–2' })
+      ]},
+      { name: 'Face Pull', muscle: 'REAR DELTS', hasSS: true, ss: 'SUPERSET A · 2', hasMark: false, weekOnly: false, rows: [
+        row({ n: '01', w: '15', reps: '15–20', rir: '1' }),
+        row({ n: '02', w: '15', reps: '15–20', rir: '1' })
+      ]},
+      { name: 'EZ Bar Curl', muscle: 'BICEPS', hasSS: false, ss: '', hasMark: false, weekOnly: false, rows: [
+        row({ n: 'W', w: '20', reps: '12', rir: '5', warm: true }),
+        row({ n: '01', w: '30', reps: '8', rir: '1' }),
+        row({ n: '02', w: '30', reps: 'AMRAP', rir: '0' })
+      ]}
+    ] : [
+      { name: 'Lat Pulldown', muscle: 'BACK', hasSS: false, ss: '', hasMark: false, weekOnly: false, rows: [
+        row({ n: '01', w: '55', reps: '8–10', rir: '2', tag: 'Push back' }),
+        row({ n: '02', w: '55', reps: '8–10', rir: '2' }),
+        row({ n: '03', w: '52.5', reps: '8–10', rir: '1', kind: 'DROPSET · 1 DROP', cw: true, cq: true, ck: true, tag: 'Push here' }),
+        row({ n: '↳', w: '40', reps: 'AMRAP', rir: '0', stage: true, cw: true, cr: true })
+      ]},
+      { name: 'Seated Cable Row', muscle: 'BACK', hasSS: true, ss: 'SUPERSET A · 1', hasMark: false, weekOnly: false, rows: [
+        row({ n: '01', w: '60', reps: '10–12', rir: '1–2' }),
+        row({ n: '02', w: '60', reps: '10–12', rir: '1–2' }),
+        row({ n: '03', w: '60', reps: '10–12', rir: '1–2', cw: true, cr: true, cq: true })
+      ]},
+      { name: 'Face Pull', muscle: 'REAR DELTS', hasSS: true, ss: 'SUPERSET A · 2', hasMark: false, weekOnly: false, rows: [
+        row({ n: '01', w: '15', reps: '15–20', rir: '1' }),
+        row({ n: '02', w: '17.5', reps: '15–20', rir: '1', cw: true })
+      ]},
+      { name: 'EZ Bar Curl', muscle: 'BICEPS', hasSS: false, ss: '', hasMark: false, weekOnly: false, rows: [
+        row({ n: 'W', w: '20', reps: '12', rir: '5', warm: true }),
+        row({ n: '01', w: '30', reps: '8', rir: '1' }),
+        row({ n: '02', w: '30', reps: 'AMRAP', rir: '0', cr: true })
+      ]}
+    ];
+    const ICONS = {
+      TODAY: 'M6.5 6.5l11 11M21 21l-1-1M3 3l1 1M18 22l4-4M2 6l4-4M3 10l7-7M14 21l7-7',
+      PLAN: 'M3 4h7v7H3zM3 14h7v7H3zM14 4h7M14 9h7M14 15h7M14 20h7',
+      PROGRESS: 'M22 7l-8.5 8.5-5-5L2 17M16 7h6v6',
+      HISTORY: 'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20zM12 6v6l4 2',
+      LIBRARY: 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z',
+      SETTINGS: 'M12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6zM12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1'
+    };
+    const nav = Object.keys(ICONS).map((k) => ({ label: k, d: ICONS[k], current: k === 'PLAN' ? 'page' : 'false', fg: k === 'PLAN' ? c.accentText : c.tm }));
+    const days = [{ day: 'THU', name: 'PUSH 2' }, { day: 'FRI', name: 'PULL 2' }, { day: 'SAT', name: 'LEGS' }];
+    return {
+      c, exercises, nav, days,
+      H: stable ? '1640px' : '1600px',
+      program: 'PUSH PULL LEGS',
+      legend: stable ? 'THIS WEEK ONLY' : 'CHANGED SINCE WEEK 1',
+      showReview: true
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -6,13 +6,14 @@ import { useAuth } from '../auth/useAuth'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore } from '../offline/offlineStore'
 import { DONE_WEEK_PLANS_KEY } from '../plan/useDoneWeekPlanIds'
-import { flushSyncQueue, hasQueuedWritesFor } from '../offline/useSyncQueue'
+import { dropQueuedWritesNamingLog, flushSyncQueue, hasQueuedWritesFor, queueSetLogDelete, queuedSetLogsFor } from '../offline/useSyncQueue'
 import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating, Exercise } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import {
   fetchSessionsInRange,
   fetchLastDoneOrSkippedSession,
   fetchSession,
+  withQueuedSetLogs,
   createSession,
   completeSession,
   reopenSession,
@@ -33,7 +34,9 @@ import {
   type ExerciseSwap,
 } from './sessionService'
 import { groupSetLogs } from './setGroupLogic'
+import type { SwapRecord } from './workoutRules'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
+import { clearSessionDrafts } from './sessionDrafts'
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
@@ -60,11 +63,24 @@ export function useLastDoneOrSkippedSession(mesoId: string) {
   })
 }
 
+// The workout's read of its session (DECISIONS 239): the server's rows and the set logs this phone has queued and not yet sent. The queue is read FIRST, so a pass that
+// sends and clears a log while the server is being asked can't leave it in neither (the server read began before the send landed, the queue read after the item was
+// gone). A queue that can't be read leaves the server's answer as it was: a read of the session never fails because of the phone's database.
+export async function readActiveSession(sessionId: string): Promise<Session> {
+  let queued: Array<Record<string, unknown>> = []
+  try {
+    queued = await queuedSetLogsFor(sessionId)
+  } catch {
+    queued = []
+  }
+  return withQueuedSetLogs(await fetchSession(sessionId), queued)
+}
+
 export function useActiveSession(sessionId: string | null) {
   const { user } = useAuth()
   return useQuery({
     queryKey: ['v2_session', sessionId],
-    queryFn: () => fetchSession(sessionId!),
+    queryFn: () => readActiveSession(sessionId!),
     enabled: !!user && !!sessionId,
     staleTime: 0,
   })
@@ -85,6 +101,9 @@ export function useSessionSwaps(sessionId: string | null) {
   })
 }
 
+// Since chunk 58a's fix-forward (review 1, finding 2) no screen reads this: the rows' LAST line reads the exercise's reference sessions
+// (`lastTimeSet.ts`), the session the reference panel calls its primary one, where this is the latest completed session whatever its
+// week. Kept as it was, with its tests (useSession.addedPlace.test.tsx) and its Dexie write, for the reviewer to keep or remove.
 export function useLastSessionLogs(exerciseId: string, currentSessionId: string | null) {
   const { user } = useAuth()
   return useQuery({
@@ -118,6 +137,7 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
               sessionStatus: 'completed',
               formRating: log.formRating,
               stageKind: log.stageKind ?? null,
+              addedPlace: log.addedPlace ?? null,
             }),
           ),
         )
@@ -164,6 +184,7 @@ export function useLastSessionLogs(exerciseId: string, currentSessionId: string 
               restSeconds: l.restSeconds,
               formRating: (l.formRating ?? null) as SetLog['formRating'],
               stageKind: (l.stageKind ?? null) as SetLog['stageKind'],
+              addedPlace: l.addedPlace ?? null,
             }),
           )
       }
@@ -248,6 +269,7 @@ async function fetchReferenceSessionsFromCache(
       restSeconds: l.restSeconds,
       formRating: (l.formRating ?? null) as SetLog['formRating'],
       stageKind: (l.stageKind ?? null) as SetLog['stageKind'],
+      addedPlace: l.addedPlace ?? null,
     }
     let bySession = byExercise.get(l.exerciseId)
     if (!bySession) {
@@ -586,6 +608,8 @@ export function useCompleteSession() {
       return completeSession(id, note, energyRating, pumpRating)
     },
     onSuccess: ({ status }, { id }) => {
+      // Chunk 63 (G46): the session's end clears what this phone kept for its unlogged sets and its added sets (finished here, or queued to finish).
+      void clearSessionDrafts(id)
       queryClient.setQueryData(['v2_session', id], (old: Session | undefined) =>
         old ? { ...old, status } : old,
       )
@@ -873,37 +897,22 @@ export function useStartMovedSession() {
   })
 }
 
-// Records the structural link between a swapped-out slot and its
-// replacement (migration 025). Online-only, same "no offline sync_queue"
-// tier as useUpdateSessionNote/useUpdateSetLog — a plain optimistic update
-// with rollback on error, not full offline support; swapping mid-session is
-// a rare, interactive action, not one this app makes available offline
-// elsewhere either (SwapExerciseSheet.tsx's own exercise picker has no
-// offline branch).
+// Records the structural link between a swapped-out slot and its replacement (migration 025) with the record of which sets moved
+// (migration 047, chunk 59). The swap's row is the first write of a swap (DECISIONS 200 (a), Adam 2026-10-20: "the swap row is saved
+// before any set is skipped"), and it is online only: `networkMode: 'always'`, so offline the request fails at once with the real reason
+// and nothing is written, where the default would hold the mutation until the phone is back. Nothing is shown before the server has it
+// (no optimistic row): a swap that isn't saved leaves every set as it was, and the row put into the cache is the one the server answered.
 export function useRecordExerciseSwap(sessionId: string) {
   const { user } = useAuth()
   const qk = ['v2_sessionSwaps', sessionId] as const
 
   return useMutation({
-    mutationFn: (params: { programExerciseId: string; originalExercise: Exercise; replacementExercise: Exercise }) =>
+    networkMode: 'always',
+    mutationFn: (params: { programExerciseId: string; originalExercise: Exercise; replacementExercise: Exercise; movedSets: SwapRecord }) =>
       recordExerciseSwap({ userId: user!.id, sessionId, ...params }),
-    onMutate: async (params) => {
-      await queryClient.cancelQueries({ queryKey: qk })
-      const prev = queryClient.getQueryData<ExerciseSwap[]>(qk)
-      const optimistic: ExerciseSwap = {
-        id: crypto.randomUUID(),
-        sessionId,
-        programExerciseId: params.programExerciseId,
-        originalExerciseId: params.originalExercise.id,
-        originalExerciseName: params.originalExercise.name,
-        replacementExerciseId: params.replacementExercise.id,
-        replacementExerciseName: params.replacementExercise.name,
-        createdAt: new Date().toISOString(),
-      }
-      queryClient.setQueryData(qk, (old: ExerciseSwap[] | undefined) => [...(old ?? []), optimistic])
-      return { prev }
+    onSuccess: (swap) => {
+      queryClient.setQueryData(qk, (old: ExerciseSwap[] | undefined) => [...(old ?? []).filter((s) => s.id !== swap.id), swap])
     },
-    onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
     onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
   })
 }
@@ -950,6 +959,13 @@ export function useLogSet(sessionId: string) {
       // handleLogWarmup (useExerciseCardState.ts) is the one caller that
       // sets it to true.
       isWarmup?: boolean
+      // Chunk 58a (DECISIONS 174, 177): an added set's place, on its head log only; absent on every other write, so a
+      // planned set's payload, queue item and row are what they were.
+      addedPlace?: number | null
+      // Chunk 58a: the id of the log, made by the caller, when the screen must name the log before the request goes out (an
+      // added set's list entry names its log, so the set is never drawn twice while the log is on its way). Absent on a
+      // planned set's write, whose log is found by its planned set.
+      id?: string
     }) => {
       // Same id for the optimistic entry (set in onMutate, which always runs
       // before this) and whatever actually gets written — online or
@@ -962,7 +978,8 @@ export function useLogSet(sessionId: string) {
       // independent review. Fixing the id at onMutate time and using it for
       // the real write too (both branches) makes it correct from the first
       // render, not just eventually consistent.
-      const id = offlineTempIdRef.current ?? crypto.randomUUID()
+      const { id: givenId, ...write } = params
+      const id = givenId ?? offlineTempIdRef.current ?? crypto.randomUUID()
 
       if (!isOnline) {
         // Plain UUID — v2_set_logs.id is a Postgres uuid column, so no prefix.
@@ -994,6 +1011,7 @@ export function useLogSet(sessionId: string) {
           sessionStatus: 'in_progress',
           formRating: params.formRating,
           stageKind: params.stageKind,
+          ...(params.addedPlace != null ? { addedPlace: params.addedPlace } : {}),
         })
 
         await db.sync_queue.add({
@@ -1026,6 +1044,9 @@ export function useLogSet(sessionId: string) {
             // it too, or a warmup logged offline would flush to Supabase as
             // a plain working set the moment the queue replays it.
             is_warmup: params.isWarmup ?? false,
+            // Chunk 58a: the queue item carries an added set's place (the upsert writes only the columns it names, and the
+            // flush later sends this row as it is); a planned set's item leaves the key out.
+            ...(params.addedPlace != null ? { added_place: params.addedPlace } : {}),
           },
           createdAt: loggedAt,
         })
@@ -1054,10 +1075,11 @@ export function useLogSet(sessionId: string) {
           restSeconds: params.restSeconds,
           formRating: params.formRating,
           stageKind: params.stageKind,
+          addedPlace: params.addedPlace ?? null,
         } satisfies SetLog
       }
 
-      return logSet({ id, userId: user!.id, sessionId, ...params })
+      return logSet({ id, userId: user!.id, sessionId, ...write })
     },
 
     onMutate: async (params) => {
@@ -1066,7 +1088,7 @@ export function useLogSet(sessionId: string) {
       // multiple in-flight mutations could otherwise race on. Assigning it
       // synchronously, before yielding to cancelQueries, narrows that
       // window as far as this function can on its own.
-      const tempId = crypto.randomUUID()
+      const tempId = params.id ?? crypto.randomUUID()
       offlineTempIdRef.current = tempId
 
       await queryClient.cancelQueries({ queryKey: qk })
@@ -1094,6 +1116,7 @@ export function useLogSet(sessionId: string) {
         restSeconds: params.restSeconds,
         formRating: params.formRating,
         stageKind: params.stageKind,
+        addedPlace: params.addedPlace ?? null,
       }
 
       queryClient.setQueryData(qk, (old: Session | undefined) => {
@@ -1123,6 +1146,10 @@ type SetLogChanges = {
   rir?: number | null
   setNumber?: number
   formRating?: FormRating | null
+  // Chunk 61: a logged head whose last drop was deleted loses its stage kind (`deleteEffects`' `headPatch`); `SetLog.stageKind` is the cache's copy.
+  stageKind?: StageKind | null
+  // Chunk 62: a set's type changed on its log (`applySetTypeChange`'s `headPatch`): the warmup flag beside the stage kind.
+  isWarmup?: boolean
 }
 
 export function useUpdateSetLog(sessionId: string) {
@@ -1148,11 +1175,18 @@ export function useUpdateSetLog(sessionId: string) {
   })
 }
 
+// Delete one set log (the workout's DELETE, chunk 61; a warmup's untick until 63). Online it is the request it always was; offline (G47,
+// chunk 57's `delete` item) it is queued, a stage log naming its head: the queue replays in the order of the calls and a head's delete
+// waits for its stages', so the caller deletes stages first and the head last (`deleteEffects`' order). The screen's own copy of the log
+// goes at once either way; offline the session is not read again (the read could not be answered), as after a LOG. Online, once the request has gone through,
+// the change rows still queued for that log leave the queue (DECISIONS 227 (iii): the server's cascade took theirs, and a queued upsert of one is refused
+// for ever); a failure of that cleanup is logged and never fails a delete that has been done.
 export function useDeleteSetLog(sessionId: string) {
   const qk = ['v2_session', sessionId] as const
+  const isOnline = useOnlineStatus()
 
   return useMutation({
-    // The cascade guard (ExerciseCard.tsx's handleDeleteHead) sequentially
+    // The cascade guard (the card's delete) sequentially
     // awaits mutateAsync per row and relies on a stalled delete rejecting
     // (its catch block is how a partial cascade fails safe). Under the
     // default networkMode 'online', TanStack Query pauses an offline
@@ -1161,8 +1195,12 @@ export function useDeleteSetLog(sessionId: string) {
     // 'always' makes it attempt the request regardless of connectivity, so
     // a real offline attempt fails fast with a normal network error instead.
     networkMode: 'always',
-    mutationFn: (id: string) => deleteSetLog(id),
-    onMutate: async (id) => {
+    mutationFn: async ({ id, parentSetId = null }: { id: string; parentSetId?: string | null }) => {
+      if (!isOnline) return queueSetLogDelete({ id, sessionId, parentSetId })
+      await deleteSetLog(id)
+      await dropQueuedWritesNamingLog(id).catch((err) => console.error('[sync] could not drop the queued rows of a deleted log', err))
+    },
+    onMutate: async ({ id }) => {
       await queryClient.cancelQueries({ queryKey: qk })
       const prev = queryClient.getQueryData(qk)
       queryClient.setQueryData(qk, (old: Session | undefined) => {
@@ -1172,6 +1210,8 @@ export function useDeleteSetLog(sessionId: string) {
       return { prev }
     },
     onError: (_, __, ctx) => queryClient.setQueryData(qk, ctx?.prev),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: qk }),
+    onSettled: () => {
+      if (isOnline) queryClient.invalidateQueries({ queryKey: qk })
+    },
   })
 }

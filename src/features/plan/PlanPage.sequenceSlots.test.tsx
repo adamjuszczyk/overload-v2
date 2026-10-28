@@ -1,26 +1,26 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { format } from 'date-fns'
 import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, Exercise, SequenceItem, WeekPlanSet } from '../../types'
 import { EMPTY_SCHEDULE } from '../programs/programService'
-import type { ChangeRecord } from './applyAhead'
 
 // Chunk 25 review fix (first review — "a sequence run can't be planned in
 // Plan, so the chunk's done-when isn't met") — Plan's own weeks view for a
 // sequence run: the slot switcher, the panel matched by (workout_day_id,
-// sequence_position), "Cycle n" labelling, "Mark this cycle as deload", and
-// apply-ahead's own per-slot matching, all driven through the REAL PlanPage/
-// WorkoutDayPanel/ExerciseSection tree (same seam every other PlanPage test
-// file already uses: only the data hooks are mocked). Fixture: A, B, A, rest
-// (SPEC G8, reviewer's own named shape) — cycle 1 is the viewed week,
-// cycle 2's own two A occurrences already planned (its own two week_plan
-// rows), so "the second A reaches the second A, not the first" and
-// "apply-ahead reaches cycle 2's own A·1, not its A·3" are both provable
-// against a REAL, already-ambiguous-by-workoutDayId-alone fixture, not a
-// hypothetical one. Checked at 375px (this file's own beforeEach, same
-// convention as every other PlanPage test file).
+// sequence_position), "Cycle n" labelling and "Mark this cycle as deload",
+// all driven through the REAL PlanPage/WorkoutDayPanel/PlanExerciseCard tree
+// (same seam every other PlanPage test file already uses: only the data
+// hooks are mocked). Fixture: A, B, A, rest (SPEC G8, reviewer's own named
+// shape) — cycle 1 is the viewed week, cycle 2's own two A occurrences
+// already planned (its own two week_plan rows), so "the second A reaches the
+// second A, not the first" is provable against a REAL,
+// already-ambiguous-by-workoutDayId-alone fixture, not a hypothetical one.
+// (Chunk 54a: the apply-ahead offer and its per-slot matching are gone with
+// the offer; the two tests that proved it became absence tests, below.)
+// Checked at 375px (this file's own beforeEach, same convention as every
+// other PlanPage test file).
 
 afterEach(() => cleanup())
 beforeEach(() => {
@@ -74,10 +74,10 @@ function makeSet(id: string, programExerciseId: string, weekPlanId: string): Wee
 }
 
 // isDeload: true here (unlike slot 2's cycle-1 occurrence below) — the one
-// real-business-rule asymmetry a "COPY THIS WORKOUT" test needs: a deload
-// occurrence is never a valid copy source (PlanPage.copyButtons.test.tsx's
-// own "shows neither button when the only prior occurrence was deload"),
-// so cycle 2's slot A·1 has NO usable source while slot A·3 (below) does —
+// real-business-rule asymmetry a COPY test needs: a deload occurrence is
+// never a valid copy source (SPEC: "Deload sessions are never a copy
+// source"), so cycle 2's slot A·1 has NO usable source while slot A·3
+// (below) does —
 // this never changes what any EXISTING test in this file asserts (deload
 // only gates markSessionDeload/the week-level mark button's own label,
 // never plain editing, and weekIsFullyDeload still reads false since B1/A2
@@ -115,16 +115,10 @@ const allPlans: WeekPlan[] = [wpCycle1SlotA0, wpCycle1SlotB1, wpCycle1SlotA2, wp
 const updateSetMutate = vi.fn()
 const setWeekDeloadMutate = vi.fn()
 const useSetWeekDeloadSpy = vi.fn((_mesoId: string, _weekNumber: number) => ({ mutate: setWeekDeloadMutate, isPending: false }))
-let applyAheadLastCall: { changes: ChangeRecord[]; weeks: WeekPlan[] } | null = null
-const applyAheadMutate = vi.fn((vars: { changes: ChangeRecord[]; weeks: WeekPlan[] }) => {
-  applyAheadLastCall = vars
-})
-// Chunk 25 review fix 2 — spies (not inert vi.fn()s) so a test can assert
-// COPY THIS WORKOUT's / COPY LAST CYCLE's exact mutate-call arguments, the
-// same "screen-layer test asserting what each button hands to its hook"
-// standard every other action in this file already meets.
-const copyWorkoutMutate = vi.fn()
-const copyWeekMutate = vi.fn()
+// Chunk 52 — COPY's sheet writes through useCopyNumbers (one `v2_apply_ops` request); the spy is what the sheet hands it. The
+// tests that open the sheet give the run the history below (`plansOverride`) so the copy has numbers to take.
+const copyMutateAsync = vi.fn()
+let plansOverride: WeekPlan[] | null = null
 
 vi.mock('../programs/useMesos', () => ({
   useMesos: () => ({ data: [activeMeso], isLoading: false }),
@@ -143,7 +137,12 @@ vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }
 // covers the current cycle itself.
 vi.mock('../gym/useSession', () => ({ useLastDoneOrSkippedSession: () => ({ data: null }) }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useReview', () => ({ useReview: () => ({ status: 'ready', groups: [], count: 0, error: null }) })) // REVIEW's line (chunk 56): nothing differed here
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
+// Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
+vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
   // Chunk 25 review fix 2 — properly week-aware (filters allPlans by the
   // passed weekNumber) so a test can advance to cycle 2 (NEXT WEEK) and see
@@ -151,27 +150,21 @@ vi.mock('./useWeekPlan', () => ({
   // `currentPlans` constant for every EXISTING test here (all view cycle 1
   // by default, and allPlans.filter(w => w.weekNumber === 1) is exactly the
   // three cycle-1 rows that constant used to be).
-  useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: allPlans.filter((w) => w.weekNumber === weekNumber), isLoading: false }),
-  useAllWeekPlans: () => ({ data: allPlans, isLoading: false }),
-  useApplyAhead: () => ({ mutate: applyAheadMutate, isPending: false }),
+  useWeekPlans: (_mesoId: string, weekNumber: number) => ({ data: (plansOverride ?? allPlans).filter((w) => w.weekNumber === weekNumber), isLoading: false }),
+  useAllWeekPlans: () => ({ data: plansOverride ?? allPlans, isLoading: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   useSetWeekDeload: (mesoId: string, weekNumber: number) => useSetWeekDeloadSpy(mesoId, weekNumber),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: copyWeekMutate, isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: copyWorkoutMutate, isPending: false }),
-  useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeSetType: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
+vi.mock('./useCopyNumbers', () => ({ useCopyNumbers: () => ({ mutateAsync: copyMutateAsync, isPending: false, isError: false }) }))
 
 const { default: PlanPage } = await import('./PlanPage')
+const { openWeekTile, openWeekMenu } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -191,14 +184,12 @@ afterEach(() => {
   updateSetMutate.mockClear()
   setWeekDeloadMutate.mockClear()
   useSetWeekDeloadSpy.mockClear()
-  applyAheadMutate.mockClear()
-  applyAheadLastCall = null
-  copyWorkoutMutate.mockClear()
-  copyWeekMutate.mockClear()
+  copyMutateAsync.mockReset()
+  plansOverride = null
 })
 
 function goToCycle2() {
-  fireEvent.click(screen.getByLabelText('Next week'))
+  openWeekTile('CYCLE 2')
 }
 
 describe('PlanPage — sequence runs\' own Weeks view (chunk 25 review fix)', () => {
@@ -210,12 +201,13 @@ describe('PlanPage — sequence runs\' own Weeks view (chunk 25 review fix)', ()
   it('the current cycle of a week-dependent sequence run shows no ONLY THIS WEEK control, in any case (chunk 27)', () => {
     const { container } = renderPlanPage()
 
-    // A sequence panel really is showing (slot switcher + the SETS / STRUCTURE
-    // switch; COMPACT is gone, chunk 29) ...
+    // A sequence panel really is showing (slot switcher + the slot's cards; COMPACT
+    // is gone, chunk 29, and so is the SETS / STRUCTURE switch, chunk 54a) ...
     expect(screen.getByRole('region', { name: 'Sequence slot switcher' })).toBeTruthy()
+    expect(screen.getByLabelText('Add set to Bench Press')).toBeTruthy()
     expect(screen.queryByText('COMPACT')).toBeNull()
-    expect(screen.getByText('SETS')).toBeTruthy()
-    expect(screen.getByText('STRUCTURE')).toBeTruthy()
+    expect(screen.queryByText('SETS')).toBeNull()
+    expect(screen.queryByText('STRUCTURE')).toBeNull()
     // ... and the tick is nowhere on it.
     expect(screen.queryByText('ONLY THIS WEEK')).toBeNull()
     expect(screen.queryByText(/only this week/i)).toBeNull()
@@ -264,6 +256,7 @@ describe('PlanPage — sequence runs\' own Weeks view (chunk 25 review fix)', ()
   it('"Mark this cycle as deload" calls useSetWeekDeload with (mesoId, cycle), and the label reads CYCLE not WEEK', () => {
     renderPlanPage()
 
+    openWeekMenu() // chunk 52: the cycle's deload is in CYCLE ⋯ (board 1e)
     expect(screen.getByText('MARK CYCLE AS DELOAD')).toBeTruthy()
     expect(screen.queryByText('MARK WEEK AS DELOAD')).toBeNull()
     expect(useSetWeekDeloadSpy).toHaveBeenCalledWith('meso-1', 1)
@@ -274,81 +267,105 @@ describe('PlanPage — sequence runs\' own Weeks view (chunk 25 review fix)', ()
     expect(call.isDeload).toBe(true)
   })
 
-  it('apply-ahead from cycle 1\'s A·1 (slot 0) reaches cycle 2\'s own A·1 (slot 0) ONLY — never cycle 2\'s A·3 (slot 2)', () => {
+  // Chunk 54a — absence (Checks that lied #32): these two were the apply-ahead offer's per-slot reach (a change in cycle 1's A·1 or A·3 offered
+  // cycle 2's own A·1 or A·3, never the other). The offer is gone: an edit in either slot writes its own set, once, and offers nothing.
+  // Break proof: render the offer again → both fail.
+  it('an edit in cycle 1\'s A·1 (slot 0) offers nothing to apply to the planned cycle 2 — no banner, no APPLY — and writes A·1\'s own set only', () => {
     renderPlanPage()
 
     editWeightTarget() // slot 0 (the default-selected first A) is edited
 
-    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
-    fireEvent.click(screen.getByText('APPLY'))
-    expect(applyAheadLastCall).not.toBeNull()
-    expect(applyAheadLastCall!.weeks.map((w) => w.id)).toEqual(['wp-2-a0'])
+    expect(screen.queryByText(/APPLY THIS CHANGE/)).toBeNull()
+    expect(screen.queryByText('APPLY')).toBeNull()
+    expect(updateSetMutate).toHaveBeenCalledTimes(1)
+    expect((updateSetMutate.mock.calls[0][0] as { id: string }).id).toBe('set-a0')
   })
 
-  it('apply-ahead from cycle 1\'s A·3 (slot 2) reaches cycle 2\'s own A·3 (slot 2) ONLY — never cycle 2\'s A·1 (slot 0)', () => {
+  it('an edit in cycle 1\'s A·3 (slot 2) offers nothing either, and writes A·3\'s own set only', () => {
     renderPlanPage()
 
     fireEvent.click(screen.getByText('SLOT 3'))
     editWeightTarget()
 
-    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
-    fireEvent.click(screen.getByText('APPLY'))
-    expect(applyAheadLastCall).not.toBeNull()
-    expect(applyAheadLastCall!.weeks.map((w) => w.id)).toEqual(['wp-2-a2'])
+    expect(screen.queryByText(/APPLY THIS CHANGE/)).toBeNull()
+    expect(screen.queryByText('APPLY')).toBeNull()
+    expect(updateSetMutate).toHaveBeenCalledTimes(1)
+    expect((updateSetMutate.mock.calls[0][0] as { id: string }).id).toBe('set-a2')
   })
 
   // Chunk 25 review fix 2 (DECISIONS 73 option a — the second named gap:
   // "dropping the sequencePosition check from historyFor passes all 553
   // plan tests, so COPY THIS WORKOUT's availability for a repeated workout
-  // follows the other slot"). Cycle 2 (empty, both slots) is the one
-  // viewed; cycle 1's slot A·1 is deload-only (no usable source) and slot
-  // A·3 is a real, non-deload source — a genuine per-slot asymmetry, not
-  // just a different query.
-  describe('COPY THIS WORKOUT / COPY LAST CYCLE — availability and mutate args follow the SELECTED slot, never the other one', () => {
-    it('viewing cycle 2\'s slot A·1 (position 0): no source (cycle 1\'s A·1 was deload-only) — COPY THIS WORKOUT is absent', () => {
+  // follows the other slot"), carried to chunk 52's COPY sheet, which lists
+  // every slot of the viewed cycle with the cycle its numbers come from.
+  // Cycle 2 (both slots planned, an empty weight box each) is the one
+  // viewed; cycle 1's slot A·1 is deload-only (no usable source, and at 90 kg
+  // so a source taken from the wrong slot shows in the numbers) and slot A·3
+  // is a real, non-deload source at 100 kg — a genuine per-slot asymmetry,
+  // not just a different query.
+  describe('COPY — each slot takes the cycle its OWN history gives, never the other occurrence of its workout (chunk 52)', () => {
+    const setOf = (id: string, programExerciseId: string, weekPlanId: string, targetWeight: number | null): WeekPlanSet => ({
+      ...makeSet(id, programExerciseId, weekPlanId), targetWeight,
+    })
+    const peT0: ProgramExercise = { ...peA0, id: 'pe-t0-row' }
+    const peT2: ProgramExercise = { ...peA2, id: 'pe-t2-row' }
+    function withCopyHistory() {
+      plansOverride = [
+        { ...wpCycle1SlotA0, sets: [setOf('set-a0', 'pe-a0-row', 'wp-1-a0', 90)] },
+        { ...wpCycle1SlotB1 },
+        { ...wpCycle1SlotA2, sets: [setOf('set-a2', 'pe-a2-row', 'wp-1-a2', 100)] },
+        { ...wpCycle2SlotA0, exercises: [peT0], sets: [setOf('t0-set', 'pe-t0-row', 'wp-2-a0', null)] },
+        { ...wpCycle2SlotA2, exercises: [peT2], sets: [setOf('t2-set', 'pe-t2-row', 'wp-2-a2', null)] },
+      ]
+    }
+    function openCopySheet() {
       renderPlanPage()
       goToCycle2()
-
       expect(screen.getByText('CYCLE 2')).toBeTruthy()
-      expect(screen.queryByText('COPY THIS WORKOUT')).toBeNull()
+      fireEvent.click(screen.getByText('COPY'))
+      return within(screen.getByRole('dialog', { name: "Copy last cycle's numbers" }))
+    }
+    const rowOf = (sheet: ReturnType<typeof within>, slot: string) => sheet.getByText(slot).closest('button') as HTMLElement
+
+    it('cycle 2\'s slot 1 (A·1: its cycle 1 was a deload) has no source: unticked, saying NO EARLIER CYCLE; slot 3 (A·3) is ticked, from cycle 1', () => {
+      withCopyHistory()
+      const sheet = openCopySheet()
+
+      expect(rowOf(sheet, 'SLOT 1').getAttribute('aria-checked')).toBe('false')
+      expect(within(rowOf(sheet, 'SLOT 1')).getByText('NO EARLIER CYCLE')).toBeTruthy()
+      expect(rowOf(sheet, 'SLOT 3').getAttribute('aria-checked')).toBe('true')
+      expect(within(rowOf(sheet, 'SLOT 3')).queryByText('NO EARLIER CYCLE')).toBeNull()
+      expect(screen.getByText("CYCLE 2 · FROM CYCLE 1'S PLAN")).toBeTruthy()
+      // sequence wording, never the weekday's
+      expect(screen.queryByText('COPY WEEK')).toBeNull()
+      expect(screen.queryByText('COPY LAST CYCLE')).toBeNull()
     })
 
-    it('the SAME cycle 2, slot A·3 (position 2) instead: cycle 1\'s A·3 WAS a real source — COPY THIS WORKOUT shows, and tapping it passes sequencePosition 2', () => {
-      renderPlanPage()
-      goToCycle2()
-      fireEvent.click(screen.getByText('SLOT 3'))
+    it('COPY INTO 1 WORKOUT (only A·3 has a source) writes cycle 1\'s A·3 weight into cycle 2\'s A·3 set: one update, 100 and not A·1\'s 90, A·1\'s set untouched', async () => {
+      withCopyHistory()
+      copyMutateAsync.mockResolvedValue(undefined)
+      const sheet = openCopySheet()
 
-      expect(screen.getByText('COPY THIS WORKOUT')).toBeTruthy()
-      fireEvent.click(screen.getByText('COPY THIS WORKOUT'))
-
-      expect(copyWorkoutMutate).toHaveBeenCalledWith({ workoutDayId: 'wd-a', weekPlanId: 'wp-2-a2', sequencePosition: 2 })
+      fireEvent.click(sheet.getByText('COPY INTO 1 WORKOUT'))
+      await waitFor(() => expect(copyMutateAsync).toHaveBeenCalledTimes(1))
+      expect(copyMutateAsync).toHaveBeenCalledWith([{ op: 'update', table: 'v2_week_plan_sets', id: 't2-set', patch: { target_weight: 100 } }])
     })
 
-    it('COPY LAST CYCLE (the bulk action) shows too, once AT LEAST ONE slot (A·3) has a source — the gate checks every slot, not just the selected one', () => {
-      renderPlanPage()
-      goToCycle2()
+    it('the other way round (A·1 had the usable cycle): slot 1 is copied from, and slot 3 has no source', () => {
+      // cycle 1's A·1 normal at 90 kg; cycle 1's A·3 deload-only: the same history with the deload on the other occurrence
+      plansOverride = [
+        { ...wpCycle1SlotA0, isDeload: false, sets: [setOf('set-a0', 'pe-a0-row', 'wp-1-a0', 90)] },
+        { ...wpCycle1SlotB1 },
+        { ...wpCycle1SlotA2, isDeload: true, sets: [setOf('set-a2', 'pe-a2-row', 'wp-1-a2', 100)] },
+        { ...wpCycle2SlotA0, exercises: [peT0], sets: [setOf('t0-set', 'pe-t0-row', 'wp-2-a0', null)] },
+        { ...wpCycle2SlotA2, exercises: [peT2], sets: [setOf('t2-set', 'pe-t2-row', 'wp-2-a2', null)] },
+      ]
+      const sheet = openCopySheet()
 
-      expect(screen.getByText('COPY LAST CYCLE')).toBeTruthy()
-      expect(screen.queryByText('COPY WEEK')).toBeNull() // sequence wording, never the weekday label
-      fireEvent.click(screen.getByText('COPY LAST CYCLE'))
-      expect(copyWeekMutate).toHaveBeenCalledTimes(1)
+      expect(rowOf(sheet, 'SLOT 1').getAttribute('aria-checked')).toBe('true')
+      expect(rowOf(sheet, 'SLOT 3').getAttribute('aria-checked')).toBe('false')
+      expect(within(rowOf(sheet, 'SLOT 3')).getByText('NO EARLIER CYCLE')).toBeTruthy()
     })
-  })
-
-  // Chunk 25 review fix 2 — the apply-ahead offer's own reset key (this
-  // file's existing two apply-ahead tests above prove it reaches the RIGHT
-  // candidate weeks per slot; this proves the OFFER STATE ITSELF doesn't
-  // leak from one slot's pending offer into a different slot never
-  // involved in that edit).
-  it('an apply-ahead offer pending on slot A·1 is cleared when switching to slot A·3 — the two slots never share one offer/outcome state', () => {
-    renderPlanPage()
-
-    editWeightTarget() // slot 0 (A·1) — produces a pending offer
-    expect(screen.getByText('APPLY THIS CHANGE TO 1 PLANNED WEEK AHEAD?')).toBeTruthy()
-
-    fireEvent.click(screen.getByText('SLOT 3')) // switch to A·3, no edit made there
-
-    expect(screen.queryByText(/APPLY THIS CHANGE/)).toBeNull()
   })
 
   // Chunk 25 review fix 2 — "mark-cycle": proves by construction that NO
@@ -359,6 +376,7 @@ describe('PlanPage — sequence runs\' own Weeks view (chunk 25 review fix)', ()
   it('"Mark this cycle as deload" calls useSetWeekDeload identically regardless of which slot (A·1 or A·3) is selected', () => {
     renderPlanPage()
     fireEvent.click(screen.getByText('SLOT 3')) // select A·3 instead of the default A·1
+    openWeekMenu()
 
     // The hook call itself (page-level, re-invoked on every render — the
     // slot switch above forces one) takes only (mesoId, weekNumber), the

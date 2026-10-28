@@ -55,9 +55,8 @@ vi.mock('./useScrollToCurrentSet', () => ({
   useScrollToCurrentSet: () => ({ containerRef: { current: null }, direction: null, scrollToCurrentSet: () => {} }),
 }))
 vi.mock('./RestTimer', () => ({ default: () => null }))
-vi.mock('./SessionComplete', () => ({ default: () => null }))
+vi.mock('./FinishScreen', () => ({ default: () => null }))
 vi.mock('./WorkoutSidebarSheet', () => ({ default: () => null }))
-vi.mock('./SwapExerciseSheet', () => ({ default: () => null }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 vi.mock('../programs/usePrograms', () => ({
   useProgramExercises: () => ({ data: [] }),
@@ -133,8 +132,8 @@ describe('GymSession — warmup routine checklist, real session', () => {
 
     expect(screen.queryByText('WARMUP ROUTINE')).toBeNull()
     // No tick icon of either state anywhere — not just no heading.
-    expect(container.querySelector('svg.lucide-square')).toBeNull()
-    expect(container.querySelector('svg.lucide-square-check-big')).toBeNull()
+    expect(container.querySelector('[role="checkbox"]')).toBeNull()
+    expect(container.querySelector('[role="checkbox"][aria-checked="true"]')).toBeNull()
   })
 
   it('ticking an item writes nothing to the network: no supabase from/rpc call, no fetch', () => {
@@ -161,9 +160,25 @@ describe('GymSession — warmup routine checklist, real session', () => {
     warmupItems = [item({ id: 'wi-1', position: 0, body: 'Bike 5 min' })]
     const { container } = render(sessionJsx('session-1'))
 
-    expect(container.querySelector('svg.lucide-square-check-big')).toBeNull()
+    expect(container.querySelector('[role="checkbox"][aria-checked="true"]')).toBeNull()
     fireEvent.click(screen.getByText('Bike 5 min'))
-    expect(container.querySelector('svg.lucide-square-check-big')).toBeTruthy()
+    expect(container.querySelector('[role="checkbox"][aria-checked="true"]')).toBeTruthy()
+  })
+
+  it('the card counts the ticked items ("1 OF 2", board W1) and a ticked item is struck through', () => {
+    warmupItems = [item({ id: 'wi-1', position: 0, body: 'Band pull-aparts' }), item({ id: 'wi-2', position: 1, body: 'Dead hang' })]
+    const { container } = render(sessionJsx('session-1'))
+
+    const count = () => container.querySelector('[data-warmup-count]')!.textContent
+    expect(count()).toBe('0 OF 2')
+    fireEvent.click(screen.getByText('Band pull-aparts'))
+    expect(count()).toBe('1 OF 2')
+    expect(screen.getByText('Band pull-aparts').style.textDecoration).toBe('line-through')
+    expect(screen.getByText('Dead hang').style.textDecoration).toBe('none')
+    fireEvent.click(screen.getByText('Dead hang'))
+    expect(count()).toBe('2 OF 2')
+    fireEvent.click(screen.getByText('Band pull-aparts'))
+    expect(count()).toBe('1 OF 2')
   })
 
   it('ticks survive an unmount and remount for the SAME session id', () => {
@@ -175,7 +190,7 @@ describe('GymSession — warmup routine checklist, real session', () => {
     // A fresh mount — the component re-reads localStorage via load(), not
     // anything held over from the unmounted instance's own React state.
     const { container } = render(sessionJsx('session-1'))
-    expect(container.querySelector('svg.lucide-square-check-big')).toBeTruthy()
+    expect(container.querySelector('[role="checkbox"][aria-checked="true"]')).toBeTruthy()
   })
 
   it('a tick never leaks to a DIFFERENT session id, even for the identical item', () => {
@@ -185,8 +200,8 @@ describe('GymSession — warmup routine checklist, real session', () => {
     unmount()
 
     const { container } = render(sessionJsx('session-2'))
-    expect(container.querySelector('svg.lucide-square-check-big')).toBeNull()
-    expect(container.querySelector('svg.lucide-square')).toBeTruthy() // still shown, just unticked
+    expect(container.querySelector('[role="checkbox"][aria-checked="true"]')).toBeNull()
+    expect(container.querySelector('[role="checkbox"][aria-checked="false"]')).toBeTruthy() // still shown, just unticked
   })
 
   it('a failing localStorage still renders the checklist and still lets a tick show in-memory', () => {

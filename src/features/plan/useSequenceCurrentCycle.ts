@@ -24,7 +24,9 @@ import { useAllWeekPlans } from './useWeekPlan'
 // shows the app's load error and plans nothing. A read that failed on a
 // REFETCH still has its earlier data, and the cycle is named from that, as
 // Today does. Both are provisional display choices (D31), recorded in the
-// chunk report.
+// chunk report. `error` is what the failed read threw (chunk 52, SPEC Errors
+// (15): the load error's second line is the real reason, not a fixed one);
+// null while nothing has failed.
 //
 // Weekday runs never call this: their current week is the calendar week
 // (PlanPage's computeWeekNumber), and PlanPage mounts this only for a sequence
@@ -32,6 +34,7 @@ import { useAllWeekPlans } from './useWeekPlan'
 export interface SequenceCurrentCycle {
   cycle: number | null
   failed: boolean
+  error: unknown
 }
 
 export function useSequenceCurrentCycle(mesoId: string, programId: string): SequenceCurrentCycle {
@@ -46,9 +49,9 @@ export function useSequenceCurrentCycle(mesoId: string, programId: string): Sequ
   // real answer for the last-event query (nothing done or skipped yet),
   // `undefined` is not.
   if (!items || !allWeekPlans || lastDoneOrSkipped === undefined) {
-    const failed = [itemsRead, plansRead, lastEventRead].some((read) => read.isError === true && read.data === undefined)
-    return { cycle: null, failed }
+    const failedRead = [itemsRead, plansRead, lastEventRead].find((read) => read.isError === true && read.data === undefined)
+    return { cycle: null, failed: failedRead !== undefined, error: failedRead?.error ?? null }
   }
 
-  return { cycle: resolveCurrentCycle(items, resolveLastEvent(lastDoneOrSkipped, allWeekPlans)), failed: false }
+  return { cycle: resolveCurrentCycle(items, resolveLastEvent(lastDoneOrSkipped, allWeekPlans)), failed: false, error: null }
 }

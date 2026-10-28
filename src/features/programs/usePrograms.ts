@@ -4,7 +4,7 @@ import { useAuth } from '../auth/useAuth'
 import type { QueryKey } from '@tanstack/react-query'
 import type { WeeklySchedule, DayOfWeek, WeightUnit, ProgramExercise, PlanningType, ScheduleType, WarmupRoutineItem, SequenceItem, WeekPlan } from '../../types'
 import type { LinkPlan } from '../../lib/supersetGroups'
-import type { DeloadRules } from '../../lib/deloadRules'
+import type { NewProgramTypes } from './programService'
 import {
   fetchPrograms,
   fetchSavedPrograms,
@@ -13,7 +13,6 @@ import {
   updateSchedule,
   updatePlanningType,
   updateScheduleType,
-  updateProgramDeloadRules,
   fetchWorkoutDays,
   createWorkoutDay,
   updateWorkoutDayName,
@@ -71,10 +70,15 @@ export function useSavedPrograms() {
   })
 }
 
+// Chunk 65 (SPEC Programs and runs [1.2], Creating a program (16a)): a program is created with both its types, in one insert. The
+// mutation is `networkMode: 'always'` like every write (CONTEXT.md, Offline): creating a program is online-only, so offline it must fail
+// with the real reason (SPEC Errors (15)), not pause for ever with the sheet saying CREATING….
 export function useCreateProgram() {
   const { user } = useAuth()
   return useMutation({
-    mutationFn: (name: string) => createProgram(user!.id, name),
+    networkMode: 'always',
+    mutationFn: ({ name, scheduleType, planningType }: { name: string } & NewProgramTypes) =>
+      createProgram(user!.id, name, { scheduleType, planningType }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
   })
 }
@@ -113,19 +117,6 @@ export function useUpdateScheduleType() {
     networkMode: 'always',
     mutationFn: ({ id, scheduleType }: { id: string; scheduleType: ScheduleType }) =>
       updateScheduleType(id, scheduleType),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
-  })
-}
-
-// Chunk 22 — the program tab's / planner step 3's deload-rules override
-// (StepVolume.tsx). Same networkMode: 'always' posture as
-// useUpdatePlanningType above (reviewer's note 7); plain invalidate, same
-// shape — this control sits right next to PLANNING in the same step.
-export function useUpdateProgramDeloadRules() {
-  return useMutation({
-    networkMode: 'always',
-    mutationFn: ({ id, deloadRules }: { id: string; deloadRules: DeloadRules | null }) =>
-      updateProgramDeloadRules(id, deloadRules),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
   })
 }

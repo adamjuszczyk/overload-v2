@@ -10,16 +10,19 @@ import ProgressPage from './features/progress/ProgressPage'
 import HistoryPage from './features/history/HistoryPage'
 import ExerciseHistoryPage from './features/history/ExerciseHistoryPage'
 import SessionTypeHistoryPage from './features/history/SessionTypeHistoryPage'
-import ProgramsPage from './features/programs/ProgramsPage'
 import PlannerPage from './features/planner/PlannerPage'
 import LibraryPage from './features/library/LibraryPage'
 import SettingsPage from './features/settings/SettingsPage'
 import CoachPage from './features/coach/CoachPage'
 import MesoPrioritiesPage from './features/coach/MesoPrioritiesPage'
 import PrioritiesEditor from './features/plan/PrioritiesEditor'
+import ChangeProgramPage from './features/programs/ChangeProgramPage'
+import FinishedProgramPage from './features/programs/FinishedProgramPage'
+import FinishedProgramPriorities from './features/programs/FinishedProgramPriorities'
 import Nav from './components/Nav'
 import Toast from './features/notifications/Toast'
 import PwaUpdateNotice from './features/pwa/PwaUpdateNotice'
+import StagingBadge from './components/StagingBadge'
 import { useAccentColour } from './hooks/useAccentColour'
 import { useSettings } from './features/settings/useSettings'
 import { useSyncQueueInit, useSyncQueueRunner } from './features/offline/useSyncQueue'
@@ -44,6 +47,7 @@ export default function App() {
               authenticated) means it can't be blocked on a test/verification
               path that needs to reach a logged-in screen. */}
           <PwaUpdateNotice />
+          <StagingBadge />
           <AppRoutes />
         </BrowserRouter>
       </AuthProvider>
@@ -102,19 +106,26 @@ export function AppRoutes() {
         <Routes>
           <Route path="/" element={<Navigate to="/today" replace />} />
           <Route path="/today"    element={<TodayPage />}    />
-          <Route path="/plan"     element={<PlanPage />}     />
+          {/* Chunk 65: `/plan` opens the week, or PROGRAMS when no program runs (PlanPage chooses the tab); `/program` is the same page
+              opened on PROGRAMS. Each has a key of its own: going from one to the other (the nav's PLAN from `/program`, START's
+              `/plan?week=1` from it) must start a new Plan, which opens on its own tab, not keep the other's choice. */}
+          <Route path="/plan"     element={<PlanPage key="plan" />}     />
           <Route path="/plan/priorities" element={<PrioritiesEditor />} />
+          <Route path="/plan/change" element={<ChangeProgramPage />} />
           <Route path="/progress" element={<ProgressPage />} />
           <Route path="/history"  element={<HistoryPage />}  />
           <Route path="/exercise/:exerciseId" element={<ExerciseHistoryPage />} />
           <Route path="/session-type/:workoutDayId" element={<SessionTypeHistoryPage />} />
           {/* Chunk 26 — PROGRAM is gone from the bottom bar (Nav.tsx); both
-              routes below are now reached only from Plan's header
-              (PlanPage.tsx). ProgramPage.tsx (the old "my programs" +
-              active/completed mesocycle screen) is replaced by
-              ProgramsPage.tsx at the same path — every old deep link to
-              /program or /program/:id still resolves. */}
-          <Route path="/program"                           element={<ProgramsPage />}        />
+              routes below are reached from Plan's PROGRAMS tab. Chunk 65: the
+              page at `/program` is Plan opened on PROGRAMS (ProgramsPage.tsx
+              is gone) — every old deep link to /program or /program/:id
+              still resolves. */}
+          <Route path="/program"                           element={<PlanPage key="programs" initialTab="programs" />} />
+          {/* Chunk 66 — a finished program (PR14), opened from a FINISHED row of the PROGRAMS tab, and the editor its PRIORITIES row opens
+              for a run whose marks are in the new table. A pre-1.1 run's PRIORITIES row goes on to the Coach page below, as it is (G50). */}
+          <Route path="/program/finished/:mesocycleId"            element={<FinishedProgramPage />}       />
+          <Route path="/program/finished/:mesocycleId/priorities" element={<FinishedProgramPriorities />} />
           {/* Chunk 11 — the stepped program planner replaces
               ProgramBuilderPage/WorkoutDayEditorPage/WeeklyScheduleGrid
               (removed) at this same route. */}

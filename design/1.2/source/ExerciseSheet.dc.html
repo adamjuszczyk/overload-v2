@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workout — exercise options</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: {{c.base}}; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+  <div aria-hidden="true" style="position: absolute; inset: 0; padding: 18px 16px; display: flex; flex-direction: column; gap: 12px">
+    <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; color: {{c.t1}}">PULL 1</span>
+    <div style="height: 120px; border-radius: 12px; background: {{c.surface}}; border: 1px solid {{c.border}}"></div>
+    <div style="height: 260px; border-radius: 12px; background: {{c.surface}}; border: 1px solid {{c.border}}"></div>
+  </div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: {{c.scrim}}"></div>
+
+  <div role="dialog" aria-label="Exercise options" style="position: absolute; left: 0; right: 0; bottom: 0; background: {{c.surface}}; border: 1px solid {{c.border}}; border-bottom: 0; border-radius: 20px 20px 0 0; padding: 10px 16px 24px; display: flex; flex-direction: column; gap: 14px">
+    <div style="align-self: center; width: 40px; height: 4px; border-radius: 2px; background: {{c.bstrong}}"></div>
+    <div style="display: flex; justify-content: space-between; align-items: flex-start">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">BACK · 2 OF 3 SETS DONE</span>
+        <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 20px; color: {{c.t1}}">Lat Pulldown</span>
+      </div>
+      <button aria-label="Close" style="width: 44px; height: 44px; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
+    </div>
+
+    <div style="display: flex; flex-direction: column; border-top: 1px solid {{c.bsub}}">
+      <a href="SwapSheet.dc.html" style="min-height: 60px; border-bottom: 1px solid {{c.bsub}}; text-decoration: none; display: flex; align-items: center; gap: 12px">
+        <span style="width: 36px; height: 36px; border-radius: 8px; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l4 4-4 4M3 11v-1a4 4 0 0 1 4-4h14M7 22l-4-4 4-4M21 13v1a4 4 0 0 1-4 4H3"></path></svg></span>
+        <span style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">Swap for today</span>
+          <span style="font-size: 12px; color: {{c.tm}}">Next week's plan stays the same.</span>
+        </span>
+      </a>
+      <div style="padding: 10px 0 12px; border-bottom: 1px solid {{c.bsub}}; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; align-items: center; gap: 12px">
+          <span style="width: 36px; height: 36px; border-radius: 8px; background: {{c.errorMuted}}; color: {{c.error}}; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4l10 8-10 8V4zM19 5v14"></path></svg></span>
+          <span style="display: flex; flex-direction: column; gap: 2px">
+            <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">Skip the rest of this exercise</span>
+            <span style="font-size: 12px; color: {{c.tm}}">Set 03 and its drop will be marked skipped.</span>
+          </span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding-left: 48px">
+          <button style="height: 44px; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.surface}}; color: {{c.t1}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; letter-spacing: 0.15em">CANCEL</button>
+          <button style="height: 44px; border-radius: 10px; border: 0; background: {{c.errorMuted}}; color: {{c.error}}; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.15em">SKIP 2 SETS</button>
+        </div>
+      </div>
+      <button style="min-height: 60px; border: 0; border-bottom: 1px solid {{c.bsub}}; background: transparent; display: flex; align-items: center; gap: 12px; padding: 0; text-align: left">
+        <span style="width: 36px; height: 36px; border-radius: 8px; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg></span>
+        <span style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">Add a set</span>
+          <span style="font-size: 12px; color: {{c.tm}}">This exercise only. In a superset, the others stay as they are.</span>
+        </span>
+      </button>
+      <button style="min-height: 60px; border: 0; background: transparent; display: flex; align-items: center; gap: 12px; padding: 0; text-align: left">
+        <span style="width: 36px; height: 36px; border-radius: 8px; background: {{c.raised}}; color: {{c.t2}}; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5M12 7v5l4 2"></path></svg></span>
+        <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 15px; color: {{c.t1}}">Exercise history</span>
+      </button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', errorMuted: 'rgba(185,28,28,0.10)', success: '#166534', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', errorMuted: 'rgba(248,113,113,0.15)', success: '#4ade80', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const A = String(this.props.accent ?? '#3b82f6').toLowerCase();
+    const c = Object.assign({}, P[theme], { accent: A });
+    return { c };
+  }
+}
+</script>
+</body>
+</html>
+

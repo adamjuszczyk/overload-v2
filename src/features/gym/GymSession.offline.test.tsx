@@ -70,9 +70,8 @@ vi.mock('./useScrollToCurrentSet', () => ({
   useScrollToCurrentSet: () => ({ containerRef: { current: null }, direction: null, scrollToCurrentSet: () => {} }),
 }))
 vi.mock('./RestTimer', () => ({ default: () => null }))
-vi.mock('./SessionComplete', () => ({ default: () => null }))
+vi.mock('./FinishScreen', () => ({ default: () => null }))
 vi.mock('./WorkoutSidebarSheet', () => ({ default: () => null }))
-vi.mock('./SwapExerciseSheet', () => ({ default: () => null }))
 vi.mock('./ExerciseCard', () => ({
   default: (props: { programExercise: ProgramExercise; plannedSets: { id: string }[] }) => (
     <div data-testid="exercise-card">

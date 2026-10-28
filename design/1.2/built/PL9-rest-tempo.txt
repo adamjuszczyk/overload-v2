@@ -1,0 +1,20 @@
+PULL 1
+Lat Pulldown
+REST
+−
+0:45
++
+REST AFTER
+−
+10:00
++
+TEMPO
+Use 4 fields, e.g. 3-1-1-0 (X allowed)
+UNIT
+DEFAULT
+KG
+LBS
+MOVE UP
+MOVE DOWN
+
+Changes start in week 2. Swap, superset and remove are on the exercise card.

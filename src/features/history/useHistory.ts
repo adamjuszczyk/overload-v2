@@ -2,6 +2,7 @@ import { useQuery, useInfiniteQuery, useMutation } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
 import { DONE_WEEK_PLANS_KEY } from '../plan/useDoneWeekPlanIds'
+import { dropQueuedWritesNamingSession } from '../offline/useSyncQueue'
 import {
   fetchHistorySessions,
   fetchHistoryDetail,
@@ -36,7 +37,12 @@ export function useHistoryDetail(sessionId: string | null) {
 
 export function useDeleteSession() {
   return useMutation({
-    mutationFn: (id: string) => deleteSession(id),
+    // DECISIONS 230 (ii): once the request has gone through, the writes this phone still has queued for the session leave the queue (the server's cascade took the session's
+    // logs and change rows; a queued finish would bring the session back). A failure of that cleanup is logged and never fails a delete that was done.
+    mutationFn: async (id: string) => {
+      await deleteSession(id)
+      await dropQueuedWritesNamingSession(id).catch((err) => console.error('[sync] could not drop the queued writes of a deleted session', err))
+    },
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY })
       queryClient.removeQueries({ queryKey: ['v2_historyDetail', id] })

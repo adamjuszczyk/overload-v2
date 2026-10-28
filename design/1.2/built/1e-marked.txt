@@ -1,0 +1,53 @@
+PLAN
+PROGRAMS
+PUSH PULL LEGS · CURRENT PROGRAM
+WEEK 1
+DONE
+WEEK 2
+THIS WEEK
+WEEK 3
+NOT PLANNED
+COPY
+VOLUME
+WEEK
+MON
+PUSH 1
+TUE
+PULL 1
+THU
+PUSH 2
+FRI
+PULL 2
+SAT
+LEGS
+MONDAY
+PUSH 1
+DELOAD
+READ ONLY
+Bench Press
+CHEST
+01
+—
+×
+8–10
+RIR
+–
+02
+—
+×
+8–10
+RIR
+–
+03
+—
+×
+8–10
+RIR
+–
+CHANGE THE PROGRAM FROM WEEK 2
+PUSH PULL LEGS
+Week 2
+UNMARK THIS WEEK
+DELOAD
+Deload rules (from Settings): sets −50% (rounded down) · RIR +2
+Already started — sets left as they are

@@ -11,7 +11,7 @@ vi.mock('../../lib/supabase', () => ({
 }))
 
 const mesoServiceModule = await import('./mesoService')
-const { fetchMesos } = mesoServiceModule
+const { fetchMesos, deleteMeso } = mesoServiceModule
 
 // Chunk 6, TASKS.md — "keep createMeso exported only if something else uses
 // it": nothing else does (grepped before removing it), so both retired
@@ -123,5 +123,43 @@ describe('fetchMesos — disambiguated v2_programs embed (027 added source_progr
     const result = await fetchMesos()
 
     expect(result[0].sourceProgramId).toBeNull()
+  })
+})
+
+// Chunk 66: DELETE THIS FINISHED PROGRAM (PR15) → `useDeleteMeso` → this. The request is the whole of what deleting a finished program does to
+// stored rows (the weekly plan goes with the run by the database's cascade; its sessions stay, their `mesocycle_id` set null; the saved program is
+// not touched), so what it names is proven here: the run's own id, and only while it is completed. The second filter is what keeps a running
+// program from being deleted by an id typed into the address bar or a stale screen.
+describe('deleteMeso — one request: delete from v2_mesocycles where id is the run\'s and status is completed (chunk 66)', () => {
+  function makeDeleteChain(result: { error: unknown }) {
+    const eqCalls: Array<[string, unknown]> = []
+    const chain: Record<string, unknown> = {
+      delete: vi.fn(() => chain),
+      eq: vi.fn((column: string, value: unknown) => {
+        eqCalls.push([column, value])
+        return chain
+      }),
+      then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) => Promise.resolve(result).then(resolve, reject),
+    }
+    return { chain, eqCalls }
+  }
+
+  it('deletes from v2_mesocycles, filtered by the id it was given and by status = completed, and by nothing else', async () => {
+    const { chain, eqCalls } = makeDeleteChain({ error: null })
+    fromMock.mockReturnValue(chain)
+
+    await deleteMeso('meso-9')
+
+    expect(fromMock).toHaveBeenCalledTimes(1)
+    expect(fromMock).toHaveBeenCalledWith('v2_mesocycles')
+    expect(chain.delete).toHaveBeenCalledTimes(1)
+    expect([...eqCalls].sort()).toEqual([['id', 'meso-9'], ['status', 'completed']])
+  })
+
+  it('rethrows the database\'s own error, so the confirm can say the real reason', async () => {
+    const { chain } = makeDeleteChain({ error: { message: 'permission denied for table v2_mesocycles' } })
+    fromMock.mockReturnValue(chain)
+
+    await expect(deleteMeso('meso-9')).rejects.toEqual({ message: 'permission denied for table v2_mesocycles' })
   })
 })

@@ -26,10 +26,15 @@
   /* ── Accent (user-switchable — always use var(--accent)) ── */
   --accent:         #FF8C42;
   --accent-muted:   rgba(255, 140, 66, 0.15);
+  --on-accent:      #0d0d0c;   /* text on the accent: the boards' near-black, both themes */
 
   /* ── Semantic ────────────────────────────────────── */
   --error:          #f87171;
   --success:        #4ade80;
+
+  /* ── Staging badge (StagingBadge.tsx; same in both themes) ── */
+  --staging:        #22d3ee;
+  --staging-text:   #060607;
 }
 
 /* Light mode — applies when JS sets data-theme="light" on <html>. */
@@ -46,5 +51,6 @@
   --text-muted:      #6a6a66;
   --text-dim:        #9a9a96;
   --accent-muted:    rgba(255, 140, 66, 0.18);
+  --on-accent:       #0d0d0c;
   color-scheme:      light;
 }

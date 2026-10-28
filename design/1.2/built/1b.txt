@@ -1,0 +1,24 @@
+PLAN
+PROGRAMS
+PUSH PULL LEGS · CURRENT PROGRAM
+WEEK 1
+DONE
+WEEK 2
+THIS WEEK
+WEEK 3
+NOT PLANNED
+Week 3 isn't planned yet
+It plans itself when the week starts. Plan it now if you want to set its numbers ahead.
+PLAN FORWARD
+TAKES WEEK 2'S SETS AND SET TYPES. NUMBERS COME WITH COPY. WEEK 4 OPENS ONCE WEEK 3 IS PLANNED.
+WEEK 3 WILL HAVE
+MON
+Push 1
+TUE
+Pull 1
+THU
+Push 2
+FRI
+Pull 2
+SAT
+Legs

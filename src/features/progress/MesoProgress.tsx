@@ -248,10 +248,10 @@ export default function MesoProgress() {
           className="text-sm font-bold"
           style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
         >
-          NO MESOCYCLES YET
+          NO PROGRAMS YET
         </p>
         <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-          Start a mesocycle in the Program tab to track progress.
+          Start a program in Plan → Programs to track progress.
         </p>
       </div>
     )
@@ -318,7 +318,7 @@ export default function MesoProgress() {
             NO COMPLETED WEEKS YET
           </p>
           <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-            Complete sessions across a full week to see your meso overview.
+            Complete sessions across a full week to see your program overview.
           </p>
         </div>
       ) : (

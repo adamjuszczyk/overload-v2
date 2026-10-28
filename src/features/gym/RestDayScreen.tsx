@@ -1,5 +1,7 @@
 import { startOfWeek, parseISO, format } from 'date-fns'
 import { usePrograms } from '../programs/usePrograms'
+import { scheduleForWeek } from '../programs/runSchedule'
+import { useRunSchedule } from '../plan/useRunSchedule'
 import { useSessionsInRange } from './useSession'
 import type { Mesocycle } from '../../types'
 
@@ -24,9 +26,13 @@ function MoonGlyph() {
 
 export default function RestDayScreen({ activeMeso, currentWeek, today }: RestDayScreenProps) {
   const { data: programs = [] } = usePrograms()
+  // Chunk 50: "N of M sessions done this week" counts the weekdays that hold a workout IN THIS WEEK's schedule, not the
+  // run copy's (which holds the newest days once a weekday change that starts next week is saved, chunk 51b). The rows
+  // are the ones Today's scheduler has already read (same key), so they are here by the time this renders.
+  const { data: scheduleRows } = useRunSchedule(activeMeso.id)
   const program = programs.find((p) => p.id === activeMeso.programId)
   const plannedThisWeek = program
-    ? Object.values(program.schedule).filter((workoutDayId) => workoutDayId != null).length
+    ? Object.values(scheduleForWeek(scheduleRows ?? [], program.schedule, currentWeek)).filter((workoutDayId) => workoutDayId != null).length
     : 0
 
   const weekStart = format(startOfWeek(parseISO(today), { weekStartsOn: 1 }), 'yyyy-MM-dd')

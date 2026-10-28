@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workout — in progress</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: 2076px; box-sizing: border-box; background: {{c.base}}; display: flex; flex-direction: column; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+
+  <div style="padding: 18px 16px 14px; border-bottom: 1px solid {{c.bsub}}; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">WEEK 2 · TUESDAY</span>
+      <h1 style="margin: 0; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; line-height: 1; letter-spacing: -0.01em; color: {{c.t1}}">PULL 1</h1>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">IN PROGRESS</span>
+    </div>
+    <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 20px; font-variant-numeric: tabular-nums; color: {{c.t1}}">48:12</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.accentText}}">6 OF 15 SETS</span>
+    </div>
+  </div>
+
+  <div style="padding: 14px 16px 0; display: flex; flex-direction: column; gap: 14px">
+
+    <div style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-radius: 12px; padding: 4px 14px">
+      <div style="display: flex; justify-content: space-between; align-items: center; min-height: 40px">
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">WARMUP ROUTINE</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.tm}}">1 OF 2</span>
+      </div>
+      <button role="checkbox" aria-checked="true" style="width: 100%; min-height: 44px; border: 0; border-top: 1px solid {{c.bsub}}; background: transparent; display: flex; align-items: center; gap: 12px; padding: 0; text-align: left">
+        <span style="width: 20px; height: 20px; box-sizing: border-box; border-radius: 5px; background: {{c.accent}}; color: {{c.onAccent}}; display: flex; align-items: center; justify-content: center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg></span>
+        <span style="font-family: 'Archivo', sans-serif; font-size: 15px; color: {{c.tm}}; text-decoration: line-through">Band pull-aparts · 2 × 15</span>
+      </button>
+      <button role="checkbox" aria-checked="false" style="width: 100%; min-height: 44px; border: 0; border-top: 1px solid {{c.bsub}}; background: transparent; display: flex; align-items: center; gap: 12px; padding: 0; text-align: left">
+        <span style="width: 20px; height: 20px; box-sizing: border-box; border-radius: 5px; border: 2px solid {{c.bstrong}}"></span>
+        <span style="font-family: 'Archivo', sans-serif; font-size: 15px; color: {{c.t1}}">Dead hang · 30 s</span>
+      </button>
+    </div>
+
+    <sc-for list="{{cards}}" as="card" hint-placeholder-count="3">
+      <div style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+
+        <sc-if value="{{card.isSS}}" hint-placeholder-val="{{false}}">
+          <span style="display: flex; align-items: center; gap: 6px; padding: 2px 2px 4px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.t2}}">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>SUPERSET A · REST 1:30 AFTER EACH ROUND</span>
+        </sc-if>
+
+        <sc-for list="{{card.heads}}" as="h" hint-placeholder-count="1">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px">
+            <div style="display: flex; gap: 10px; align-items: flex-start; min-width: 0">
+              <sc-if value="{{h.hasLetter}}" hint-placeholder-val="{{false}}">
+                <span style="flex: 0 0 auto; width: 26px; height: 26px; border-radius: 6px; background: {{c.raised}}; border: 1px solid {{c.border}}; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 12px; color: {{c.t1}}">{{h.letter}}</span>
+              </sc-if>
+              <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                  <span style="font-weight: 600; font-size: 17px; line-height: 1.25; color: {{c.t1}}">{{h.name}}</span>
+                  <sc-if value="{{h.hasTempo}}" hint-placeholder-val="{{false}}">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; padding: 3px 6px; border-radius: 6px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.tm}}">TEMPO {{h.tempo}}</span>
+                  </sc-if>
+                </div>
+                <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.tm}}">{{h.meta}}</span>
+                <a href="Reference.dc.html" style="display: flex; align-items: center; gap: 4px; min-height: 28px; text-decoration: none; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.12em; color: {{c.accentText}}">{{h.ref}}<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></a>
+              </div>
+            </div>
+            <div style="display: flex; gap: 2px; flex: 0 0 auto">
+              <button aria-label="Exercise history" style="width: 40px; height: 44px; border: 0; background: transparent; color: {{c.tm}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><path d="M3 3v5h5M12 7v5l4 2"></path></svg></button>
+              <button aria-label="Exercise options" style="width: 36px; height: 44px; border: 0; background: transparent; color: {{c.tm}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg></button>
+            </div>
+          </div>
+        </sc-for>
+
+        <div style="display: flex; flex-direction: column; gap: 6px">
+          <sc-for list="{{card.rows}}" as="r" hint-placeholder-count="4">
+            <div style="display: flex; flex-direction: column; gap: 4px">
+
+              <sc-if value="{{r.isLabel}}" hint-placeholder-val="{{false}}">
+                <span style="padding: 6px 0 0; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.2em; color: {{c.tm}}">{{r.label}}</span>
+              </sc-if>
+
+              <sc-if value="{{r.hasKind}}" hint-placeholder-val="{{false}}">
+                <div style="padding-left: 32px"><span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; padding: 3px 6px; border-radius: 6px; border: 1px solid {{c.border}}; background: {{c.raised}}; color: {{c.t2}}">{{r.kind}}</span></div>
+              </sc-if>
+
+              <sc-if value="{{r.isLogged}}" hint-placeholder-val="{{false}}">
+                <button aria-label="Edit set {{r.n}}" style="height: 44px; border: 0; border-radius: 10px; background: {{c.raised}}; display: flex; align-items: center; gap: 6px; padding: 0 10px 0 0; text-align: left">
+                  <span style="width: 32px; text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; color: {{c.tm}}">{{r.n}}</span>
+                  <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 15px; font-variant-numeric: tabular-nums; color: {{c.t1}}">{{r.w}}<span style="font-size: 10px; font-weight: 500; color: {{c.tm}}"> kg</span> × {{r.reps}}</span>
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{c.t2}}">{{r.rirText}}</span>
+                  <span style="margin-left: auto; display: flex; align-items: center; gap: 4px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 9px; letter-spacing: 0.15em; color: {{r.statusFg}}">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="{{c.tm}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right: 12px"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg><sc-if value="{{r.synced}}" hint-placeholder-val="{{true}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg></sc-if>{{r.status}}</span>
+                </button>
+              </sc-if>
+
+              <sc-if value="{{r.isInput}}" hint-placeholder-val="{{true}}">
+                <div style="display: flex; align-items: center; gap: 5px; padding: {{r.pad}}; border-radius: 12px; background: {{r.rowBg}}; border: 1px solid {{r.rowBd}}">
+                  <span style="width: 27px; text-align: center; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; color: {{r.numFg}}">{{r.n}}</span>
+                  <button aria-label="Weight" style="width: 76px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.surface}}; color: {{c.t1}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 15px; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 0">{{r.w}}<span style="font-size: 10px; font-weight: 500; color: {{c.tm}}">kg</span></button>
+                  <span style="width: 8px; text-align: center; font-size: 11px; color: {{c.td}}">×</span>
+                  <button aria-label="Reps" style="width: 54px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.surface}}; color: {{r.repsFg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: {{r.repsSize}}; padding: 0">{{r.reps}}</button>
+                  <sc-if value="{{r.hasRir}}" hint-placeholder-val="{{true}}">
+                    <button aria-label="RIR" style="width: 50px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.border}}; background: {{c.surface}}; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0">
+                      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 8px; letter-spacing: 0.1em; color: {{c.tm}}">RIR</span>
+                      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 14px; color: {{c.td}}">{{r.rir}}</span>
+                    </button>
+                  </sc-if>
+                  <a href="{{r.logHref}}" style="flex: 1; min-width: 50px; height: 44px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{r.logBd}}; background: {{r.logBg}}; color: {{r.logFg}}; text-decoration: none; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.12em">LOG</a>
+                  <sc-if value="{{r.hasMore}}" hint-placeholder-val="{{true}}">
+                    <a href="SetSheet.dc.html" aria-label="Set options" style="width: 22px; height: 44px; color: {{c.tm}}; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="12" cy="19" r="1.8"></circle></svg></a>
+                  </sc-if>
+                </div>
+                <sc-if value="{{r.hasCue}}" hint-placeholder-val="{{false}}">
+                  <div style="display: flex; align-items: center; gap: 6px; padding-left: 37px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.12em; color: {{c.accentText}}">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"></path><circle cx="7" cy="7" r="1.5"></circle></svg>{{r.cue}}</div>
+                </sc-if>
+                <sc-if value="{{r.hasCaption}}" hint-placeholder-val="{{true}}">
+                  <div style="display: flex; align-items: center; gap: 10px; padding-left: 37px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em; color: {{c.tm}}">
+                    <span><span style="font-weight: 700; color: {{c.t2}}">LAST</span> {{r.last}}</span>
+                    <sc-if value="{{r.hasAlso}}" hint-placeholder-val="{{false}}">
+                      <span><span style="font-weight: 700; color: {{c.t2}}">{{r.alsoDay}}</span> {{r.also}}</span>
+                    </sc-if>
+                    <sc-if value="{{r.hasCueIcon}}" hint-placeholder-val="{{false}}">
+                      <span style="display: flex; align-items: center; gap: 4px; color: {{c.t2}}" aria-label="This set has a cue"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"></path><circle cx="7" cy="7" r="1.5"></circle></svg>CUE</span>
+                    </sc-if>
+                  </div>
+                </sc-if>
+              </sc-if>
+
+              <sc-if value="{{r.isLocked}}" hint-placeholder-val="{{false}}">
+                <div style="display: flex; align-items: center; gap: 6px; height: 40px; padding-left: 14px; border-radius: 10px; border: 1px dashed {{c.border}}">
+                  <span style="width: 18px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; color: {{c.td}}">↳</span>
+                  <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 13px; color: {{c.tm}}">{{r.w}} kg × {{r.reps}}</span>
+                  <span style="margin-left: auto; padding-right: 12px; display: flex; align-items: center; gap: 5px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.15em; color: {{c.tm}}">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>{{r.lockText}}</span>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+
+        <button style="height: 44px; border-radius: 10px; border: 1px dashed {{c.bstrong}}; background: transparent; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.t2}}">{{card.addLabel}}</button>
+      </div>
+    </sc-for>
+
+    <button style="height: 48px; border-radius: 12px; border: 1px dashed {{c.bstrong}}; background: transparent; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.t2}}">+ ADD EXERCISE</button>
+    <a href="SessionComplete.dc.html" style="height: 52px; box-sizing: border-box; border-radius: 10px; border: 1px solid {{c.bstrong}}; background: {{c.surface}}; text-decoration: none; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 12px; letter-spacing: 0.2em; color: {{c.t1}}">FINISH SESSION</a>
+  </div>
+
+  <div style="margin-top: auto; border-top: 1px solid {{c.border}}; background: {{c.surface}}; padding: 10px 16px; display: flex; align-items: center; gap: 12px">
+    <div style="flex: 1; display: flex; flex-direction: column; gap: 6px">
+      <div style="display: flex; align-items: baseline; gap: 8px">
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">REST</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 22px; font-variant-numeric: tabular-nums; color: {{c.t1}}">1:12</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{c.tm}}">/ 2:00</span>
+      </div>
+      <div style="height: 4px; border-radius: 2px; background: {{c.raised}}; overflow: hidden"><div style="width: 60%; height: 4px; background: {{c.accent}}"></div></div>
+    </div>
+    <button style="height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid {{c.accent}}; background: {{c.accentMuted}}; color: {{c.accentText}}; display: flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 11px; letter-spacing: 0.12em">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M19 12l-7 7-7-7"></path></svg>SET 03</button>
+    <button aria-label="Hide rest timer" style="width: 36px; height: 44px; border: 0; background: transparent; color: {{c.tm}}; display: flex; align-items: center; justify-content: center; padding: 0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"></path></svg></button>
+  </div>
+
+  <nav style="height: 64px; border-top: 1px solid {{c.bsub}}; background: {{c.surface}}; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center">
+    <sc-for list="{{nav}}" as="t" hint-placeholder-count="6">
+      <a href="#" aria-current="{{t.current}}" style="display: flex; flex-direction: column; align-items: center; gap: 5px; text-decoration: none; color: {{t.fg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.1em">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.d}}"></path></svg>{{t.label}}</a>
+    </sc-for>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"$preview":{"width":390,"height":2076}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', success: '#166534', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', success: '#4ade80', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const SW = { ORANGE: ['#d06c08', '#f28e42', '#a55506', '#f28e42'], AMBER: ['#b38007', '#dc9e12', '#8b640f', '#dc9e12'], LIME: ['#759a11', '#95bb46', '#587502', '#95bb46'], MINT: ['#13a377', '#1fc893', '#0d7a58', '#1fc893'], CYAN: ['#1a9bae', '#17c0d6', '#147684', '#17c0d6'], BLUE: ['#378bee', '#6eadfe', '#096acb', '#6eadfe'], INDIGO: ['#797aee', '#9ba0fe', '#5f5dce', '#9ba0fe'], VIOLET: ['#a36bdc', '#c190f6', '#884fbe', '#c190f6'], PINK: ['#cf59a2', '#ec81c0', '#b03c86', '#ec81c0'] };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const S = SW[this.props.accent] || SW.BLUE;
+    const D = theme === 'dark';
+    const c = Object.assign({}, P[theme], { accent: D ? S[1] : S[0], onAccent: '#0d0d0c', accentText: D ? S[3] : S[2], accentMuted: (D ? S[1] : S[0]) + '26' });
+
+    const base = { isLabel: false, label: '', hasKind: false, kind: '', isLogged: false, isInput: false, isLocked: false, hasCue: false, cue: '', hasCueIcon: false, hasAlso: false, also: '', alsoDay: '', hasCaption: false, hasRir: true, hasMore: true, synced: false, status: '', statusFg: c.success, rirText: '', lockText: '', last: '', repsSize: '15px' };
+    const label = (t) => Object.assign({}, base, { isLabel: true, label: t });
+    const logged = (n, w, reps, rir, pending) => Object.assign({}, base, {
+      isLogged: true, n, w, reps, rirText: rir ? '@ RIR ' + rir : '',
+      synced: !pending, status: pending ? 'SYNC' : '', statusFg: pending ? c.accentText : c.success
+    });
+    const input = (o) => {
+      const cur = !!o.current;
+      const range = /[–A-Z]/.test(o.reps);
+      return Object.assign({}, base, {
+        isInput: true, n: o.n, w: o.w, reps: o.reps, rir: o.rir || '–',
+        repsFg: range ? c.td : c.t1, repsSize: o.reps.length > 3 ? '12px' : '15px', numFg: cur ? c.accentText : c.tm,
+        pad: cur ? '6px 6px 6px 0' : '0px',
+        rowBg: cur ? c.accentMuted : 'transparent', rowBd: cur ? c.accent : 'transparent',
+        logHref: cur ? 'Workout.dc.html' : 'WorkoutLogOrder.dc.html',
+        logBg: cur ? c.accent : c.surface, logBd: cur ? c.accent : c.bstrong, logFg: cur ? c.onAccent : c.t1,
+        hasKind: !!o.kind, kind: o.kind || '',
+        hasCaption: !o.warm, last: o.last || 'FIRST TIME',
+        hasAlso: !!o.also, also: o.also || '', alsoDay: o.alsoDay || '',
+        hasCue: cur && !!o.cue, cue: o.cue || '', hasCueIcon: !cur && !!o.cue,
+        hasRir: !o.warm, hasMore: !o.warm
+      });
+    };
+    const locked = (w, reps, txt) => Object.assign({}, base, { isLocked: true, w, reps, lockText: txt });
+    const head = (o) => ({ name: o.name, meta: o.meta, ref: o.ref, hasTempo: !!o.tempo, tempo: o.tempo || '', hasLetter: !!o.letter, letter: o.letter || '' });
+
+    const cards = [
+      { isSS: false, addLabel: '+ ADD SET',
+        heads: [head({ name: 'Lat Pulldown', meta: 'BACK', ref: 'LAST = LAST WEEK, TUE' })],
+        rows: [
+          logged('01', '55', '9', '2'),
+          logged('02', '55', '8', '1', true),
+          input({ n: '03', w: '52.5', reps: '8–10', rir: '1', current: true, kind: 'DROPSET · 1 DROP', last: '52.5 × 10 @ 1', cue: 'PUSH HERE' }),
+          locked('40', 'AMRAP', 'AFTER SET 03')
+        ] },
+      { isSS: true, addLabel: '+ ADD ROUND',
+        heads: [
+          head({ name: 'Seated Cable Row', meta: 'BACK', ref: 'LAST = LAST WEEK, TUE', letter: 'A' }),
+          head({ name: 'Face Pull', meta: 'REAR DELTS', ref: 'LAST = LAST WEEK, TUE · ALSO MON', letter: 'B' })
+        ],
+        rows: [
+          label('ROUND 1'),
+          logged('A1', '60', '12', '2'),
+          logged('B1', '15', '18', '1'),
+          label('ROUND 2'),
+          input({ n: 'A2', w: '60', reps: '10–12', rir: '1–2', last: '60 × 11 @ 2' }),
+          input({ n: 'B2', w: '17.5', reps: '15–20', rir: '1', last: '15 × 17 @ 1', also: '17.5 × 15 @ 1', alsoDay: 'MON', cue: 'FOCUS ON EXECUTION' }),
+          label('ROUND 3'),
+          input({ n: 'A3', w: '60', reps: '10–12', rir: '1–2', last: '60 × 10 @ 2' })
+        ] },
+      { isSS: false, addLabel: '+ ADD SET',
+        heads: [head({ name: 'EZ Bar Curl', meta: 'BICEPS', ref: 'LAST = LAST WEEK, TUE', tempo: '3-0-1-0' })],
+        rows: [
+          input({ n: 'W', w: '20', reps: '12', warm: true }),
+          input({ n: '01', w: '30', reps: '8', rir: '1', last: '30 × 8 @ 1' }),
+          input({ n: '02', w: '30', reps: 'AMRAP', rir: '0', last: '30 × 9 @ 0', cue: 'PUSH HERE' })
+        ] }
+    ];
+    const ICONS = {
+      TODAY: 'M6.5 6.5l11 11M21 21l-1-1M3 3l1 1M18 22l4-4M2 6l4-4M3 10l7-7M14 21l7-7',
+      PLAN: 'M3 4h7v7H3zM3 14h7v7H3zM14 4h7M14 9h7M14 15h7M14 20h7',
+      PROGRESS: 'M22 7l-8.5 8.5-5-5L2 17M16 7h6v6',
+      HISTORY: 'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20zM12 6v6l4 2',
+      LIBRARY: 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z',
+      SETTINGS: 'M12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6zM12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1'
+    };
+    const nav = Object.keys(ICONS).map((k) => ({ label: k, d: ICONS[k], current: k === 'TODAY' ? 'page' : 'false', fg: k === 'TODAY' ? c.accentText : c.tm }));
+    return { c, cards, nav };
+  }
+}
+</script>
+</body>
+</html>
+

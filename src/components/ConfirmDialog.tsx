@@ -6,10 +6,13 @@
 // red vs the app's normal accent colour for the confirm action, so a truly
 // irreversible outcome (hard delete) reads differently from a reversible
 // one (move to Lost).
+//
+// Chunk 65: `pendingLabel` is what the confirm button says while `isPending` (default "…", as before): PR7 draws "FINISHING…".
 export default function ConfirmDialog({
   title,
   body,
   confirmLabel = 'CONFIRM',
+  pendingLabel = '…',
   danger,
   isPending,
   onConfirm,
@@ -18,6 +21,7 @@ export default function ConfirmDialog({
   title: string
   body: React.ReactNode
   confirmLabel?: string
+  pendingLabel?: string
   danger?: boolean
   isPending?: boolean
   onConfirm: () => void
@@ -57,6 +61,8 @@ export default function ConfirmDialog({
             letterSpacing: '0.5px',
             color: 'var(--text-primary)',
             marginBottom: 12,
+            // a name typed by the person ("Finish [name]?", PR6) may have no break in it: it wraps inside the dialog (Chromium: it ran out of it)
+            overflowWrap: 'anywhere',
           }}
         >
           {title}
@@ -101,7 +107,7 @@ export default function ConfirmDialog({
               background: danger ? 'var(--error)' : 'var(--accent)',
               border: 'none',
               borderRadius: 10,
-              color: 'var(--base)',
+              color: danger ? 'var(--base)' : 'var(--on-accent)',
               fontFamily: 'var(--font-mono)',
               fontWeight: 700,
               fontSize: 12,
@@ -110,7 +116,7 @@ export default function ConfirmDialog({
               opacity: isPending ? 0.6 : 1,
             }}
           >
-            {isPending ? '…' : confirmLabel}
+            {isPending ? pendingLabel : confirmLabel}
           </button>
         </div>
       </div>

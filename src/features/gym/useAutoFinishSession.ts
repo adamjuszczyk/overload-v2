@@ -6,12 +6,15 @@ import type { Session, WeekPlan } from '../../types'
 
 const CHECK_INTERVAL_MS = 30_000
 
-// Auto-completes a session once every planned set (across all exercises) has
-// a corresponding set_log row and the most recently logged set is older than
-// the user's configured inactivity threshold. Runs entirely client-side —
-// completion goes through useCompleteSession so it queues offline the same
-// way a manual FINISH SESSION does.
-export function useAutoFinishSession(session: Session | undefined, weekPlan: WeekPlan | null) {
+// Auto-completes a session once the workout's rows say nothing is left (`nothingLeft`: the finish warning is empty and no open row is a drop of a
+// planned set or a planned warmup, `useWorkoutRows`; a set a swap moved from a planned set counts as planned, DECISIONS 201 (a)) and the most recently logged set is older than the user's configured inactivity threshold. Runs entirely client-side — completion goes
+// through useCompleteSession so it queues offline the same way a manual FINISH SESSION does.
+//
+// Chunk 61 (DECISIONS 166 (a), Adam 2026-10-16): "waits for what the workout's rows say is left (the same view as the finish warning)" instead of a
+// log on every planned set id, which a planned set deleted during the workout never gets (its row is gone, so the session could never finish). The
+// option he took: "no row of `resolveRows` is open. That covers working sets, drops and planned warmups, with deleted sets out and retyped drops
+// in. A set added in the session and never logged doesn't hold it, as today." The threshold and the grace window are as they were. A plan with no sets at all, and a session with no log, never finish by themselves, as before.
+export function useAutoFinishSession(session: Session | undefined, weekPlan: WeekPlan | null, nothingLeft: boolean) {
   const autoFinishMinutes = useSettingsStore((s) => s.autoFinishMinutes)
   const completeSession = useCompleteSession()
   const showToast = useToastStore((s) => s.show)
@@ -41,8 +44,7 @@ export function useAutoFinishSession(session: Session | undefined, weekPlan: Wee
       if (Date.now() - armedAtRef.current < autoFinishMinutes * 60_000) return
 
       const logs = session.setLogs ?? []
-      const allLogged = plannedSetIds.every((id) => logs.some((l) => l.weekPlanSetId === id))
-      if (!allLogged) return
+      if (!nothingLeft) return
 
       const lastLoggedAt = logs.reduce<string | null>(
         (max, l) => (max === null || l.loggedAt > max ? l.loggedAt : max),
@@ -75,5 +77,5 @@ export function useAutoFinishSession(session: Session | undefined, weekPlan: Wee
     check()
     const id = setInterval(check, CHECK_INTERVAL_MS)
     return () => clearInterval(id)
-  }, [autoFinishMinutes, session, weekPlan, completeSession, showToast])
+  }, [autoFinishMinutes, session, weekPlan, nothingLeft, completeSession, showToast])
 }

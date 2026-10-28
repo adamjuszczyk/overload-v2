@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
-import { MemoryRouter, useParams } from 'react-router-dom'
+import { useState } from 'react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { MemoryRouter, useNavigate, useParams } from 'react-router-dom'
 import { DEFAULT_SETTINGS } from './features/settings/settingsStore'
 
 // Chunk 26 (TASKS.md: "App.tsx routes: /program → the Programs page;
@@ -40,7 +41,22 @@ vi.mock('./features/library/useExercises', () => ({
 
 vi.mock('./features/auth/LoginPage', () => ({ default: () => <div>LOGIN PAGE</div> }))
 vi.mock('./features/gym/TodayPage', () => ({ default: () => <div>TODAY PAGE</div> }))
-vi.mock('./features/plan/PlanPage', () => ({ default: () => <div>PLAN PAGE</div> }))
+// PlanPage's own tab choice is its state, made once when the page is mounted (`initialTab`, else none, which is the page choosing by whether a
+// program runs): this stand-in keeps the same kind of state, so the route table's `key`s are provable (the two routes must start a new page).
+vi.mock('./features/plan/PlanPage', () => ({
+  default: function PlanPageStub({ initialTab }: { initialTab?: string }) {
+    const navigate = useNavigate()
+    const [openedOn] = useState(initialTab ?? 'auto')
+    return (
+      <div>
+        PLAN PAGE tab={openedOn}
+        <button onClick={() => navigate('/plan')}>GO TO /plan</button>
+        <button onClick={() => navigate('/plan?week=1')}>GO TO /plan?week=1</button>
+        <button onClick={() => navigate('/program')}>GO TO /program</button>
+      </div>
+    )
+  },
+}))
 vi.mock('./features/plan/PrioritiesEditor', () => ({ default: () => <div>PRIORITIES EDITOR</div> }))
 vi.mock('./features/progress/ProgressPage', () => ({ default: () => <div>PROGRESS PAGE</div> }))
 vi.mock('./features/history/HistoryPage', () => ({ default: () => <div>HISTORY PAGE</div> }))
@@ -50,9 +66,14 @@ vi.mock('./features/history/ExerciseHistoryPage', () => ({
 vi.mock('./features/history/SessionTypeHistoryPage', () => ({
   default: () => <div>SESSION TYPE HISTORY workoutDayId={useParams().workoutDayId}</div>,
 }))
-vi.mock('./features/programs/ProgramsPage', () => ({ default: () => <div>PROGRAMS PAGE</div> }))
 vi.mock('./features/planner/PlannerPage', () => ({
   default: () => <div>PLANNER PAGE programId={useParams().programId}</div>,
+}))
+vi.mock('./features/programs/FinishedProgramPage', () => ({
+  default: () => <div>FINISHED PROGRAM mesocycleId={useParams().mesocycleId}</div>,
+}))
+vi.mock('./features/programs/FinishedProgramPriorities', () => ({
+  default: () => <div>FINISHED PROGRAM PRIORITIES mesocycleId={useParams().mesocycleId}</div>,
 }))
 vi.mock('./features/coach/MesoPrioritiesPage', () => ({
   default: () => <div>MESO PRIORITIES mesocycleId={useParams().mesocycleId}</div>,
@@ -83,14 +104,40 @@ function renderAt(path: string) {
 }
 
 describe('App routes — chunk 26: /program and /program/:id', () => {
-  it('/program renders the Programs page (ProgramsPage.tsx — PROGRAM is gone from the bar, reached from Plan\'s header instead)', () => {
+  it('/program renders Plan opened on PROGRAMS (chunk 65: ProgramsPage is gone, the page at /program is the PROGRAMS tab of Plan)', () => {
     renderAt('/program')
-    expect(screen.getByText('PROGRAMS PAGE')).toBeTruthy()
+    expect(screen.getByText(/PLAN PAGE tab=programs/)).toBeTruthy()
   })
 
   it('/program/:programId renders the planner, with the real id from the URL — an old deep link to a specific program still resolves', () => {
     renderAt('/program/prog-42')
     expect(screen.getByText('PLANNER PAGE programId=prog-42')).toBeTruthy()
+  })
+})
+
+// The two routes share one component, and React keeps a component's state across a change between two elements of the same type in the
+// same place: going from /program to /plan would keep the PROGRAMS tab the first one opened on, so the nav's PLAN ("opens straight into the
+// week") and START's `/plan?week=1` would land on PROGRAMS. Each route's element has a key of its own, so the other starts a new page.
+describe('App routes — chunk 65: going between /plan and /program starts a new Plan, which opens on its own tab', () => {
+  it('/program → /plan: the page opens on its own choice again, not on the PROGRAMS tab /program opened it on', () => {
+    renderAt('/program')
+    expect(screen.getByText(/PLAN PAGE tab=programs/)).toBeTruthy()
+    fireEvent.click(screen.getByText('GO TO /plan'))
+    expect(screen.getByText(/PLAN PAGE tab=auto/)).toBeTruthy()
+    expect(screen.queryByText(/PLAN PAGE tab=programs/)).toBeNull()
+  })
+
+  it('/program → /plan?week=1 (START from the PROGRAMS route): the same', () => {
+    renderAt('/program')
+    fireEvent.click(screen.getByText('GO TO /plan?week=1'))
+    expect(screen.getByText(/PLAN PAGE tab=auto/)).toBeTruthy()
+  })
+
+  it('/plan → /program: PROGRAMS, not whatever the Plan that was open had chosen', () => {
+    renderAt('/plan')
+    expect(screen.getByText(/PLAN PAGE tab=auto/)).toBeTruthy()
+    fireEvent.click(screen.getByText('GO TO /program'))
+    expect(screen.getByText(/PLAN PAGE tab=programs/)).toBeTruthy()
   })
 })
 
@@ -105,9 +152,9 @@ describe('App routes — old deep links resolve unchanged', () => {
     expect(screen.getByText('TODAY PAGE')).toBeTruthy()
   })
 
-  it('/plan → PlanPage', () => {
+  it('/plan → PlanPage, which chooses its own tab (no tab is passed: the week, or PROGRAMS when no program runs)', () => {
     renderAt('/plan')
-    expect(screen.getByText('PLAN PAGE')).toBeTruthy()
+    expect(screen.getByText(/PLAN PAGE tab=auto/)).toBeTruthy()
   })
 
   it('/plan/priorities → PrioritiesEditor', () => {
@@ -133,6 +180,16 @@ describe('App routes — old deep links resolve unchanged', () => {
   it('/session-type/:workoutDayId → SessionTypeHistoryPage, with the real id', () => {
     renderAt('/session-type/wd-3')
     expect(screen.getByText('SESSION TYPE HISTORY workoutDayId=wd-3')).toBeTruthy()
+  })
+
+  it('chunk 66: /program/finished/:mesocycleId → the finished program, and /program/finished/:mesocycleId/priorities its editor, each with the real id; neither is the planner (/program/:programId)', () => {
+    renderAt('/program/finished/meso-7')
+    expect(screen.getByText('FINISHED PROGRAM mesocycleId=meso-7')).toBeTruthy()
+    expect(screen.queryByText(/PLANNER PAGE/)).toBeNull()
+    cleanup()
+    renderAt('/program/finished/meso-7/priorities')
+    expect(screen.getByText('FINISHED PROGRAM PRIORITIES mesocycleId=meso-7')).toBeTruthy()
+    expect(screen.queryByText(/PLANNER PAGE/)).toBeNull()
   })
 
   it('/meso/:mesocycleId/priorities → MesoPrioritiesPage (Coach, untouched by this chunk), with the real id', () => {

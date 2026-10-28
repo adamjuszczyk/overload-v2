@@ -75,10 +75,16 @@ describe('SupersetLinkToggle', () => {
 })
 
 describe('BlockRestEditor', () => {
-  it('without everyWeek: no EVERY WEEK and no aria-labels on its steppers (the planner\'s markup)', () => {
+  it('without everyWeek: no EVERY WEEK; its steppers are named as board PP2 names them (chunk 68), its title is SUPERSET REST', () => {
     render(<BlockRestEditor blockId="b1" rest={null} onChange={() => {}} />)
     expect(screen.queryByText('EVERY WEEK')).toBeNull()
-    for (const button of screen.getAllByRole('button')) expect(button.hasAttribute('aria-label')).toBe(false)
+    expect(screen.getByText('SUPERSET REST')).toBeTruthy()
+    expect(screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Less rest within round',
+      'More rest within round',
+      'Less rest after round',
+      'More rest after round',
+    ])
     expect(screen.getByText('NO TIMER')).toBeTruthy()
     expect(screen.getByText('PER EXERCISE')).toBeTruthy()
   })

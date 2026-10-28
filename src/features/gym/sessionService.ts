@@ -13,6 +13,9 @@ import type {
 } from '../../types'
 import { groupSetLogs, type SetGroup } from './setGroupLogic'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from './sessionCompletion'
+import { parseSwapRecord } from './exerciseSwapLogic'
+import type { SwapRecord } from './workoutRules'
+import { toSessionSetChangeRecords, type DbSessionSetChange } from './sessionSetChangesService'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
@@ -57,9 +60,11 @@ type DbSetLog = {
   form_rating?: string | null
   // Absent until migration 027 has been applied.
   stage_kind?: string | null
+  // Absent until migration 044 has been applied (chunk 46m; read from chunk 46).
+  added_place?: number | null
 }
 
-type DbSession = {
+export type DbSession = {
   id: string
   user_id: string
   mesocycle_id: string | null
@@ -72,6 +77,8 @@ type DbSession = {
   completed_at: string | null
   created_at: string
   v2_set_logs?: DbSetLog[]
+  // Chunk 61 (migration 042): the session's change rows, embedded by `fetchSession` (and by REVIEW's reads, which map them their own way).
+  v2_session_set_changes?: DbSessionSetChange[] | null
   // Absent until migration 016 has been applied.
   energy_rating?: string | null
   pump_rating?: string | null
@@ -127,10 +134,14 @@ function toSetLog(row: DbSetLog): SetLog {
     // Chunk 14 — heads only; a stage row's own value is always null (the
     // DB's own check). Same fallback as formRating above.
     stageKind: (row.stage_kind ?? null) as SetLog['stageKind'],
+    // Chunk 46 (DECISIONS 174): an added set's place; null on every other
+    // log, and absent (read as null) until 044 is applied where this runs.
+    addedPlace: row.added_place ?? null,
   }
 }
 
-function toSession(row: DbSession): Session {
+// Exported for chunk 56 (REVIEW reads last week's sessions with their logs in one paged request and maps them as `fetchSession` does).
+export function toSession(row: DbSession): Session {
   return {
     id: row.id,
     userId: row.user_id,
@@ -144,6 +155,8 @@ function toSession(row: DbSession): Session {
     completedAt: row.completed_at,
     createdAt: row.created_at,
     setLogs: row.v2_set_logs?.map(toSetLog).sort((a, b) => a.loggedAt.localeCompare(b.loggedAt)),
+    // Chunk 61: what the session did to its sets that a log can't say (042). Absent when the select didn't ask for it.
+    ...(row.v2_session_set_changes != null ? { setChanges: toSessionSetChangeRecords(row.v2_session_set_changes) } : {}),
     // Same "column may not exist yet" fallback as toSetLog's formRating.
     energyRating: (row.energy_rating ?? null) as EnergyRating | null,
     pumpRating: (row.pump_rating ?? null) as PumpRating | null,
@@ -153,8 +166,32 @@ function toSession(row: DbSession): Session {
   }
 }
 
+// A queued row as a `v2_set_logs` row: the columns a log may leave out, or hold as `undefined` (a structured clone keeps an `undefined` value), are null (or false), as the table
+// would hold them. The row's required columns are checked by `queuedSetLogsFor` before it gets here.
+function asDbSetLog(row: Record<string, unknown>): DbSetLog {
+  const read = { ...row }
+  for (const column of ['weight', 'reps', 'rir', 'note', 'parent_set_id', 'week_plan_set_id', 'rest_seconds']) read[column] = read[column] ?? null
+  for (const column of ['is_dropset', 'is_skipped']) read[column] = read[column] ?? false
+  return read as unknown as DbSetLog
+}
+
+// DECISIONS 239. The set logs this phone still has to send for the session (`queuedSetLogsFor`: the sync queue's rows, in the shape the table takes) are part of what the
+// workout draws, whatever the server answered: the server has never seen them, so its read of the session leaves them out. A log the server already holds is not added a
+// second time (a reply lost on a locked phone leaves the upsert queued beside the row; the server's copy has the exercise joined). The logs stay in `loggedAt` order,
+// as `toSession` leaves them.
+export function withQueuedSetLogs(session: Session, queued: ReadonlyArray<Record<string, unknown>>): Session {
+  const held = new Set((session.setLogs ?? []).map((log) => log.id))
+  const missing = queued.filter((row) => !held.has(row.id as string)).map((row) => toSetLog(asDbSetLog(row)))
+  if (missing.length === 0) return session
+  return { ...session, setLogs: [...(session.setLogs ?? []), ...missing].sort((a, b) => a.loggedAt.localeCompare(b.loggedAt)) }
+}
+
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 
+// The sessions of a window: those dated in it, and those MOVED into it (DECISIONS 241). A session moved in Plan to a day before its own (Wednesday's to today,
+// Tuesday) keeps its own `date`, so a read by `date` alone never returned it for the days up to the day it was moved to, and Today, which finds a session by its
+// effective day (`moved_to_date ?? date`), could not see it. A row dated in the window and moved out of it is still returned (the scheduler needs it to know the
+// day's slot was vacated).
 export async function fetchSessionsInRange(
   startDate: string,
   endDate: string,
@@ -162,8 +199,7 @@ export async function fetchSessionsInRange(
   const { data, error } = await supabase
     .from('v2_sessions')
     .select('*')
-    .gte('date', startDate)
-    .lte('date', endDate)
+    .or(`and(date.gte.${startDate},date.lte.${endDate}),and(moved_to_date.gte.${startDate},moved_to_date.lte.${endDate})`)
   if (error) throw error
   return (data as DbSession[]).map(toSession)
 }
@@ -193,9 +229,12 @@ export async function fetchLastDoneOrSkippedSession(mesoId: string): Promise<Ses
 }
 
 export async function fetchSession(id: string): Promise<Session> {
+  // Chunk 61: the session's change rows come with its logs, so the workout draws both as the database held them at one instant (a deleted
+  // planned set is a change row, and a read of the logs alone would bring it back as an open row). `v2_session_set_changes.session_id` is
+  // its only FK to `v2_sessions`; `check-embeds-local.sh` resolves the embed in CI.
   const { data, error } = await supabase
     .from('v2_sessions')
-    .select('*, v2_set_logs(*, exercises(*))')
+    .select('*, v2_set_logs(*, exercises(*)), v2_session_set_changes(*)')
     .eq('id', id)
     .single()
   if (error) throw error
@@ -278,7 +317,7 @@ export async function completeSession(
   id: string,
   note: string | null,
   // Optional, additive params, not a signature rewrite (TASKS.md §2.4) — two
-  // call sites: SessionComplete.tsx passes them; useAutoFinishSession.ts
+  // call sites: FinishScreen.tsx passes them; useAutoFinishSession.ts
   // deliberately doesn't (an automatically finished session has no UI moment
   // to collect a rating, so both stay null — the correct "not rated" state,
   // not a gap).
@@ -584,6 +623,10 @@ export async function logSet(params: {
   // handleLogWarmup (useExerciseCardState.ts) is the one real caller that
   // ever sets it to true.
   isWarmup?: boolean
+  // Chunk 58a (DECISIONS 174, 177; 46m's mapping): an added set's place among the sets added to its exercise, written with the
+  // head log of a set made by + ADD SET or + ADD ROUND and nowhere else (a planned set, a drop and a skip of a planned set leave
+  // the key out, so their rows are the ones this function always wrote).
+  addedPlace?: number | null
 }): Promise<SetLog> {
   const { data, error } = await supabase
     .from('v2_set_logs')
@@ -614,6 +657,7 @@ export async function logSet(params: {
       form_rating: params.formRating,
       stage_kind: params.stageKind,
       is_warmup: params.isWarmup,
+      ...(params.addedPlace != null ? { added_place: params.addedPlace } : {}),
     })
     .select('*, exercises(*)')
     .single()
@@ -629,6 +673,12 @@ export async function updateSetLog(
     rir?: number | null
     setNumber?: number
     formRating?: FormRating | null
+    // Chunk 61 (DECISIONS 147 (a)): the last drop of a logged set deleted makes it a normal set, so its log loses its stage kind.
+    // Chunk 62 (SPEC 19): a set's type changed on its log is these two columns, in one patch, with the weight and reps when a warmup logged
+    // with neither is made a working set (DECISIONS 152: the table refuses the type alone, 035's `v2_set_logs_check`, 23514). A head's
+    // `stage_index` is always 0 and a drop's never changes, so no change of type patches it.
+    stageKind?: StageKind | null
+    isWarmup?: boolean
   },
 ): Promise<void> {
   const patch: Record<string, unknown> = {}
@@ -640,6 +690,8 @@ export async function updateSetLog(
   // — form must be too, or two controls that sit side by side behave
   // inconsistently for no reason (TASKS.md §4 item 4).
   if ('formRating' in changes) patch.form_rating = changes.formRating
+  if ('stageKind' in changes) patch.stage_kind = changes.stageKind
+  if ('isWarmup' in changes) patch.is_warmup = changes.isWarmup
 
   const { error } = await supabase.from('v2_set_logs').update(patch).eq('id', id)
   if (error) throw error
@@ -1003,6 +1055,10 @@ export interface ExerciseSwap {
   replacementExerciseId: string | null
   replacementExerciseName: string
   createdAt: string
+  // Chunk 59 (migration 047; DECISIONS 183, 46r's Q5): the record of which sets the swap moved, stored with the swap's own row and never
+  // inferred from the logs. Absent or null on every swap before 047 (and on a row whose column holds anything but the record's shape):
+  // the swap is then drawn as 58a draws it, two cards with no set moved (DECISIONS 198).
+  movedSets?: SwapRecord | null
 }
 
 type DbExerciseSwap = {
@@ -1014,6 +1070,7 @@ type DbExerciseSwap = {
   replacement_exercise_id: string | null
   replacement_exercise_name: string
   created_at: string
+  moved_sets?: unknown
 }
 
 function toExerciseSwap(row: DbExerciseSwap): ExerciseSwap {
@@ -1026,6 +1083,7 @@ function toExerciseSwap(row: DbExerciseSwap): ExerciseSwap {
     replacementExerciseId: row.replacement_exercise_id,
     replacementExerciseName: row.replacement_exercise_name,
     createdAt: row.created_at,
+    movedSets: parseSwapRecord(row.moved_sets),
   }
 }
 
@@ -1038,6 +1096,9 @@ export async function recordExerciseSwap(params: {
   programExerciseId: string
   originalExercise: Exercise
   replacementExercise: Exercise
+  // Chunk 59 (migration 047): the record of which sets moved, written with the row and never inferred from the logs (Q5). Required:
+  // a swap saved without it would be drawn as one that moved nothing.
+  movedSets: SwapRecord
 }): Promise<ExerciseSwap> {
   const { data, error } = await supabase
     .from('v2_session_exercise_swaps')
@@ -1049,6 +1110,7 @@ export async function recordExerciseSwap(params: {
       original_exercise_name: params.originalExercise.name,
       replacement_exercise_id: params.replacementExercise.id,
       replacement_exercise_name: params.replacementExercise.name,
+      moved_sets: params.movedSets,
     })
     .select('*')
     .single()

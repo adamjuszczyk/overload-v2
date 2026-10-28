@@ -6,7 +6,7 @@ type Tab = 'exercise' | 'meso'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'exercise', label: 'EXERCISE' },
-  { id: 'meso', label: 'MESO OVERVIEW' },
+  { id: 'meso', label: 'PROGRAM OVERVIEW' },
 ]
 
 export default function ProgressPage() {

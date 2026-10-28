@@ -70,26 +70,23 @@ vi.mock('../programs/usePrograms', () => ({
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useReview', () => ({ useReview: () => ({ status: 'ready', groups: [], count: 0, error: null }) })) // REVIEW's line (chunk 56): nothing differed here
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
+// Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
+vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
-  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   // Chunk 21 - the week-level mark/unmark action's own hook.
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useSwapWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeSetType: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 // Chunk 24 — this component owns its own hooks (useSessionsInRange via

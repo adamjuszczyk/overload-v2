@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { format } from 'date-fns'
 import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, WeekPlanSet, Exercise } from '../../types'
 import { EMPTY_SCHEDULE } from '../programs/programService'
+import { lbsToKg } from '../../lib/weightUnit'
 
 // Chunk 19 (SPEC "Targets" — "Weight targets: per set, in the week plan
 // only. Never in the program"; reviewer's note: "entered and shown in the
@@ -74,26 +75,23 @@ vi.mock('../programs/usePrograms', () => ({
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useReview', () => ({ useReview: () => ({ status: 'ready', groups: [], count: 0, error: null }) })) // REVIEW's line (chunk 56): nothing differed here
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
+// Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
+vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
-  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   // Chunk 21 - the week-level mark/unmark action's own hook.
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useSwapWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeSetType: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 // Chunk 24 — this component owns its own hooks (useSessionsInRange via
@@ -193,6 +191,38 @@ describe('PlanPage — weight target editor (chunk 19)', () => {
     expect(updateSetMutate).not.toHaveBeenCalled()
   })
 
+  // Chunk 54a (board 9, "WEIGHT · NOT A NUMBER", draws "5o"): a number is digits with at most one decimal separator. The editor this one replaced
+  // read "5o" as 5 (parseFloat) and wrote it.
+  it.each(['5o', '12abc', '1e3', '0x10', '12.5.3', '1 2', '+5', 'Infinity', '.', ','])('"%s" is not a number: refused inline, nothing written', (typed) => {
+    updateSetMutate.mockClear()
+    mockState.plans = [makePlan([makeSet({})])]
+    renderPlanPage()
+
+    openWeightEditor()
+    const input = screen.getByLabelText('Weight target')
+    fireEvent.change(input, { target: { value: typed } })
+    fireEvent.blur(input)
+
+    expect(updateSetMutate).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert').textContent).toBe('Enter a valid weight')
+    expect((input as HTMLInputElement).value).toBe(typed)
+  })
+
+  it.each([['100', 100], ['100.5', 100.5], ['100,5', 100.5], ['.5', 0.5], ['  80  ', 80], ['0', 0], ['12.', 12]])('"%s" is a number: written as %s lbs, in kg', (typed, lbs) => {
+    updateSetMutate.mockClear()
+    mockState.plans = [makePlan([makeSet({})])]
+    renderPlanPage()
+
+    openWeightEditor()
+    const input = screen.getByLabelText('Weight target')
+    fireEvent.change(input, { target: { value: typed } })
+    fireEvent.blur(input)
+
+    expect(updateSetMutate).toHaveBeenCalledTimes(1)
+    expect(updateSetMutate).toHaveBeenCalledWith({ id: 'set-1', changes: { targetWeight: lbsToKg(lbs) } })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('re-committing the same displayed value writes nothing (no spurious update)', () => {
     updateSetMutate.mockClear()
     mockState.plans = [makePlan([makeSet({ targetWeight: 102.06 })])]
@@ -206,6 +236,41 @@ describe('PlanPage — weight target editor (chunk 19)', () => {
     expect(updateSetMutate).not.toHaveBeenCalled()
   })
 
+  // Chunk 54a's review (R54-W1): 102.06 kg above is 225 lbs exactly, so that test passes whichever way the box converts. A stored kg that does not
+  // survive the display's rounding is the case the guard is for: 9 kg shows as 19.8 lbs, and 19.8 converted again is 8.98 kg, not 9.
+  it('9 kg shows as 19.8lbs, and 19.8 typed again writes nothing (the stored kg stays 9); 20 writes lbsToKg(20) (break: every edit converts the typed figure)', () => {
+    updateSetMutate.mockClear()
+    mockState.plans = [makePlan([makeSet({ targetWeight: 9 })])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByRole('button', { name: '19.8lbs' }))
+    const same = screen.getByLabelText('Weight target') as HTMLInputElement
+    expect(same.value).toBe('19.8')
+    fireEvent.change(same, { target: { value: '19.8' } })
+    fireEvent.blur(same)
+    expect(updateSetMutate).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: '19.8lbs' }))
+    const other = screen.getByLabelText('Weight target')
+    fireEvent.change(other, { target: { value: '20' } })
+    fireEvent.blur(other)
+    expect(updateSetMutate.mock.calls).toEqual([[{ id: 'set-1', changes: { targetWeight: lbsToKg(20) } }]])
+  })
+
+  // Chunk 54a's review (R54-W3): every test above commits with a blur.
+  it('Enter in the weight box writes the typed weight without a blur first (break: the Enter handler removed)', () => {
+    updateSetMutate.mockClear()
+    mockState.plans = [makePlan([makeSet({ targetWeight: 102.06 })])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByRole('button', { name: '225lbs' }))
+    const input = screen.getByLabelText('Weight target') as HTMLInputElement
+    input.focus()
+    fireEvent.change(input, { target: { value: '230' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(updateSetMutate.mock.calls).toEqual([[{ id: 'set-1', changes: { targetWeight: lbsToKg(230) } }]])
+  })
+
   it('a dropset stage also gets its own, independent weight target (reviewer\'s note: stages already edit RIR-style fields, so weight/reps follow)', () => {
     updateSetMutate.mockClear()
     mockState.plans = [makePlan([
@@ -217,5 +282,30 @@ describe('PlanPage — weight target editor (chunk 19)', () => {
     // Head "—", stage "135lbs" (61.23kg -> lbs) — two independent editors.
     expect(screen.getByRole('button', { name: '—' })).toBeTruthy()
     expect(screen.getByRole('button', { name: '135lbs' })).toBeTruthy()
+  })
+
+  // Independent-review break W5 (chunk 54a sweep): the stage's box wired to its head's id passed every test, because the stage's weight was only
+  // ever drawn here, never typed.
+  it('typing on a stage row writes THAT stage row (not its head), a blank clears it, and the head keeps its own', () => {
+    updateSetMutate.mockClear()
+    mockState.plans = [makePlan([
+      makeSet({ id: 'head', setNumber: 1, targetWeight: 45.36 }),
+      makeSet({ id: 'stage', setNumber: 1, isDropset: true, parentWeekPlanSetId: 'head', stageIndex: 1, targetWeight: 61.23 }),
+    ])]
+    renderPlanPage()
+
+    fireEvent.click(screen.getByRole('button', { name: '135lbs' })) // the stage's box; the head's reads 100lbs
+    const typed = screen.getByLabelText('Weight target')
+    fireEvent.change(typed, { target: { value: '120' } })
+    fireEvent.blur(typed)
+    expect(updateSetMutate.mock.calls).toEqual([[{ id: 'stage', changes: { targetWeight: lbsToKg(120) } }]])
+
+    updateSetMutate.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: '135lbs' }))
+    const cleared = screen.getByLabelText('Weight target')
+    fireEvent.change(cleared, { target: { value: '' } })
+    fireEvent.blur(cleared)
+    expect(updateSetMutate.mock.calls).toEqual([[{ id: 'stage', changes: { targetWeight: null } }]])
+    expect(screen.getByRole('button', { name: '100lbs' })).toBeTruthy() // the head was not touched (the mock writes nothing; its box is as it was)
   })
 })

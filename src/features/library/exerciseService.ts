@@ -1,6 +1,7 @@
 import { supabase } from '../../lib/supabase'
 import { toMuscleGroup } from '../../lib/muscleGroup'
 import { withUserLock } from '../../lib/locks'
+import { queuedSetsNamingExercise } from '../offline/useSyncQueue'
 import { DEFAULT_EXERCISES } from './defaultExercises'
 import type {
   Exercise,
@@ -232,7 +233,9 @@ export async function previewExerciseDelete(id: string): Promise<ExerciseDeleteP
     .select('id', { count: 'exact', head: true })
     .eq('exercise_id', id)
   if (error) throw error
-  const setCount = count ?? 0
+  // DECISIONS 230: a log this phone still has to send is a log of the exercise. Counted on the server alone, an exercise whose only sets were logged offline reads as having no
+  // history and is deleted for good, and the queued log is then refused `23503` (`v2_set_logs.exercise_id` has no delete action) at every pass for ever. Kept as lost, it lands.
+  const setCount = (count ?? 0) + (await queuedSetsNamingExercise(id))
   const outcome: ExerciseLifecycle = setCount > 0 ? 'lost' : 'gone'
   if (outcome === 'lost') return { outcome, setCount, programNames: [] }
 

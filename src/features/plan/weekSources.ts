@@ -11,20 +11,21 @@
 // source into a new week. A week-to-week copy (every case below except a
 // fresh "from program" one) is a straight old-id → new-id remap — weight,
 // RIR, rep targets and everything else ride along for free because the
-// source row already has them (weekPlanService.ts's copySetsWithGrouping /
-// copyExercisesForward do this client-side; v2_plan_week does the SQL
-// equivalent). A fresh "from program" copy (stable; week 1 of either type)
+// source row already has them (v2_plan_week does this in SQL; the client copy
+// of a week, removed in chunk 52, did it too). A fresh "from program" copy (stable; week 1 of either type)
 // has no weight/RIR of its own to carry — v2_program_sets has no such
 // columns, "week plan only, never in the program" — so mapping the last
 // planned week's weight/RIR onto the newly copied sets is a second, later
 // step with no TS equivalent at all: no client caller ever performs that
-// specific copy (the manual COPY WEEK/COPY THIS WORKOUT actions only ever
-// copy week-to-week — see weekPlanService.ts's copyOneWorkoutFromHistory —
-// since a real stable program can't even be created before chunk 11). That
+// specific copy (the manual COPY WEEK/COPY THIS WORKOUT actions, removed in
+// chunk 52, only ever copied week-to-week, since a real stable program
+// couldn't even be created before chunk 11). That
 // mapping rule is written down once, in the migration's own comment.
 
+// Chunk 53 (TASKS-1.2; SPEC [1.2], Objects stored -> Settings): "The 'new week starts' setting is removed". Migration 045's
+// v2_plan_week no longer reads `week_start`, so the `WeekStartSetting` type and the 'empty' branch of resolveWeekSources are gone
+// from here; a week-dependent week beyond week 1 is empty only when it has no usable source (DECISIONS 42).
 export type PlanningType = 'stable' | 'week_dependent'
-export type WeekStartSetting = 'copy' | 'empty'
 
 // One planned occurrence of ONE workout, as far as source selection cares.
 // Callers pass only this workout's own history — a different workout in
@@ -89,10 +90,9 @@ export function findLastUsableWeek(
 export function resolveWeekSources(input: {
   planningType: PlanningType
   weekNumber: number
-  weekStart: WeekStartSetting
   priorWeeks: PlannedWeekRecord[]
 }): WeekSourceDecision {
-  const { planningType, weekNumber, weekStart, priorWeeks } = input
+  const { planningType, weekNumber, priorWeeks } = input
   const lastUsable = findLastUsableWeek(priorWeeks, weekNumber)
   const weightRir: WeightRirSource =
     lastUsable === null ? { kind: 'none' } : { kind: 'week', weekNumber: lastUsable }
@@ -102,19 +102,15 @@ export function resolveWeekSources(input: {
     // SPEC: "stable → the run's copy, always" / "week-dependent → ...
     // week 1 from the run copy".
     volume = { kind: 'program' }
-  } else if (weekStart === 'empty') {
-    // SPEC: "a setting lets weeks start empty instead" — governs the
-    // AUTOMATIC fill only; the manual copy actions below don't consult it.
-    volume = { kind: 'empty' }
   } else if (lastUsable !== null) {
     volume = { kind: 'week', weekNumber: lastUsable }
   } else {
-    // week_start = 'copy' but there is nothing usable to copy yet (e.g.
-    // this workout's only prior occurrence(s) were all deload, all empty,
-    // or it has never been planned at all) — SPEC names exactly two
-    // sources for a week-dependent week beyond week 1 ("the last planned
-    // [usable] week", or empty); with neither available, empty is what's
-    // left.
+    // Nothing usable to copy yet (e.g. this workout's only prior
+    // occurrence(s) were all deload, all empty, or it has never been planned
+    // at all) — SPEC names exactly two sources for a week-dependent week
+    // beyond week 1 ("the last planned [usable] week", or empty); with
+    // neither available, empty is what's left. [1.2] There is no setting
+    // that makes a week start empty any more.
     volume = { kind: 'empty' }
   }
 

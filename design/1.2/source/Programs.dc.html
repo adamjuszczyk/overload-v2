@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Programs</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 390px; height: {{boardH}}px; box-sizing: border-box; background: {{c.base}}; display: flex; flex-direction: column; font-family: 'Archivo', sans-serif; color: {{c.t1}}">
+
+  <div style="padding: 14px 16px 14px; border-bottom: 1px solid {{c.bsub}}; display: flex; flex-direction: column; gap: 8px; position: relative">
+    <div role="tablist" aria-label="Plan or programs" style="display: flex; align-items: flex-end; gap: 20px; min-height: 44px">
+      <a href="{{planHref}}" role="tab" aria-selected="false" aria-disabled="{{planDisabled}}" style="padding-bottom: 6px; border-bottom: 3px solid transparent; text-decoration: none; display: flex; align-items: center; gap: 6px; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; line-height: 1; letter-spacing: -0.01em; color: {{planFg}}">PLAN<sc-if value="{{noRun}}" hint-placeholder-val="{{false}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></sc-if></a>
+      <span role="tab" aria-selected="true" style="padding-bottom: 6px; border-bottom: 3px solid {{c.accent}}; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 30px; line-height: 1; letter-spacing: -0.01em; color: {{c.t1}}">PROGRAMS</span>
+    </div>
+    <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">{{subline}}</span>
+    <sc-if value="{{showHint}}" hint-placeholder-val="{{false}}">
+      <div role="status" style="position: absolute; left: 12px; top: 64px; z-index: 2; max-width: 300px; box-sizing: border-box; padding: 12px 14px; border-radius: 10px; background: {{c.t1}}; color: {{c.base}}; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 6px 20px rgba(0,0,0,0.18)">
+        <span aria-hidden="true" style="position: absolute; left: 30px; top: -6px; width: 12px; height: 12px; background: {{c.t1}}; transform: rotate(45deg)"></span>
+        <span style="font-family: 'Archivo', sans-serif; font-weight: 700; font-size: 14px">Start a program to plan your weeks.</span>
+      </div>
+    </sc-if>
+  </div>
+
+  <div style="padding: 20px 16px; display: flex; flex-direction: column; gap: 22px">
+
+    <sc-if value="{{showCurrent}}" hint-placeholder-val="{{true}}">
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">CURRENT PROGRAM</span>
+      <sc-if value="{{isLoading}}" hint-placeholder-val="{{false}}">
+        <div role="status" aria-label="Loading" style="height: 120px; border: 1px solid {{c.border}}; border-radius: 12px; background: {{c.surface}}; display: flex; align-items: center; justify-content: center">
+          <span style="width: 22px; height: 22px; box-sizing: border-box; border-radius: 11px; border: 2px solid {{c.bstrong}}; border-top-color: {{c.accent}}"></span>
+        </div>
+      </sc-if>
+      <sc-if value="{{isNone}}" hint-placeholder-val="{{false}}">
+        <div style="border: 1px dashed {{c.bstrong}}; border-radius: 12px; padding: 18px 16px; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-weight: 700; font-size: 16px; color: {{c.t1}}">No program running</span>
+          <span style="font-size: 13px; line-height: 1.5; color: {{c.t2}}">START one of your programs below. Its weeks then show in PLAN.</span>
+        </div>
+      </sc-if>
+      <sc-if value="{{isDefault}}" hint-placeholder-val="{{true}}">
+      <div style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-top: 3px solid {{c.accent}}; border-radius: 12px; display: flex; flex-direction: column">
+        <div style="padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 10px">
+          <div style="display: flex; align-items: center; gap: 12px">
+            <span style="padding: 6px 10px; border-radius: 8px; background: {{c.accent}}; color: {{c.onAccent}}; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 800; font-size: 13px">WEEK 2</span>
+            <span style="font-weight: 700; font-size: 22px; color: {{c.t1}}">Push Pull Legs</span>
+          </div>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.05em; line-height: 1.6; color: {{c.t2}}; white-space: pre-line">Started Oct 5, 2026
+Weekdays · stable · 5 days a week</span>
+        </div>
+        <div style="padding: 0 16px; display: flex; flex-direction: column">
+          <a href="PlanPriorities.dc.html" style="display: flex; justify-content: space-between; align-items: center; min-height: 44px; border-top: 1px solid {{c.bsub}}; text-decoration: none">
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">FOCUS</span>
+            <span style="display: flex; align-items: center; gap: 6px; font-size: 14px; color: {{c.t1}}">Chest, back
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+          </a>
+          <a href="PlanPriorities.dc.html" style="display: flex; justify-content: space-between; align-items: center; min-height: 44px; border-top: 1px solid {{c.bsub}}; text-decoration: none">
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">DON'T CARE</span>
+            <span style="display: flex; align-items: center; gap: 6px; font-size: 14px; color: {{c.t1}}">Calves, forearms
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+          </a>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid {{c.bsub}}">
+          <a href="Planner.dc.html" style="height: 52px; display: flex; align-items: center; justify-content: center; gap: 8px; border-right: 1px solid {{c.bsub}}; text-decoration: none; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; letter-spacing: 0.15em; color: {{c.accentText}}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"></path></svg>EDIT PROGRAM</a>
+          <a href="EndMeso.dc.html" style="height: 52px; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; letter-spacing: 0.15em; color: {{c.t1}}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 22V4M4 4h12l-2 4 2 4H4"></path></svg>FINISH</a>
+        </div>
+      </div>
+      <span style="font-size: 12px; line-height: 1.5; color: {{c.tm}}">Finishing keeps every week in History. The program stays saved below, so you can start it again.</span>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{isEmpty}}" hint-placeholder-val="{{false}}">
+      <div style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-radius: 12px; padding: 22px 18px; display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 900; font-size: 20px; line-height: 1.15; color: {{c.t1}}">No programs yet</span>
+        <span style="font-size: 14px; line-height: 1.5; color: {{c.t2}}">A program is your training plan: workouts, exercises and sets. Make one, then START it to plan your weeks.</span>
+        <a href="ProgramsNewSheet.dc.html" style="width: 100%; height: 52px; box-sizing: border-box; border-radius: 10px; background: {{c.accent}}; color: {{c.onAccent}}; text-decoration: none; display: flex; align-items: center; justify-content: center; font-family: 'Archivo', sans-serif; font-stretch: 125%; font-weight: 800; font-size: 15px; letter-spacing: 0.03em">NEW PROGRAM</a>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{showSaved}}" hint-placeholder-val="{{true}}">
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; align-items: center">
+        <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">YOUR PROGRAMS</span>
+        <a href="ProgramsNewSheet.dc.html" style="height: 44px; box-sizing: border-box; padding: 0 12px; border-radius: 10px; border: 1px dashed {{c.bstrong}}; background: transparent; text-decoration: none; display: flex; align-items: center; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.15em; color: {{c.t2}}">+ NEW PROGRAM</a>
+      </div>
+      <sc-for list="{{programs}}" as="p" hint-placeholder-count="2">
+        <div style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-radius: 12px; display: flex; flex-direction: column">
+          <div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 6px">
+            <span style="display: flex; align-items: center; gap: 8px">
+              <span style="font-weight: 600; font-size: 17px; color: {{c.t1}}">{{p.name}}</span>
+              <sc-if value="{{p.running}}" hint-placeholder-val="{{false}}"><span style="padding: 3px 6px; border-radius: 6px; border: 1px solid {{c.accent}}; background: {{c.accentMuted}}; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 9px; letter-spacing: 0.15em; color: {{c.accentText}}">RUNNING</span></sc-if>
+            </span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">{{p.meta}}</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid {{c.bsub}}">
+            <a href="PlannerPriorities.dc.html" style="height: 48px; display: flex; align-items: center; justify-content: center; border-right: 1px solid {{c.bsub}}; text-decoration: none; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; letter-spacing: 0.2em; color: {{c.t2}}">OPEN</a>
+            <a href="{{p.startHref}}" style="height: 48px; text-decoration: none; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 11px; letter-spacing: 0.2em; color: {{c.accentText}}">START</a>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{showFinished}}" hint-placeholder-val="{{true}}">
+    <div style="display: flex; flex-direction: column; gap: 10px">
+      <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.2em; color: {{c.tm}}">FINISHED</span>
+      <sc-for list="{{finished}}" as="f" hint-placeholder-count="2">
+        <a href="MesoHistory.dc.html" style="background: {{c.surface}}; border: 1px solid {{c.border}}; border-radius: 12px; padding: 14px 16px; text-decoration: none; display: flex; justify-content: space-between; align-items: center; gap: 12px">
+          <span style="display: flex; flex-direction: column; gap: 6px">
+            <span style="font-weight: 600; font-size: 17px; color: {{c.t1}}">{{f.name}}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 10px; letter-spacing: 0.1em; line-height: 1.5; color: {{c.tm}}">{{f.meta}}</span>
+          </span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{c.tm}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </a>
+      </sc-for>
+    </div>
+    </sc-if>
+  </div>
+
+  <nav style="margin-top: auto; height: 64px; border-top: 1px solid {{c.bsub}}; background: {{c.surface}}; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: center">
+    <sc-for list="{{nav}}" as="t" hint-placeholder-count="6">
+      <a href="#" aria-current="{{t.current}}" style="display: flex; flex-direction: column; align-items: center; gap: 5px; text-decoration: none; color: {{t.fg}}; font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 9px; letter-spacing: 0.1em">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{t.d}}"></path></svg>{{t.label}}</a>
+    </sc-for>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["light","dark"],"default":"light"},"accent":{"editor":"enum","options":["BLUE","CYAN","ORANGE","AMBER","LIME","MINT","INDIGO","VIOLET","PINK"],"default":"BLUE"},"state":{"editor":"enum","options":["default","none","empty","loading"],"default":"default"},"hint":{"editor":"enum","options":["off","on"],"default":"off"},"$preview":{"width":390,"height":1040}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const P = {
+      light: { base: '#f9f9f8', surface: '#ffffff', raised: '#f2f2f0', overlay: '#e8e8e6', bsub: '#e8e8e6', border: '#d8d8d5', bstrong: '#8a8a85', t1: '#0d0d0c', t2: '#4a4a47', tm: '#62625e', td: '#9a9a96', error: '#b91c1c', success: '#166534', scrim: 'rgba(13,13,12,0.45)' },
+      dark: { base: '#0c0c0e', surface: '#18181c', raised: '#212126', overlay: '#2b2b31', bsub: '#2a2a30', border: '#3b3b43', bstrong: '#70707a', t1: '#f4f3ef', t2: '#bcbcc2', tm: '#9a9aa2', td: '#6e6e77', error: '#f87171', success: '#4ade80', scrim: 'rgba(0,0,0,0.70)' }
+    };
+    const SW = { ORANGE: ['#d06c08', '#f28e42', '#a55506', '#f28e42'], AMBER: ['#b38007', '#dc9e12', '#8b640f', '#dc9e12'], LIME: ['#759a11', '#95bb46', '#587502', '#95bb46'], MINT: ['#13a377', '#1fc893', '#0d7a58', '#1fc893'], CYAN: ['#1a9bae', '#17c0d6', '#147684', '#17c0d6'], BLUE: ['#378bee', '#6eadfe', '#096acb', '#6eadfe'], INDIGO: ['#797aee', '#9ba0fe', '#5f5dce', '#9ba0fe'], VIOLET: ['#a36bdc', '#c190f6', '#884fbe', '#c190f6'], PINK: ['#cf59a2', '#ec81c0', '#b03c86', '#ec81c0'] };
+    const theme = this.props.theme === 'dark' ? 'dark' : 'light';
+    const S = SW[this.props.accent] || SW.BLUE;
+    const D = theme === 'dark';
+    const c = Object.assign({}, P[theme], { accent: D ? S[1] : S[0], onAccent: '#0d0d0c', accentText: D ? S[3] : S[2], accentMuted: (D ? S[1] : S[0]) + '26' });
+    const ICONS = {
+      TODAY: 'M6.5 6.5l11 11M21 21l-1-1M3 3l1 1M18 22l4-4M2 6l4-4M3 10l7-7M14 21l7-7',
+      PLAN: 'M3 4h7v7H3zM3 14h7v7H3zM14 4h7M14 9h7M14 15h7M14 20h7',
+      PROGRESS: 'M22 7l-8.5 8.5-5-5L2 17M16 7h6v6',
+      HISTORY: 'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20zM12 6v6l4 2',
+      LIBRARY: 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2zM22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z',
+      SETTINGS: 'M12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6zM12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1'
+    };
+    const nav = Object.keys(ICONS).map((k) => ({ label: k, d: ICONS[k], current: k === 'PLAN' ? 'page' : 'false', fg: k === 'PLAN' ? c.accentText : c.tm }));
+    const state = ['none', 'empty', 'loading'].includes(this.props.state) ? this.props.state : 'default';
+    const isDefault = state === 'default', isNone = state === 'none', isEmpty = state === 'empty', isLoading = state === 'loading';
+    const noRun = isNone || isEmpty;
+    const programs = isDefault ? [
+      { name: 'Push Pull Legs', meta: 'WEEKDAYS · STABLE · 5 DAYS A WEEK', running: true, startHref: 'ProgramsStartActive.dc.html' },
+      { name: 'Upper / Lower', meta: 'WEEKDAYS · WEEK-DEPENDENT · 4 DAYS', running: false, startHref: 'ProgramsStartActive.dc.html' }
+    ] : isNone ? [
+      { name: 'Push Pull Legs', meta: 'WEEKDAYS · STABLE · 5 DAYS A WEEK', running: false, startHref: 'ProgramsStartSheet.dc.html' },
+      { name: 'Upper / Lower', meta: 'WEEKDAYS · WEEK-DEPENDENT · 4 DAYS', running: false, startHref: 'ProgramsStartSheet.dc.html' }
+    ] : [];
+    return {
+      c, nav, boardH: isDefault ? 1040 : isNone ? 880 : 844,
+      isDefault, isNone, isEmpty, isLoading, noRun,
+      showCurrent: !isEmpty, showSaved: isDefault || isNone, showFinished: isDefault || isNone,
+      showHint: this.props.hint === 'on',
+      planHref: noRun ? 'PlanEmpty.dc.html' : 'Main.dc.html', planDisabled: noRun ? 'true' : 'false', planFg: noRun ? c.td : c.tm,
+      subline: isDefault ? 'PUSH PULL LEGS · WEEK 2' : isLoading ? 'LOADING' : 'NO PROGRAM RUNNING',
+      programs,
+      finished: [
+        { name: 'Push Pull Legs', meta: 'SEP 14 – OCT 4, 2026 · 3 WEEKS' },
+        { name: 'Cut PPL', meta: 'JUL 5 – SEP 12, 2026 · 10 WEEKS' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
+

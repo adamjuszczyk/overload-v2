@@ -1,21 +1,21 @@
 // @vitest-environment jsdom
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { format } from 'date-fns'
 import type { Mesocycle, Program, WorkoutDay, ProgramExercise, WeekPlan, WeekPlanSet, Exercise } from '../../types'
 import { EMPTY_SCHEDULE } from '../programs/programService'
 
 // Chunk 14 — "Staged sets: all four stage kinds" (SPEC.md), the week-plan
-// authoring half: PlanSetGroup labels each stage row by its head's
-// resolved kind and, once a head has at least one real stage, offers a
-// STAGE KIND chip row (RatingChips, same component/look FORM rating
-// already uses) to set it. Same mocking recipe as
-// PlanPage.repTargets.test.tsx, extended with a capturable useUpdateSet
-// mock so the chip tap's own write can be asserted.
-// Chunk 29: the kind marker shows in both views (SETS is the default), and the
-// kind controls (ADD STAGE, the STAGE KIND chips) are in the STRUCTURE view's
-// set ⋯, so a test that opens one opens that view first.
+// authoring half: a staged head is marked by its resolved kind, and the kind
+// is set on the head. Chunk 54a moved both: the mark is the kind chip above the
+// head's row ("DROPSET · 1 DROP"), and the kind is picked in the set type
+// picker (the set's ⋯), whose one pick is a list of week writes in order
+// (`useChangeSetType`: the head's stage_kind, then the stage rows added or
+// removed). What the old STAGE KIND chip row and ADD STAGE wrote is what the
+// picker writes now: the same service calls (updateSet on the head, addStage).
+// Same mocking recipe as PlanPage.repTargets.test.tsx, extended with
+// capturable mutations so the picks' own writes can be asserted.
 
 afterEach(() => cleanup())
 beforeEach(() => {
@@ -65,43 +65,39 @@ function makePlan(sets: WeekPlanSet[]): WeekPlan {
 
 const mockState: { plans: WeekPlan[] } = { plans: [] }
 const updateSetMutate = vi.fn()
+const changeTypeMutate = vi.fn()
 
 vi.mock('../programs/useMesos', () => ({ useMesos: () => ({ data: [activeMeso], isLoading: false }) }))
 vi.mock('../programs/usePrograms', async () => ({
-  ...(await import('./structureHooks.testutil')).quietProgramsHooks,
   usePrograms: () => ({ data: [makeProgram()], isLoading: false }),
   useWorkoutDays: () => ({ data: [workoutDay], isLoading: false }),
   useProgramExercises: () => ({ data: [], isLoading: false }),
   useSequenceItems: () => ({ data: [] }),
 }))
-// Chunk 30: the STRUCTURE view's run-wide fields call these hooks (StructureFields.tsx); this
-// file's tests open the view for other reasons, so they get quiet stand-ins (no program sets).
+// The set type picker (a set's ⋯) reads the exercise's program sets for its rest row; this file gives it none.
 vi.mock('../planner/usePlanner', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../planner/usePlanner')>()),
-  ...(await import('./structureHooks.testutil')).quietPlannerHooks,
+  ...(await import('./plannerHooks.testutil')).quietPlannerHooks,
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useReview', () => ({ useReview: () => ({ status: 'ready', groups: [], count: 0, error: null }) })) // REVIEW's line (chunk 56): nothing differed here
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
+// Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
+vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
-  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   // Chunk 21 - the week-level mark/unmark action's own hook.
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: updateSetMutate }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useSwapWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeSetType: () => ({ mutate: changeTypeMutate, isPending: false }),
 }))
 
 // Chunk 24 — this component owns its own hooks (useSessionsInRange via
@@ -113,7 +109,7 @@ vi.mock('./useWeekPlan', () => ({
 vi.mock('./MoveSessionControl', () => ({ default: () => null }))
 
 const { default: PlanPage } = await import('./PlanPage')
-const { openSetMenu, openStructureView } = await import('./planMenus.testutil')
+const { openSetMenu } = await import('./planMenus.testutil')
 
 function renderPlanPage() {
   return render(
@@ -123,67 +119,147 @@ function renderPlanPage() {
   )
 }
 
-describe('PlanPage — a head with no stages shows no STAGE KIND chip row yet', () => {
-  it('no chip row, no kind label — nothing staged to label', () => {
+const picker = () => within(screen.getByRole('dialog', { name: 'What is this set?' }))
+const kind = (name: string) => picker().getByRole('button', { name: new RegExp(`^${name}`) })
+const isPicked = (name: string) => kind(name).getAttribute('aria-pressed') === 'true'
+const staged = (kindOfHead: WeekPlanSet['stageKind'] = null, stages = 1) => [
+  makeSet({ id: 'head', setNumber: 1, stageKind: kindOfHead }),
+  ...Array.from({ length: stages }, (_, i) => makeSet({ id: `stage-${i + 1}`, setNumber: 1, isDropset: true, parentWeekPlanSetId: 'head', stageIndex: i + 1 })),
+]
+
+describe('PlanPage — a head with no stages shows no kind chip yet', () => {
+  it('no chip, no kind label — nothing staged to label; the set\'s ⋯ opens the picker on Normal, with no ADD STAGE and no STAGE KIND', () => {
     mockState.plans = [makePlan([makeSet({})])]
     renderPlanPage()
     expect(screen.queryByText('STAGE KIND')).toBeNull()
     expect(screen.queryByText('DROPSET')).toBeNull()
-    // UI rule (2026-10-10): ADD STAGE is not on the row, it's in the set's ⋯.
-    expect(screen.queryByText('ADD STAGE')).toBeNull()
-    openStructureView()
+    expect(screen.queryByText(/ · \d+ (DROP|PAUSE|MINI-SET|CLUSTER)/)).toBeNull() // the kind chip
+    // UI rule (2026-10-10): the kinds are not on the row, they're in the set's ⋯ ...
     expect(screen.queryByText('ADD STAGE')).toBeNull()
     openSetMenu(1)
-    expect(screen.getByText('ADD STAGE')).toBeTruthy()
+    // ... as one list; a plain set is Normal; the stage kinds are rows of it, not an ADD STAGE.
+    expect(isPicked('Normal')).toBe(true)
+    for (const name of ['Warmup', 'Dropset', 'Rest-pause', 'Myo-reps', 'Cluster']) expect(isPicked(name), name).toBe(false)
+    expect(screen.queryByText('ADD STAGE')).toBeNull()
     expect(screen.queryByText('STAGE KIND')).toBeNull()
+    expect(screen.queryByText('DROPS')).toBeNull() // no stepper until a staged kind is picked
   })
 })
 
-describe('PlanPage — a staged head is marked by its resolved kind (chunk 14; marker on the head since the 2026-10-10 UI rule)', () => {
-  it('a legacy/null stage_kind head (today\'s only case) is marked DROPSET; the chip row is in its ⋯', () => {
-    mockState.plans = [makePlan([
-      makeSet({ id: 'head', setNumber: 1 }),
-      makeSet({ id: 'stage', setNumber: 1, isDropset: true, parentWeekPlanSetId: 'head', stageIndex: 1 }),
-    ])]
+describe('PlanPage — a staged head is marked by its resolved kind (chunk 14; the kind chip since chunk 54a)', () => {
+  it('a legacy/null stage_kind head (today\'s only case) is marked DROPSET; the picker opens on Dropset with one drop', () => {
+    mockState.plans = [makePlan(staged(null, 1))]
     renderPlanPage()
-    // By default: one compact marker on the head, no chip row.
+    // By default: one compact marker on the head, no picker.
     expect(screen.queryByText('STAGE KIND')).toBeNull()
-    expect(screen.getAllByText('DROPSET')).toHaveLength(1)
-    openStructureView()
+    expect(screen.getAllByText('DROPSET · 1 DROP')).toHaveLength(1)
+    expect(screen.queryByRole('dialog')).toBeNull()
     openSetMenu(1)
-    expect(screen.getByText('STAGE KIND')).toBeTruthy()
-    // The marker plus the (active) DROPSET chip in the menu.
-    expect(screen.getAllByText('DROPSET')).toHaveLength(2)
+    expect(isPicked('Dropset')).toBe(true)
+    expect(isPicked('Normal')).toBe(false)
+    expect(picker().getByText('DROPS')).toBeTruthy()
+    expect(picker().getByText('1')).toBeTruthy()
   })
 
-  it('a head planned with stageKind "rest_pause" is marked REST-PAUSE', () => {
-    mockState.plans = [makePlan([
-      makeSet({ id: 'head', setNumber: 1, stageKind: 'rest_pause' }),
-      makeSet({ id: 'stage', setNumber: 1, isDropset: true, parentWeekPlanSetId: 'head', stageIndex: 1 }),
-    ])]
+  it('a head planned with stageKind "rest_pause" is marked REST-PAUSE, and the picker opens on Rest-pause', () => {
+    mockState.plans = [makePlan(staged('rest_pause', 1))]
     renderPlanPage()
-    expect(screen.getAllByText('REST-PAUSE')).toHaveLength(1)
-    openStructureView()
+    expect(screen.getAllByText('REST-PAUSE · 1 PAUSE')).toHaveLength(1)
     openSetMenu(1)
-    // Same reasoning — the head's marker, and the active chip.
-    expect(screen.getAllByText('REST-PAUSE')).toHaveLength(2)
+    expect(isPicked('Rest-pause')).toBe(true)
+    expect(isPicked('Dropset')).toBe(false)
+    expect(picker().getByText('PAUSES')).toBeTruthy()
+  })
+
+  it('the chip counts the stage rows the head really has, in the kind\'s own noun', () => {
+    mockState.plans = [makePlan(staged('myo_reps', 3))]
+    renderPlanPage()
+    expect(screen.getByText('MYO-REPS · 3 MINI-SETS')).toBeTruthy()
+    expect(screen.getAllByText('↳')).toHaveLength(3)
+  })
+
+  it('the kind chip opens the same picker the ⋯ does', () => {
+    mockState.plans = [makePlan(staged('dropset', 2))]
+    renderPlanPage()
+    fireEvent.click(screen.getByText('DROPSET · 2 DROPS'))
+    expect(isPicked('Dropset')).toBe(true)
   })
 })
 
-describe('PlanPage — the STAGE KIND chip row writes the head\'s own stage_kind (chunk 14)', () => {
-  it('tapping CLUSTER calls useUpdateSet with {id: head.id, changes: {stageKind: "cluster"}}', () => {
+// The one pick is a list of week writes (`useChangeSetType`'s ops), applied in order; the screen asks for the list and writes none itself.
+describe('PlanPage — the set type picker writes the head\'s own stage_kind and its stage rows (chunk 14; chunk 54a)', () => {
+  const lastTypeChange = () => changeTypeMutate.mock.calls[changeTypeMutate.mock.calls.length - 1]?.[0]
+
+  it('Cluster on a dropset head writes {stageKind: "cluster"} to the head and touches no stage', () => {
+    changeTypeMutate.mockClear()
     updateSetMutate.mockClear()
-    mockState.plans = [makePlan([
-      makeSet({ id: 'head', setNumber: 1 }),
-      makeSet({ id: 'stage', setNumber: 1, isDropset: true, parentWeekPlanSetId: 'head', stageIndex: 1 }),
-    ])]
+    mockState.plans = [makePlan(staged('dropset', 1))]
     renderPlanPage()
 
-    openStructureView()
     openSetMenu(1)
-    fireEvent.click(screen.getByRole('button', { name: 'CLUSTER' }))
+    fireEvent.click(kind('Cluster'))
 
-    expect(updateSetMutate).toHaveBeenCalledTimes(1)
-    expect(updateSetMutate).toHaveBeenCalledWith({ id: 'head', changes: { stageKind: 'cluster' } })
+    expect(changeTypeMutate).toHaveBeenCalledTimes(1)
+    expect(lastTypeChange()).toEqual({ ops: [{ kind: 'updateHead', id: 'head', changes: { stageKind: 'cluster' } }] })
+    expect(updateSetMutate).not.toHaveBeenCalled() // the picker's write is its own list, not a loose update
+  })
+
+  it('Dropset on a plain set writes {stageKind: "dropset"} and adds one stage — the calls ADD STAGE made (parent, number, index 1)', () => {
+    changeTypeMutate.mockClear()
+    mockState.plans = [makePlan([makeSet({ id: 'set-1', setNumber: 2 })])]
+    renderPlanPage()
+
+    openSetMenu(1)
+    fireEvent.click(kind('Dropset'))
+
+    expect(lastTypeChange()).toEqual({
+      ops: [
+        { kind: 'updateHead', id: 'set-1', changes: { stageKind: 'dropset' } },
+        { kind: 'addStage', weekPlanId: 'wp-1', programExerciseId: 'pe-1', parentId: 'set-1', setNumber: 2, stageIndex: 1 },
+      ],
+    })
+  })
+
+  it('the stepper\'s More adds a stage after the last one; Fewer removes the last', () => {
+    changeTypeMutate.mockClear()
+    mockState.plans = [makePlan(staged('dropset', 2))]
+    renderPlanPage()
+
+    openSetMenu(1)
+    fireEvent.click(picker().getByRole('button', { name: 'More drops' }))
+    expect(lastTypeChange()).toEqual({
+      ops: [{ kind: 'addStage', weekPlanId: 'wp-1', programExerciseId: 'pe-1', parentId: 'head', setNumber: 1, stageIndex: 3 }],
+    })
+
+    fireEvent.click(picker().getByRole('button', { name: 'Fewer drops' }))
+    expect(lastTypeChange()).toEqual({ ops: [{ kind: 'removeStage', id: 'stage-2' }] })
+  })
+
+  it('Normal on a staged head removes its stages (the last first) and clears the head\'s kind', () => {
+    changeTypeMutate.mockClear()
+    mockState.plans = [makePlan(staged('rest_pause', 2))]
+    renderPlanPage()
+
+    openSetMenu(1)
+    fireEvent.click(kind('Normal'))
+
+    expect(lastTypeChange()).toEqual({
+      ops: [
+        { kind: 'removeStage', id: 'stage-2' },
+        { kind: 'removeStage', id: 'stage-1' },
+        { kind: 'updateHead', id: 'head', changes: { stageKind: null } },
+      ],
+    })
+  })
+
+  it('a tap on the type the set already is asks for nothing', () => {
+    changeTypeMutate.mockClear()
+    mockState.plans = [makePlan(staged('dropset', 1))]
+    renderPlanPage()
+
+    openSetMenu(1)
+    fireEvent.click(kind('Dropset'))
+
+    expect(changeTypeMutate).not.toHaveBeenCalled()
   })
 })

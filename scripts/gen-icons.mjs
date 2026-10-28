@@ -1,5 +1,7 @@
 // Generates PWA icons using only Node.js built-ins (no npm packages needed).
-// Creates a dark-background circle-ring icon at 192×192 and 512×512.
+// Creates a dark-background circle-ring icon at 192×192 and 512×512: the
+// orange ring for the real app (icon-*.png) and a cyan ring for the staging
+// build (icon-staging-*.png, used when VITE_APP_ENV=staging; vite.config.ts).
 // Run: node scripts/gen-icons.mjs
 
 import { deflateSync } from 'zlib'
@@ -37,9 +39,12 @@ function pngChunk(type, data) {
 
 // ─── Icon rasteriser ─────────────────────────────────────────────────────────
 
-// Background: #060607  Accent ring: #FF8C42
+// Background: #060607  Ring: #FF8C42 (real app) or #22D3EE (staging)
 // The ring is sized so content stays within the maskable safe zone.
-function createIconPng(size) {
+const RING_REAL = [0xff, 0x8c, 0x42]
+const RING_STAGING = [0x22, 0xd3, 0xee]
+
+function createIconPng(size, ring = RING_REAL) {
   const cx = size / 2
   const cy = size / 2
   // Keep ring within the 80% safe circle for maskable use
@@ -56,8 +61,8 @@ function createIconPng(size) {
       const d = Math.sqrt(dx * dx + dy * dy)
       let r, g, b
       if (d >= innerR && d <= outerR) {
-        // Orange ring
-        r = 0xff; g = 0x8c; b = 0x42
+        // The ring
+        ;[r, g, b] = ring
       } else {
         // Dark background
         r = 0x06; g = 0x06; b = 0x07
@@ -89,3 +94,7 @@ writeFileSync('public/icon-192.png', createIconPng(192))
 writeFileSync('public/icon-512.png', createIconPng(512))
 console.log('✓ public/icon-192.png')
 console.log('✓ public/icon-512.png')
+writeFileSync('public/icon-staging-192.png', createIconPng(192, RING_STAGING))
+writeFileSync('public/icon-staging-512.png', createIconPng(512, RING_STAGING))
+console.log('✓ public/icon-staging-192.png')
+console.log('✓ public/icon-staging-512.png')

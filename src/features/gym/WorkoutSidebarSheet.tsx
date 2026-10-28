@@ -50,7 +50,7 @@ export default function WorkoutSidebarSheet({ sessionId, onClose }: WorkoutSideb
                 className="flex-1 py-2 text-xs font-bold tracking-widest"
                 style={{
                   backgroundColor: activeTab === tab.id ? 'var(--accent)' : 'var(--surface)',
-                  color: activeTab === tab.id ? 'var(--base)' : 'var(--text-muted)',
+                  color: activeTab === tab.id ? 'var(--on-accent)' : 'var(--text-muted)',
                   fontFamily: 'var(--font-mono)',
                 }}
               >

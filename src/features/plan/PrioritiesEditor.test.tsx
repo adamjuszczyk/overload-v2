@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { MuscleGroup, Mesocycle, Program } from '../../types'
+import type { MuscleGroup, Mesocycle } from '../../types'
 import type { StoredMark } from '../../lib/priorityMarks'
 import { MUSCLE_GROUPS, MUSCLE_GROUP_LABELS, MUSCLE_SUBGROUP_LABELS } from '../../lib/exerciseTags'
 import type { MuscleSubgroupTag } from '../../lib/exerciseTags'
 import { PRIORITY_TREE } from '../../lib/priorityTags'
+import { captureRender } from '../../testing/captureRender'
 
 // Chunk 28 (SPEC.md Programs and runs [P1.1]: "Priorities are a property of
 // the program. They're set in the planner when the program is built, and
@@ -35,32 +36,26 @@ const activeMeso: Mesocycle = {
   status: 'active', startDate: '2026-01-01', endDate: null, createdAt: '2026-01-01T00:00:00Z',
 }
 
-const program: Program = {
-  id: 'prog-1', userId: 'user-1', name: 'Test Program', schedule: {} as Program['schedule'],
-  workoutDays: [], createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', kind: 'run',
-}
-
 // What the run's program copy has stored (v2_program_priorities rows). Read
 // by the mocked hook at render time, so each test sets it before rendering.
 let rows: StoredMark[] = []
 // Every programId the screen asked priorities for.
 const readProgramIds: Array<string | null> = []
+// The two reads' states (chunk 65: board 12's PRIORITIES frames): what the run list and the marks answer, set per test.
+type Read = { data: unknown; isLoading: boolean; isError: boolean; error?: unknown }
+const reads: { mesos: Read | null; rows: Read | null } = { mesos: null, rows: null }
 
 const mutateMock = vi.fn()
 const useSetPriorityMarkMock = vi.fn(() => ({ mutate: mutateMock, isPending: false }))
 
 vi.mock('../programs/useMesos', () => ({
-  useMesos: () => ({ data: [activeMeso], isLoading: false, isError: false }),
-}))
-
-vi.mock('../programs/usePrograms', () => ({
-  usePrograms: () => ({ data: [program], isLoading: false }),
+  useMesos: () => reads.mesos ?? { data: [activeMeso], isLoading: false, isError: false },
 }))
 
 vi.mock('./useProgramPriorities', () => ({
   useProgramPriorities: (programId: string | null) => {
     readProgramIds.push(programId)
-    return { data: rows, isLoading: false, isError: false }
+    return reads.rows ?? { data: rows, isLoading: false, isError: false }
   },
   // The write hook the screen must NOT use any more (chunk 28). Spied so the
   // test sees a call to the hook itself, not only to its mutate function.
@@ -72,6 +67,8 @@ const { default: PrioritiesEditor } = await import('./PrioritiesEditor')
 afterEach(() => {
   cleanup()
   rows = []
+  reads.mesos = null
+  reads.rows = null
   readProgramIds.length = 0
   mutateMock.mockReset()
   useSetPriorityMarkMock.mockClear()
@@ -274,6 +271,132 @@ describe('PrioritiesEditor — view-only in Plan (chunk 28)', () => {
   })
 })
 
+// Chunk 65 (TASKS-1.2 "The PROGRAMS tab": boards PR5 and 12's PRIORITIES states; SPEC Errors (15)). The header the boards draw, and the three
+// states board 12 draws for this screen: a spinner while it loads, "COULDN'T LOAD PRIORITIES" with the real reason under it (the board's
+// "Check your connection and try again." is for every error, and the Errors rule replaces it), and "No current program".
+describe('PrioritiesEditor — the header and board 12\'s three states (chunk 65)', () => {
+  it('the header: a back arrow named "Back to Programs", the run\'s name in capitals over PRIORITIES', () => {
+    rows = MARKED_RUN
+    renderEditor()
+
+    const back = screen.getByRole('button', { name: 'Back to Programs' })
+    const caption = screen.getByText('TEST MESO')
+    const title = screen.getByRole('heading', { name: 'PRIORITIES' })
+    expect(back.compareDocumentPosition(caption) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(caption.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // the 44 px square the boards draw (a 36 px one was the old header's)
+    expect(back.style.width).toBe('44px')
+    expect(back.style.height).toBe('44px')
+  })
+
+  it('loading: the spinner (its ring written one side at a time), no groups, no error and no "no program" line', () => {
+    reads.mesos = { data: undefined, isLoading: true, isError: false }
+    const { container } = renderEditor()
+
+    const spinner = screen.getByRole('status', { name: 'Loading' })
+    expect(spinner.style.borderTopColor).toBe('var(--accent)')
+    expect(spinner.style.borderLeftColor).toBe('var(--border-strong)')
+    expect(screen.queryByText(MUSCLE_GROUP_LABELS.chest)).toBeNull()
+    expect(screen.queryByText("COULDN'T LOAD PRIORITIES")).toBeNull()
+    expect(screen.queryByText('No current program')).toBeNull()
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('the marks still loading is loading too', () => {
+    reads.rows = { data: undefined, isLoading: true, isError: false }
+    renderEditor()
+    expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy()
+    expect(screen.queryByText(MUSCLE_GROUP_LABELS.chest)).toBeNull()
+  })
+
+  it.each([
+    ['the run list', () => { reads.mesos = { data: undefined, isLoading: false, isError: true, error: { message: 'JWT expired' } } }, 'JWT expired'],
+    ['the marks', () => { reads.rows = { data: undefined, isLoading: false, isError: true, error: { message: 'permission denied for table v2_program_priorities' } } }, 'permission denied for table v2_program_priorities'],
+    ['either, with an Error object', () => { reads.rows = { data: undefined, isLoading: false, isError: true, error: new Error('Failed to fetch') } }, 'Failed to fetch'],
+  ])('%s failed: "COULDN\'T LOAD PRIORITIES" and the REAL reason under it, never the fixed "Check your connection" line', (_name, fail, reason) => {
+    fail()
+    renderEditor()
+
+    const alert = screen.getByRole('alert')
+    expect(within(alert).getByText("COULDN'T LOAD PRIORITIES")).toBeTruthy()
+    expect(within(alert).getByText(reason)).toBeTruthy()
+    expect(document.body.textContent).not.toContain('Check your connection')
+    expect(screen.queryByRole('status')).toBeNull() // not an endless spinner
+    expect(screen.queryByText(MUSCLE_GROUP_LABELS.chest)).toBeNull()
+    // a read that failed is not "no program running": an empty answer and a failed one differ
+    expect(screen.queryByText('No current program')).toBeNull()
+  })
+
+  it('an error with no message says "Something went wrong." (P1.2-5), and "You may be offline." only when the phone is', () => {
+    reads.rows = { data: undefined, isLoading: false, isError: true, error: {} }
+    renderEditor()
+    expect(within(screen.getByRole('alert')).getByText('Something went wrong.')).toBeTruthy()
+    cleanup()
+
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+    reads.rows = { data: undefined, isLoading: false, isError: true, error: {} }
+    renderEditor()
+    expect(within(screen.getByRole('alert')).getByText('You may be offline.')).toBeTruthy()
+    online.mockRestore()
+  })
+
+  it('no program running: "No current program" under a header of the title alone (no run name over it), and no groups', () => {
+    reads.mesos = { data: [], isLoading: false, isError: false }
+    reads.rows = { data: undefined, isLoading: false, isError: false }
+    renderEditor()
+
+    expect(screen.getByText('No current program')).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'PRIORITIES' })).toBeTruthy()
+    expect(screen.queryByText('TEST MESO')).toBeNull()
+    expect(screen.queryByText(MUSCLE_GROUP_LABELS.chest)).toBeNull()
+    expect(screen.queryByText(/NO ACTIVE MESOCYCLE/i)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    // the marks of a run that isn't there are never asked for
+    expect(new Set(readProgramIds)).toEqual(new Set([null]))
+  })
+
+  it('the back arrow goes to PROGRAMS (/program: Plan opened on that tab), whether or not there is history to pop, and does not keep this screen in the history', () => {
+    rows = MARKED_RUN
+    render(
+      <MemoryRouter initialEntries={['/plan', '/plan/priorities']} initialIndex={1}>
+        <PrioritiesEditor />
+        <Where />
+        <GoBack />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Programs' }))
+    expect(screen.getByTestId('where').textContent).toBe('/program')
+    // it replaced this screen's entry: one step back in the history is where it came from, not this screen again
+    fireEvent.click(screen.getByRole('button', { name: 'history back' }))
+    expect(screen.getByTestId('where').textContent).toBe('/plan')
+    cleanup()
+
+    // opened directly (a reload at /plan/priorities): the same
+    render(
+      <MemoryRouter initialEntries={['/plan/priorities']}>
+        <PrioritiesEditor />
+        <Where />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Programs' }))
+    expect(screen.getByTestId('where').textContent).toBe('/program')
+  })
+})
+
+function Where() {
+  const location = useLocation()
+  return <div data-testid="where">{location.pathname}</div>
+}
+
+function GoBack() {
+  const navigate = useNavigate()
+  return (
+    <button type="button" onClick={() => navigate(-1)}>
+      history back
+    </button>
+  )
+}
+
 describe('PrioritiesEditor — checked at 375px', () => {
   it('renders every one of the 12 muscle groups for the active run', () => {
     renderEditor()
@@ -301,5 +424,32 @@ describe('PrioritiesEditor — checked at 375px', () => {
       }
     }
     expect(offenders).toEqual([])
+  })
+})
+
+// Board 12's three PRIORITIES frames, rendered for the 390 px pictures (`CAPTURE_RENDER=1` writes `__fixtures__/priorities-<state>.html`; the pictures
+// are design/1.2/built/12-priorities-<state>.png + .txt). Each test captures first, then asserts the one thing that says the capture is that frame.
+// The frame's reason line reads "Check your connection and try again."; SPEC Errors (15) has the real reason there instead, so the capture shows one.
+describe('PrioritiesEditor: board 12\'s PRIORITIES frames (captured)', () => {
+  it('PRIORITIES · LOADING: the title and a spinner', () => {
+    reads.mesos = { data: undefined, isLoading: true, isError: false }
+    const { container } = renderEditor()
+    captureRender('priorities-loading', container)
+    expect(screen.getByRole('status', { name: 'Loading' })).toBeTruthy()
+  })
+
+  it('PRIORITIES · COULDN\'T LOAD: the title, COULDN\'T LOAD PRIORITIES and the reason', () => {
+    reads.rows = { data: undefined, isLoading: false, isError: true, error: new Error('Failed to fetch') }
+    const { container } = renderEditor()
+    captureRender('priorities-error', container)
+    expect(within(screen.getByRole('alert')).getByText('Failed to fetch')).toBeTruthy()
+  })
+
+  it('PRIORITIES · NO CURRENT PROGRAM: the title and "No current program"', () => {
+    reads.mesos = { data: [], isLoading: false, isError: false }
+    reads.rows = { data: undefined, isLoading: false, isError: false }
+    const { container } = renderEditor()
+    captureRender('priorities-no-program', container)
+    expect(screen.getByText('No current program')).toBeTruthy()
   })
 })

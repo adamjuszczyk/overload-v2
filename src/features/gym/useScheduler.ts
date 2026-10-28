@@ -2,6 +2,9 @@ import { format, subDays, isAfter, parseISO, differenceInCalendarWeeks } from 'd
 import { useMesos } from '../programs/useMesos'
 import { usePrograms, useWorkoutDays } from '../programs/usePrograms'
 import { useWeekPlans, useAllWeekPlans } from '../plan/useWeekPlan'
+import { useRunSchedule } from '../plan/useRunSchedule'
+import { scheduleForWeek } from '../programs/runSchedule'
+import { EMPTY_SCHEDULE } from '../programs/programService'
 import { useSessionsInRange } from './useSession'
 import { schedule } from './scheduler'
 import type { SchedulerResult, Mesocycle, Program, WorkoutDay, WeekPlan } from '../../types'
@@ -53,13 +56,20 @@ export function useScheduler(today: string, dismissMissed = false): SchedulerDat
   const { data: currentWeekPlans } = useWeekPlans(activeMeso?.id ?? '', currentWeek)
   const { data: allWeekPlans } = useAllWeekPlans(activeMeso?.id ?? '')
   const { data: sessions } = useSessionsInRange(lookbackStart, today)
+  // Chunk 50: the run's schedule rows (`v2_run_schedules`), the history of which weekdays hold which workout. `[]` is a
+  // real answer (a run nobody changed the days of); `undefined` is "not read yet", and until it is, which workout is on
+  // today's weekday can't be known (the run copy's days are the newest, not necessarily this week's), so a weekday run
+  // waits. A sequence run has no weekday schedule and no rows (SequenceTodayPage is what Today shows for it), so it
+  // waits for nothing: its Today does not depend on this read, whatever the read does.
+  const { data: scheduleRows } = useRunSchedule(activeMeso?.id)
+  const waitsForScheduleRows = (activeProgram?.scheduleType ?? 'weekday') === 'weekday'
 
   const isLoading =
     !mesos ||
     !programs ||
     (!!programId && !workoutDays) ||
     !sessions ||
-    (!!activeMeso && (!currentWeekPlans || !allWeekPlans))
+    (!!activeMeso && (!currentWeekPlans || !allWeekPlans || (waitsForScheduleRows && !scheduleRows)))
 
   if (isLoading) {
     return {
@@ -82,6 +92,9 @@ export function useScheduler(today: string, dismissMissed = false): SchedulerDat
     allWeekPlans: allWeekPlans ?? [],
     sessions: sessions ?? [],
     dismissMissed,
+    // The schedule in force for a week: the row with the greatest from_week at or before it, else the run copy's own
+    // (runSchedule.ts). `schedule()` finds the run copy by the same `activeMeso.programId` lookup as `activeProgram`.
+    scheduleForWeek: (week) => scheduleForWeek(scheduleRows ?? [], activeProgram?.schedule ?? EMPTY_SCHEDULE, week),
   })
 
   return {

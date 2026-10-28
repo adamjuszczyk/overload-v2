@@ -6,7 +6,7 @@ import type { DayOfWeek, ScheduleType, WeeklySchedule } from '../../types'
 // every START and Plan's no-schedule line share, so the two can never
 // disagree about whether a program has a schedule:
 //   - the planner's START (PlannerPage.tsx);
-//   - the Programs page's START RUN sheet (ProgramsPage.tsx);
+//   - the PROGRAMS tab's START sheet (StartProgramSheet.tsx; ProgramsPage.tsx before chunk 65);
 //   - Plan's "NO WORKOUTS SCHEDULED" line for a run started before Start
 //     needed one (PlanPage.tsx).
 //

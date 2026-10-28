@@ -1,0 +1,133 @@
+PUSH PULL LEGS · STABLE
+CHANGE THE PROGRAM
+Changes start in week 2. Every week from then on copies this.
+Your saved program, Push Pull Legs, doesn't change.
+WORKOUTS
+CHANGED IN THIS EDIT
+Full Body
+TUE · THU
+Arms
+SAT
+1 · FULL BODY · DAYS
+RENAME
+M
+T
+W
+T
+F
+S
+S
+Sat is Arms's day
+2 · WARMUP ROUTINE
+EVERY WEEK
+Band pull-aparts
+Dead hang
++ ADD ITEM
+3 · EXERCISES · DRAG TO REORDER
+Leg Press
+QUADS
+ALL
+10–12
+REST AFTER
+01
+10–12
+−
+CHAIN
++
+02
+10–12
+−
+CHAIN
++
+03
+10–12
+−
+CHAIN
++
++ SET
+SWAP
+SUPERSET
+REMOVE
+Incline Press
+CHEST
+ALL
+8–10
+REST AFTER
+01
+8–10
+−
+CHAIN
++
+02
+8–10
+−
+CHAIN
++
++ SET
+SWAP
+SUPERSET
+REMOVE
+SUPERSET A
+Rest 1:30 after each round
+UNLINK
+A
+Seated Cable Row
+BACK
+ALL
+10–12
+REST AFTER
+A1
+10–12
+−
+CHAIN
++
+A2
+10–12
+−
+CHAIN
++
++ SET
+SWAP
+REMOVE
+SUPERSET — TAP TO UNLINK
+B
+Plank
+CORE
+ALL
+AMRAP
+REST AFTER
+B1
+AMRAP
+−
+CHAIN
++
+B2
+AMRAP
+−
+CHAIN
++
++ SET
+SWAP
+REMOVE
++ ADD EXERCISE
+CANCEL
+SAVE CHANGES
+FULL BODY
+Incline Press
+REST
+−
+GLOBAL
++
+REST AFTER
+−
+NONE
++
+TEMPO
+UNIT
+DEFAULT
+KG
+LBS
+MOVE UP
+MOVE DOWN
+
+Changes start in week 2. Swap, superset and remove are on the exercise card.

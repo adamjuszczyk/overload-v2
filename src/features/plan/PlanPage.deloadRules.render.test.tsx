@@ -49,14 +49,15 @@ function makeProgram(): Program {
   return {
     id: 'prog-1', userId: 'user-1', name: 'Test Program', schedule: { ...EMPTY_SCHEDULE, monday: 'wd-1' },
     workoutDays: [], createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
-    kind: 'run', planningType: 'week_dependent', deloadRules: null,
+    kind: 'run', planningType: 'week_dependent',
   }
 }
 
 function makePlan(sets: WeekPlanSet[], isDeload: boolean): WeekPlan {
   return {
     id: 'wp-1', userId: 'user-1', mesocycleId: 'meso-1', workoutDayId: 'wd-1',
-    weekNumber: 2, isDeload, notes: null, sets, exercises: [pe1], createdAt: '2026-01-01T00:00:00Z',
+    // Week 1: the run started today, so this is the current week, the one Plan opens on and plans (chunk 52: only a planned week draws its sessions).
+    weekNumber: 1, isDeload, notes: null, sets, exercises: [pe1], createdAt: '2026-01-01T00:00:00Z',
   }
 }
 
@@ -71,25 +72,22 @@ vi.mock('../programs/usePrograms', () => ({
 }))
 vi.mock('../library/useExercises', () => ({ useExercises: () => ({ data: [] }) }))
 // Plan reads which sessions are done (useDoneWeekPlanIds); none here.
+vi.mock('./useReview', () => ({ useReview: () => ({ status: 'ready', groups: [], count: 0, error: null }) })) // REVIEW's line (chunk 56): nothing differed here
+vi.mock('./usePlanSessions', () => ({ usePlanSessions: () => undefined })) // the week view's session states (chunk 54b): none here
 vi.mock('./useDoneWeekPlanIds', () => ({ useDoneWeekPlanIds: () => new Set<string>() }))
+vi.mock('./usePlanRowStatuses', () => ({ usePlanRowStatuses: () => new Map<string, 'done' | 'in_progress'>() })) // the CHANGE THE PROGRAM button's statuses: none here
+// Plan reads the run's schedule rows (useRunSchedule, chunk 50): this file's run has none, so every week is the run copy's.
+vi.mock('./useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('./useWeekPlan', () => ({
   useWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
   useAllWeekPlans: () => ({ data: mockState.plans, isLoading: false }),
-  useApplyAhead: () => ({ mutate: vi.fn(), isPending: false }),
   usePlanWeek: () => ({ mutate: vi.fn(), isPending: false }),
   useSetDeload: () => ({ mutate: vi.fn() }),
   useSetWeekDeload: () => ({ mutate: vi.fn(), isPending: false }),
   useAddSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useAddStage: () => ({ mutate: vi.fn() }),
-  useAddWarmupSet: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateSet: () => ({ mutate: vi.fn() }),
   useRemoveSet: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useCopyWorkoutFromPreviousWeek: () => ({ mutate: vi.fn(), isPending: false }),
-  useSwapWeekExercise: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useAddWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useRemoveWeekExercise: () => ({ mutate: vi.fn(), isPending: false }),
-  useReorderWeekExercises: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeSetType: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 
 // Chunk 24 — this component owns its own hooks (useSessionsInRange via
@@ -118,7 +116,7 @@ function weekPlanSetsFromCalculated(calculated: ReturnType<typeof calculateDeloa
   const idBySourceId = new Map(calculated.map((c, i) => [c.sourceId, `calc-${i}`]))
   return calculated.map((c) => ({
     id: idBySourceId.get(c.sourceId)!, weekPlanId: 'wp-1', userId: 'user-1', programExerciseId: c.programExerciseId,
-    setNumber: c.setNumber, targetRir: c.targetRir, isDropset: c.isDropset,
+    setNumber: c.setNumber, targetRir: c.targetRir, targetRirMax: c.targetRirMax, isDropset: c.isDropset,
     parentWeekPlanSetId: c.parentSourceId ? (idBySourceId.get(c.parentSourceId) ?? null) : null,
     stageIndex: c.stageIndex, isWarmup: c.isWarmup,
     repMin: c.repMin, repMax: c.repMax, isAmrap: c.isAmrap, stageKind: c.stageKind,
@@ -131,7 +129,7 @@ describe('PlanPage — a marked-with-rules session shows exactly the calculator\
     const base: DeloadSourceSet[] = [1, 2, 3, 4].map((n) => ({
       id: `base-${n}`, programExerciseId: 'pe-1', setNumber: n, parentId: null, stageIndex: 0,
       isWarmup: false, stageKind: null, programSetId: null, repMin: 8, repMax: 12, isAmrap: false,
-      targetRir: 2, tags: null, isDropset: false, plannedWeight: 100, loggedWeight: null,
+      targetRir: 2, targetRirMax: null, tags: null, isDropset: false, plannedWeight: 100, loggedWeight: null,
     }))
     const rules: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' }, weight: { percent: 75, rounding: 'down', step: 2.5, stepUnit: 'kg' } }
     const calculated = calculateDeloadSets(base, rules)
@@ -152,22 +150,22 @@ describe('PlanPage — a marked-with-rules session shows exactly the calculator\
     const warmup: DeloadSourceSet = {
       id: 'w1', programExerciseId: 'pe-1', setNumber: 1, parentId: null, stageIndex: 0,
       isWarmup: true, stageKind: null, programSetId: null, repMin: null, repMax: null, isAmrap: false,
-      targetRir: null, tags: null, isDropset: false, plannedWeight: 40, loggedWeight: null,
+      targetRir: null, targetRirMax: null, tags: null, isDropset: false, plannedWeight: 40, loggedWeight: null,
     }
     const head1 = {
       id: 'h1', programExerciseId: 'pe-1', setNumber: 2, parentId: null, stageIndex: 0,
       isWarmup: false, stageKind: 'dropset' as const, programSetId: null, repMin: 8, repMax: 12, isAmrap: false,
-      targetRir: 2, tags: null, isDropset: false, plannedWeight: 100, loggedWeight: null,
+      targetRir: 2, targetRirMax: null, tags: null, isDropset: false, plannedWeight: 100, loggedWeight: null,
     }
     const stage1 = {
       id: 's1', programExerciseId: 'pe-1', setNumber: 2, parentId: 'h1', stageIndex: 1,
       isWarmup: false, stageKind: null, programSetId: null, repMin: 8, repMax: 12, isAmrap: false,
-      targetRir: 2, tags: null, isDropset: true, plannedWeight: 80, loggedWeight: null,
+      targetRir: 2, targetRirMax: null, tags: null, isDropset: true, plannedWeight: 80, loggedWeight: null,
     }
     const head2 = {
       id: 'h2', programExerciseId: 'pe-1', setNumber: 3, parentId: null, stageIndex: 0,
       isWarmup: false, stageKind: null, programSetId: null, repMin: 8, repMax: 12, isAmrap: false,
-      targetRir: 2, tags: null, isDropset: false, plannedWeight: 100, loggedWeight: null,
+      targetRir: 2, targetRirMax: null, tags: null, isDropset: false, plannedWeight: 100, loggedWeight: null,
     }
     const rules: DeloadRules = { sets: { mode: 'percent', value: 50, rounding: 'down' } } // no weight rule — untouched
     const calculated = calculateDeloadSets([warmup, head1, stage1, head2], rules)

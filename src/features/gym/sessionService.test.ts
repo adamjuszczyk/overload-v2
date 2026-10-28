@@ -92,6 +92,24 @@ describe('updateSetLog — the edit path never writes `note` (chunk 4)', () => {
     expect('note' in payload).toBe(false)
   })
 
+  it('a set type change on a log (chunk 62) is its two type columns in ONE request, and a numberless warmup made a working set adds weight and reps to the same one (DECISIONS 152; 035\'s check refuses the type alone)', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSetLog('log-1', { isWarmup: false, stageKind: 'dropset' })
+    await updateSetLog('log-1', { isWarmup: true, stageKind: null })
+    await updateSetLog('log-1', { isWarmup: false, stageKind: null, weight: 40, reps: 6 })
+
+    const payloads = (chain.update as ReturnType<typeof vi.fn>).mock.calls.map((call) => call[0])
+    expect(payloads).toEqual([
+      { is_warmup: false, stage_kind: 'dropset' },
+      { is_warmup: true, stage_kind: null },
+      { is_warmup: false, stage_kind: null, weight: 40, reps: 6 },
+    ])
+    expect(chain.update).toHaveBeenCalledTimes(3) // one request each, never a second one for the numbers
+    expect(payloads.every((p) => !('note' in p) && !('stage_index' in p) && !('set_number' in p))).toBe(true)
+  })
+
   it('setNumber-only renumbering (ExerciseCard.tsx\'s handleDeleteHead shape) touches only set_number, never note', async () => {
     const chain = makeChain()
     fromMock.mockReturnValue(chain)
@@ -101,6 +119,19 @@ describe('updateSetLog — the edit path never writes `note` (chunk 4)', () => {
     const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
     expect(payload).toEqual({ set_number: 3 })
     expect('note' in payload).toBe(false)
+  })
+
+  // Chunk 61 (DECISIONS 147 (a)): deleting a logged set's last drop makes it a normal set, so its log loses its stage kind. The patch is that column
+  // and nothing else (the table's own checks refuse a stage kind with a warmup flag, and a whole-row save would write this phone's numbers over another's).
+  it('a head losing its stage kind patches `stage_kind` to null and only that, on the log it names', async () => {
+    const chain = makeChain()
+    fromMock.mockReturnValue(chain)
+
+    await updateSetLog('log-1', { stageKind: null })
+
+    const payload = (chain.update as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>
+    expect(payload).toEqual({ stage_kind: null })
+    expect(chain.eq).toHaveBeenCalledWith('id', 'log-1')
   })
 })
 

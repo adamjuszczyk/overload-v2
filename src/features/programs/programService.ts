@@ -14,9 +14,15 @@ import type {
   ProgramSupersetBlock,
 } from '../../types'
 import { fetchRunProgramExercises, removeRunProgramExercise } from './runProgramExercises'
-import { validateDeloadRules, type DeloadRules } from '../../lib/deloadRules'
 
 // ─── DB Types ──────────────────────────────────────────────────────────────────
+
+// The columns of v2_programs this app reads. v2_programs.deload_rules is not
+// one of them (chunk 48, SPEC Objects stored → Program [1.2]: "The stored
+// deload-rules override is no longer read or written (16b). The column stays"):
+// it holds whatever an earlier version stored, nothing selects it, and a run
+// whose program stored an override simply follows Settings.
+const PROGRAM_COLUMNS = 'id, user_id, name, schedule, created_at, updated_at, kind, planning_type, schedule_type'
 
 type DbProgram = {
   id: string
@@ -35,10 +41,6 @@ type DbProgram = {
   // Absent until migration 027 — chunk 25's own field, same fallback. Reads
   // as 'weekday', 027's own column default.
   schedule_type?: ScheduleType
-  // Absent until migration 027 — chunk 22's own field (jsonb; null = "use
-  // my default", the global v2_user_settings.deload_rules). Validated on
-  // read the same way settingsService.ts validates the user's own column.
-  deload_rules?: unknown
 }
 
 type DbWorkoutDay = {
@@ -106,11 +108,6 @@ function toProgram(row: DbProgram): Program {
     kind: row.kind ?? 'saved',
     planningType: row.planning_type ?? 'week_dependent',
     scheduleType: row.schedule_type ?? 'weekday',
-    // Chunk 22 — absent/undefined (pre-027, or simply never overridden)
-    // reads as null here too, same "use my default" meaning either way;
-    // a malformed stored value degrades to null defensively, same posture
-    // as the user's own global column (settingsService.ts).
-    deloadRules: validateDeloadRules(row.deload_rules),
   }
 }
 
@@ -168,10 +165,18 @@ function toProgramExercise(row: DbProgramExercise): ProgramExercise {
 export async function fetchPrograms(): Promise<Program[]> {
   const { data, error } = await supabase
     .from('v2_programs')
-    .select('*')
+    .select(PROGRAM_COLUMNS)
     .order('created_at', { ascending: false })
   if (error) throw error
   return (data as DbProgram[]).map(toProgram)
+}
+
+// One program by id (chunk 51a: CHANGE THE PROGRAM re-reads the run copy's own row, its weekdays included, when SAVE builds
+// its op list, so a save never writes back the weekdays a screen opened with).
+export async function fetchProgram(id: string): Promise<Program> {
+  const { data, error } = await supabase.from('v2_programs').select(PROGRAM_COLUMNS).eq('id', id).single()
+  if (error) throw error
+  return toProgram(data as DbProgram)
 }
 
 // Program lists (chunk 6, TASKS.md — "program lists show kind = 'saved'
@@ -185,18 +190,35 @@ export async function fetchPrograms(): Promise<Program[]> {
 export async function fetchSavedPrograms(): Promise<Program[]> {
   const { data, error } = await supabase
     .from('v2_programs')
-    .select('*')
+    .select(PROGRAM_COLUMNS)
     .eq('kind', 'saved')
     .order('created_at', { ascending: false })
   if (error) throw error
   return (data as DbProgram[]).map(toProgram)
 }
 
-export async function createProgram(userId: string, name: string): Promise<Program> {
+// The two types a new program is created with (SPEC Programs and runs [1.2], Creating a program (16a): "the New program sheet asks for
+// the name, the schedule type and the planning type. Neither type is preselected"). Both are required, with no default: leaving them
+// out would let the columns' own defaults ('weekday', 'week_dependent') stand in for a choice nobody made, silently. Both can be
+// changed later in the stepped program planner, as before.
+export interface NewProgramTypes {
+  scheduleType: ScheduleType
+  planningType: PlanningType
+}
+
+const SCHEDULE_TYPES: readonly ScheduleType[] = ['weekday', 'sequence']
+const PLANNING_TYPES: readonly PlanningType[] = ['stable', 'week_dependent']
+
+export async function createProgram(userId: string, name: string, types: NewProgramTypes): Promise<Program> {
+  // Refused at run time as well as by the compiler: a caller that gets past the types (a cast, a plain-JS call) must not create a program
+  // whose types are the columns' defaults by accident.
+  if (!SCHEDULE_TYPES.includes(types?.scheduleType) || !PLANNING_TYPES.includes(types?.planningType)) {
+    throw new Error('createProgram needs a schedule type and a planning type')
+  }
   const { data, error } = await supabase
     .from('v2_programs')
-    .insert({ user_id: userId, name: name.trim(), schedule: EMPTY_SCHEDULE })
-    .select()
+    .insert({ user_id: userId, name: name.trim(), schedule: EMPTY_SCHEDULE, schedule_type: types.scheduleType, planning_type: types.planningType })
+    .select(PROGRAM_COLUMNS)
     .single()
   if (error) throw error
   return toProgram(data as DbProgram)
@@ -243,24 +265,6 @@ export async function updateScheduleType(id: string, scheduleType: ScheduleType)
   const { error } = await supabase
     .from('v2_programs')
     .update({ schedule_type: scheduleType, updated_at: new Date().toISOString() })
-    .eq('id', id)
-  if (error) throw error
-}
-
-// Chunk 22 (SPEC.md "Deload rules": "global default in settings, override
-// per program"; "Programs and runs" — design fields "exist only in the
-// run's copy... editable for both planning types"). A design field, same
-// posture as updateProgramExerciseRest/updateProgramExerciseTempo below:
-// never gated by volumeReadOnly. null writes "use my default" (clears the
-// override back to following the global setting); a validated DeloadRules
-// object writes this program's own override — the caller
-// (DeloadRulesEditor.tsx via StepVolume.tsx) is the one place that
-// constructs it, same division of labour updateProgramExerciseTempo
-// already takes with normaliseTempo (this function trusts its caller).
-export async function updateProgramDeloadRules(id: string, deloadRules: DeloadRules | null): Promise<void> {
-  const { error } = await supabase
-    .from('v2_programs')
-    .update({ deload_rules: deloadRules, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw error
 }
