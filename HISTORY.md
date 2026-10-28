@@ -29753,3 +29753,77 @@ Owed before the release: a read-only SQL file for that production reading, scope
 ### Moved from CONTEXT.md, "Where the build is", "Where the build goes next"
 
 - **Where the build goes next:** every chunk, both tests-owed runs, queue-fix 230 and fix 239–242 are merged. The release checklist on staging is done: the 31 DATA rows run there all PASS, and the screen rows were checked by screenshot on 2026-10-27 (Adam's change of plan: his own staging check is a vibe check, a "what's new in 1.2" tour on the test account, `<scratchpad>/build/tour-1.2.md`): 11 PASS, RC42 moved to the P rows ("Release checklist on staging" below). 243 and 244 are answered. Adam's vibe check (the tour, 2026-10-27) is done: his seven items are on DECISIONS' 1.2.1 list, and his four checks were investigated (DECISIONS 245–248: none blocks). RC44 is done (Adam, production, 2026-10-27: zero rows). Next is Adam's: the before counts and fingerprint, the manual backup (right before step 5: Adam) and his yes on 046 before step 5 (TASKS-1.2 "Release"), and the P rows after step 6. Nothing is owed in DECISIONS "Tests owed".
+
+## 2026-10-28 release steps 8–9 — 1.2 on master as `5e1d6a0` (#241's merge commit); the tag and the GitHub Release left to Adam (the tag push refused here, HTTP 403; no release tool); master merged back into staging (#244, `76dd0b9`); moved out of CONTEXT.md and DECISIONS.md (replaced by newer lines), word for word
+
+### Moved from CONTEXT.md, "What this is" (its second paragraph)
+
+Phase 1 ([P1]) and SPEC change 1.1 ([P1.1]) are built and live (2026-10-11; one known gap, DECISIONS 106); rest, tempo, the warmup routine and grouping are run-wide; display-only choices are provisional under D31. **SPEC change 1.2 (Adam, 2026-10-12)** — SPEC.md's [1.2] rules and the 83 boards under `design/1.2/`, planned in `TASKS-1.2.md` — is being built on **staging** since 2026-10-14. Phase 2 and SPEC's "Later" list are not being done.
+
+### Moved from CONTEXT.md, "Where the build is", "Where the build goes next"
+
+- **Where the build goes next:** the release (TASKS-1.2 "Release"), Adam's at every gate. Prepared on 2026-10-27 by the release reviewer, with nothing merged into master:
+  - `scripts/release-046-counts.sql` (#239, `6bfe372`);
+  - the update notes (`docs/release-1.2-notes.md`) and the run sheet (`docs/release-1.2-run-sheet.md`);
+  - the migrations PR #240 and the release PR #241.
+
+  Next is Adam's, in the run sheet's order: the backup, the before counts, his yes on 046 (merging #240) and step 5's checks; then the after counts, step 6 (#241 as a merge commit), the smoke test and the P rows. After that come steps 8–9 (the tag, the GitHub Release, `master` merged back into `staging`). The vibe-check items 245–248 and the review-pass decisions wait on him (none blocks); nothing is owed in "Tests owed". Long form: HISTORY.md, "2026-10-27 release prep".
+
+### Moved from CONTEXT.md, "Where the build is", "Next migration number"
+
+- **Next migration number: 048**; nothing is reserved. 042–047 are live on staging; at the release they go in step 5's migrations PR (#240, open), which merges only after the manual backup and Adam's yes on 046 (DECISIONS 202). Long form: HISTORY.md, "2026-10-27 chunk 69 review".
+
+### Moved from DECISIONS.md, "Waiting on Adam" (whole, before this rewrite)
+
+## Waiting on Adam
+*Rewritten at every boundary. Last: 2026-10-27, the release prep (the 046 counts file merged, #239; the migrations PR #240 and the release PR #241 open; the update notes and the run sheet).*
+- *The release is ready for you: every step, command and what it must print is in `docs/release-1.2-run-sheet.md`, in your order. Nothing is merged into master.*
+- *Your vibe check on staging (2026-10-27) was the "what's new in 1.2" tour: your seven items are on the 1.2.1 list as you gave them, and nothing was flagged for 1.2 beyond the four checks below.*
+- *RC44 is done: run by you on production, 2026-10-27, zero rows (none of your active week-dependent sequence runs hits 203's case).*
+- *The four checks (245–248): none can write wrong data and none is an unintended 1.1 regression, so none blocks the release. Each has a recommendation for you below.*
+- *Tests owed: none.*
+
+What waits on you, in order:
+1. **The release, steps 3–7** (TASKS-1.2 "Release"; blocks the release). Every command and what it must print: `docs/release-1.2-run-sheet.md`, in your order (backup → before counts → your yes on 046 → step 5 → after counts → step 6 → smoke test → the P rows).
+   - Step 5 is **PR #240**: the migrations 042–047 and their four probe specs, off `master`, `migration-replay` green. Its merge is your yes on 046 (DECISIONS 202). It merges only after the backup (`supabase db dump --linked`: roles, schema, data, right before step 5, your words of 2026-10-27; the dashboard's daily backup as a second copy) and the before counts (`scripts/release-046-counts.sql`, #239, with `scripts/live-counts.sql` as the record).
+   - Step 6 is **PR #241**, `staging` → `master`: a merge commit, never squashed, only after step 5's deploy is verified. The update notes (`docs/release-1.2-notes.md`) are its body.
+   - A time when nobody is training (step 4), from #240's merge to #241's deploy.
+   - The release-wide `check-migration` (step 2) flags exactly the 15 statements in "For the release" (042–047). Nothing new to decide: the one blocking decision is your merge of #240.
+   - RC44 is done (zero rows). R5's two read-only queries are information, not gates (optional, in the run sheet).
+   - On Windows, `probe-live-columns.mjs` run plainly prints nothing and exits 0 (its main guard never matches a `C:\` path). The run sheet's probe lines work around it; the script itself is unchanged.
+2. **The four vibe-check items** (none blocks; each executed, verdict NOT A BLOCKER):
+   - **245** — CHANGE THE PROGRAM gives a workout several weekdays, the planner one. Several days per workout is SPEC's own 1.2 rule ("Workouts that share one plan"), and Plan, `v2_plan_week`, Today's scheduler and `v2_run_schedules` all handle it; a save can't break planning. 1.1: create the same (one day), no running edit at all. Recommended: (a), leave.
+   - **246** — an existing 3+ superset edited and saved keeps every member the edit didn't split or remove, in order. The gap: a superset can't take the exercise below it in CHANGE THE PROGRAM (only a free exercise above can join it), so a split that leaves a superset above can't be joined again before SAVE. 1.1 couldn't change a running program's supersets at all. Recommended: (a), SUPERSET on a superset's last member, for 1.2.1.
+   - **247** — a save changes every not-done session from the current week on, week 5 included (by SPEC: "including a week already planned forward"): removed, swapped and added exercises and the order land there; that week's numbers on kept sets stay; Plan marks only the first week after a done one. 1.1 had no such screen. Recommended: (a), leave; your 1.2.1 "from the week being viewed" covers the start week.
+   - **248** — no ratings-only edit after finishing: 1.1 had none either (its finished-session screen and History are byte-identical to 1.2's), and SPEC holds "Edit button for energy, pump and notes that does not reopen the session" for phase 2; nothing removed it. Recommended: (a), leave.
+3. **After step 6:** the 30 rows marked P, on production, on your account, as part of your training (step 7; each a checkbox in the run sheet's section 8): RC1, RC2, RC3, RC5, RC6, RC7, RC10, RC11, RC12, RC13, RC16, RC19, RC20, RC22, RC23, RC24, RC27, RC28, RC29, RC30, RC31, RC32, RC33, RC34, RC36, RC38, RC39, RC41, RC42 and RC43. RC42 (COACH and its sidebar, yours only) moved here from the staging check (your words, 2026-10-27), with RC43's COACH tab.
+4. **Re-seed:** none is needed for the release or for any checklist row. `staging-smoke.mjs` reads 49 of 51 until one: the test account's "in-progress session" (0 since RC36 completed the seed's) and the stable account's "the run is a stable weekday program" (2 run copies since RC20 and RC21). Its stable "week 1 done (3 completed sessions)" still passes: it counts the account's completed sessions, which are the finished run's three, so it has not described the active run (a fresh week 1, nothing done) since RC20 and fails only if those sessions go. Re-seed (and paste 046) before the next review that must read the smoke 51 of 51; nothing planned before the release does.
+
+The release:
+- 121 is closed with your output (2026-10-27): production's migration history is intact.
+- The update notes' lines for 239–242 are in "For the release"; 240's wording is yours (its line says plainly what 1.1's flows could reach). 243 has a "known in 1.2, fixed in 1.2.1" line there.
+- The update notes are final: `docs/release-1.2-notes.md`. They hold every [1.2] rule with its status and the row that checked it, and the Superseded list checked line by line (each removed 1.1 label absent from the 1.2 bundle). They also hold the fixed, known and not-built lines, the 1.2.1 list and what is carried.
+
+Decisions that block a chunk: none.
+
+Decisions for your review pass on staging (none blocks; 220–238 are on the 1.2.1 list):
+- **218** — board W1's row caption with the earlier-this-week numbers ("MON 17.5 × 15 @ 1" beside LAST) is in neither 58a's nor 58b's scope and isn't built; SPEC's "those too (W16, W17)" is met by the sheet and the card line's "· ALSO MON". Recommended: (a), add it (one span in the row's LAST line from the sessions the line already reads). Blocks: nothing (display).
+- **217** — chunk 58b's display choices (D31), (a)–(m), including N OF M SETS counted over the rows the screen draws (a), the weekday of a moved session's new day (b), the failed row keeping its pen (e) and the history icon opening the sheet, with FULL HISTORY one tap further (h). Recommended: accept all, as built. Blocks: nothing.
+- **216** — answered on 2026-10-22: for your review pass. Chunk 58a's display choices (D31), (a)–(l). Recommended: accept all, as built.
+- **215** — answered on 2026-10-22: for your review pass. The Library's EDIT TAGS and UNTAGGED name muscle tags; chunk 69's wording test allowlists them. Recommended: (a), keep them.
+- **212** — answered on 2026-10-21: keep as built. A workout whose session this week is already done gets no REVIEW items. On your review-pass list.
+- **211** — chunk 56's display choices and readings on REVIEW (D31), (a)–(m), including ADD EXERCISE on a stable run (h), each press reading the item's decision again first (k) and two sets added in one place sharing one item (m). Recommended: accept all, as built. Blocks: nothing.
+- **210** — answered on 2026-10-21: keep as built. VOLUME's "—" is drawn only for a week with no planned set and no session. On your review-pass list.
+- **209** — chunk 55's display choices and readings on the VOLUME sheet (D31), (a)–(k), including this week read from the open week's own query (i) and a read paused offline shown as failed (d). Recommended: accept all, as built. Blocks: nothing.
+- **208** — answered on 2026-10-21: keep as built. A MARK leaves a session that an UNMARK cut off part way as it is (it keeps its saved copy and its flag). On your review-pass list.
+- **207** — answered (b) on 2026-10-21: a stable run's past week and its finished sessions show no change marks and no legend; week-dependent ones keep theirs. A display choice, built in your review pass (one condition in `WeekView.tsx`), not now.
+- **206** — chunk 54b's display choices and readings on Plan's week view (D31), (a)–(m), including no mark on a session in progress (a) and board 9's "DELOAD SESSION · NO CHANGE MARKS" read as the frame's caption, not drawn text (e). Recommended: accept all, as built. Blocks: nothing.
+- **205** — chunk 54a's display choices and readings on Plan's week view (D31), (a)–(n), including the strict weight parsing that follows board 9's "5o" (m). Recommended: accept all, as built. Blocks: nothing.
+- **193** — a finished program's rows show superset labels (A1, A2) from the run's last grouping, where SPEC Defaults 11 says supersets aren't in the history. Recommended: (a), leave them out (one line). Blocks: nothing (display).
+- **192** — chunk 66's display choices and readings on the finished program (D31), (a)–(h), including deload weeks compared literally (d). Recommended: accept all, as built. Blocks: nothing.
+- **190** — the CURRENT PROGRAM card's "N days a week" counts the run copy's newest weekdays, so after a weekday change that starts next week it shows next week's count this week. Recommended: (a), count the week's days in force, as Today and Plan do since chunk 50. Blocks: nothing (display; the release checklist's PR1 check reads it).
+- **189** — chunk 65's display choices on the PROGRAMS tab (D31), (a)–(l). Recommended: accept all, as built. Blocks: nothing.
+
+To-dos:
+- **113** — live-check the fix session (this container can't reach the app). When: next gym visit. (a) Plan: finish a session, open Plan on the current week: its sets can't be edited, the line reads SESSION DONE — READ ONLY; reopen it and they can. (b) Train a few sets in airplane mode, reconnect, finish at once: the session is `completed`, not skipped, with a sensible end time. (c) Plan: after an edit that offers "apply to planned weeks ahead", tap APPLY twice fast: sets are added once. (d) Unmark a deload whose program set was deleted: sets come back. (e) answered 2026-10-14: #87's docs-only merge read "Canceled by Ignored Build Step". (f) #83: log sets with a flaky connection; a write that can't sync shows "N changes couldn't sync. Tap to retry." at the top of the workout screen, and tapping it sends them. Blocks: nothing.
+- **79** — Confirm REDO SESSION is gone on a finished session's Today screen. When: after a session. Blocks: nothing.

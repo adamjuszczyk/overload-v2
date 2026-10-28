@@ -1,33 +1,23 @@
 # Overload — Decisions
 
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-27, the release prep (the 046 counts file merged, #239; the migrations PR #240 and the release PR #241 open; the update notes and the run sheet).*
-- *The release is ready for you: every step, command and what it must print is in `docs/release-1.2-run-sheet.md`, in your order. Nothing is merged into master.*
-- *Your vibe check on staging (2026-10-27) was the "what's new in 1.2" tour: your seven items are on the 1.2.1 list as you gave them, and nothing was flagged for 1.2 beyond the four checks below.*
-- *RC44 is done: run by you on production, 2026-10-27, zero rows (none of your active week-dependent sequence runs hits 203's case).*
-- *The four checks (245–248): none can write wrong data and none is an unintended 1.1 regression, so none blocks the release. Each has a recommendation for you below.*
+*Rewritten at every boundary. Last: 2026-10-28, the release's steps 8–9 (1.2 on `master` as `5e1d6a0`, #241's merge commit; `master` merged back into `staging`, #244, `76dd0b9`).*
+- *1.2 is released: #240 and #241 are merged, and your smoke test passed on your phone (2026-10-28).*
+- *The tag and the GitHub Release (step 8) are yours: this environment's git proxy refused the tag push (HTTP 403) and its GitHub tools can't create a release. Nothing was worked around; no tag exists on GitHub yet.*
 - *Tests owed: none.*
 
 What waits on you, in order:
-1. **The release, steps 3–7** (TASKS-1.2 "Release"; blocks the release). Every command and what it must print: `docs/release-1.2-run-sheet.md`, in your order (backup → before counts → your yes on 046 → step 5 → after counts → step 6 → smoke test → the P rows).
-   - Step 5 is **PR #240**: the migrations 042–047 and their four probe specs, off `master`, `migration-replay` green. Its merge is your yes on 046 (DECISIONS 202). It merges only after the backup (`supabase db dump --linked`: roles, schema, data, right before step 5, your words of 2026-10-27; the dashboard's daily backup as a second copy) and the before counts (`scripts/release-046-counts.sql`, #239, with `scripts/live-counts.sql` as the record).
-   - Step 6 is **PR #241**, `staging` → `master`: a merge commit, never squashed, only after step 5's deploy is verified. The update notes (`docs/release-1.2-notes.md`) are its body.
-   - A time when nobody is training (step 4), from #240's merge to #241's deploy.
-   - The release-wide `check-migration` (step 2) flags exactly the 15 statements in "For the release" (042–047). Nothing new to decide: the one blocking decision is your merge of #240.
-   - RC44 is done (zero rows). R5's two read-only queries are information, not gates (optional, in the run sheet).
-   - On Windows, `probe-live-columns.mjs` run plainly prints nothing and exits 0 (its main guard never matches a `C:\` path). The run sheet's probe lines work around it; the script itself is unchanged.
-2. **The four vibe-check items** (none blocks; each executed, verdict NOT A BLOCKER):
-   - **245** — CHANGE THE PROGRAM gives a workout several weekdays, the planner one. Several days per workout is SPEC's own 1.2 rule ("Workouts that share one plan"), and Plan, `v2_plan_week`, Today's scheduler and `v2_run_schedules` all handle it; a save can't break planning. 1.1: create the same (one day), no running edit at all. Recommended: (a), leave.
-   - **246** — an existing 3+ superset edited and saved keeps every member the edit didn't split or remove, in order. The gap: a superset can't take the exercise below it in CHANGE THE PROGRAM (only a free exercise above can join it), so a split that leaves a superset above can't be joined again before SAVE. 1.1 couldn't change a running program's supersets at all. Recommended: (a), SUPERSET on a superset's last member, for 1.2.1.
-   - **247** — a save changes every not-done session from the current week on, week 5 included (by SPEC: "including a week already planned forward"): removed, swapped and added exercises and the order land there; that week's numbers on kept sets stay; Plan marks only the first week after a done one. 1.1 had no such screen. Recommended: (a), leave; your 1.2.1 "from the week being viewed" covers the start week.
-   - **248** — no ratings-only edit after finishing: 1.1 had none either (its finished-session screen and History are byte-identical to 1.2's), and SPEC holds "Edit button for energy, pump and notes that does not reopen the session" for phase 2; nothing removed it. Recommended: (a), leave.
-3. **After step 6:** the 30 rows marked P, on production, on your account, as part of your training (step 7; each a checkbox in the run sheet's section 8): RC1, RC2, RC3, RC5, RC6, RC7, RC10, RC11, RC12, RC13, RC16, RC19, RC20, RC22, RC23, RC24, RC27, RC28, RC29, RC30, RC31, RC32, RC33, RC34, RC36, RC38, RC39, RC41, RC42 and RC43. RC42 (COACH and its sidebar, yours only) moved here from the staging check (your words, 2026-10-27), with RC43's COACH tab.
-4. **Re-seed:** none is needed for the release or for any checklist row. `staging-smoke.mjs` reads 49 of 51 until one: the test account's "in-progress session" (0 since RC36 completed the seed's) and the stable account's "the run is a stable weekday program" (2 run copies since RC20 and RC21). Its stable "week 1 done (3 completed sessions)" still passes: it counts the account's completed sessions, which are the finished run's three, so it has not described the active run (a fresh week 1, nothing done) since RC20 and fails only if those sessions go. Re-seed (and paste 046) before the next review that must read the smoke 51 of 51; nothing planned before the release does.
-
-The release:
-- 121 is closed with your output (2026-10-27): production's migration history is intact.
-- The update notes' lines for 239–242 are in "For the release"; 240's wording is yours (its line says plainly what 1.1's flows could reach). 243 has a "known in 1.2, fixed in 1.2.1" line there.
-- The update notes are final: `docs/release-1.2-notes.md`. They hold every [1.2] rule with its status and the row that checked it, and the Superseded list checked line by line (each removed 1.1 label absent from the 1.2 bundle). They also hold the fixed, known and not-built lines, the 1.2.1 list and what is carried.
+1. **Step 8: tag `v1.2.0` and publish the GitHub Release** (blocks nothing else). From any clone, on Windows:
+   - `git fetch origin`
+   - `git tag -a v1.2.0 -m "Overload 1.2" 5e1d6a022d1be40feda068821bfa6c26161a5ce5` (#241's merge commit; `git rev-parse origin/master` prints the same sha)
+   - `git push origin v1.2.0`
+   - `git switch master` and `git pull` (the notes as on master), then `gh release create v1.2.0 --verify-tag --title "Overload 1.2" --notes-file docs/release-1.2-notes.md` (not a draft, not a prerelease). Or on GitHub: Releases → Draft a new release → tag `v1.2.0` → title "Overload 1.2" → paste `docs/release-1.2-notes.md` → "Set as a pre-release" unticked → Publish release.
+   - Don't let the web form create the tag: it makes a lightweight one, not the annotated "Overload 1.2".
+2. **The P rows** (step 7), on production, on your account, as part of your training over the coming days (each a checkbox in the run sheet's section 8). The 30 rows: RC1, RC2, RC3, RC5, RC6, RC7, RC10, RC11, RC12, RC13, RC16, RC19, RC20, RC22, RC23, RC24, RC27, RC28, RC29, RC30, RC31, RC32, RC33, RC34, RC36, RC38, RC39, RC41, RC42 and RC43. RC42 (COACH and its sidebar) and RC43's COACH tab are yours only. A row that fails goes to the 1.2.1 list, or to a fix if it writes wrong data.
+3. **The 1.2.1 list** ("1.2.1 list" below): 220–238 and 243 as built, each with its 1.2.1 change named; your seven vibe-check items; 246's recommendation (a), SUPERSET on a superset's last member. What goes in, and in what order, is yours.
+4. **The four vibe-check items** (none blocks; each executed, verdict NOT A BLOCKER): 245, (a) leave; 246, (a) for 1.2.1; 247, (a) leave; 248, (a) leave. Their long form: HISTORY.md, "2026-10-28 release steps 8–9", the old "Waiting on Adam".
+5. **BUILD.md's rewrite** (TASKS-1.2 "Release", step 9; your sequence, step 8): what staging taught. BUILD.md is not in the repo.
+6. **Re-seed:** none is needed. `staging-smoke.mjs` reads 49 of 51 until one (no in-progress session on the test account since RC36; two stable run copies since RC20 and RC21). Re-seed (and paste 046) before the next review that must read the smoke 51 of 51.
 
 Decisions that block a chunk: none.
 
