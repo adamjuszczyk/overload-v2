@@ -1,0 +1,9 @@
+{
+  "migration": "044_p12_set_log_added_place.sql",
+  "new": [],
+  "columns": {
+    "v2_set_logs": [
+      "added_place"
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "migration": "047_p12_swap_moved_sets.sql",
+  "new": [],
+  "columns": {
+    "v2_session_exercise_swaps": [
+      "moved_sets"
+    ]
+  }
+}

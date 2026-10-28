@@ -1,0 +1,9 @@
+{
+  "migration": "043_p12_apply_ops.sql",
+  "new": [],
+  "columns": {
+    "v2_program_exercises": [
+      "replaces_program_exercise_id"
+    ]
+  }
+}
