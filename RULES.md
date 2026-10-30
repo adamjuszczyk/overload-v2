@@ -318,6 +318,10 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 - **`verify-rls` reads a revoked anon select as a pass** (`42501` counts as a pass): for a table anon must read (`v2_app_status`), only the smoke's signed-out read catches a lost grant. `v2_app_status` sits in `TABLES` (since chunk 72; it was in `TABLES_AHEAD_OF_THE_APP` from 70), `PUBLIC_BY_DESIGN` and `NO_USER_ID_COLUMN` (without the last two: anon LEAK, signed-in 42703).
 
 **Verification and process**
+- **To judge a re-captured fixture, capture it on the base tree too** (chunk 74's review): what the base's own fresh capture changes was already stale; what the branch adds beyond it is the chunk's change (14 of 19 `programs-pr*` fixtures were one link stale since chunk 66, with every check green).
+- **On a real screen, equal `fr` columns are compared with a tolerance** (chunk 74's review): Chromium lays out in 1/64 px and gives the remainder to one column.
+- **A soft delete leaves the row, and `staging-smoke.mjs` counts raw rows** (chunk 74): a reviewer that deletes a throwaway program on `staging-empty` hard-deletes it through the API as the account afterwards (RLS allows it), then runs the smoke (62/62).
+- **A new RPC's name and parameter are provable live as anon** (chunk 74's builder): the right shape answers the function's own refusal, a made-up parameter `PGRST202`.
 - **TanStack keeps a query's data when a later read fails** (chunk 72's review): "no answer when the read fails" holds only before the first success; a gate built on a query is tested with a read that fails after one that answered.
 - **A live check waits until no read of the intercepted table is in flight before routing it** (chunk 72's review): a foreground event joins a read already in flight, which then returns the real row.
 - **A fresh browser profile gets the once-sheet (chunk 71) over the first signed-in screen**: a live tool closes it with GOT IT before pressing anything.
