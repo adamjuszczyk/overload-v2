@@ -53,7 +53,8 @@ This purpose is the reason for every item below unless an item says otherwise.
 
 **Release notes**: not stored in the database. They ship inside the app as a data file, one entry per version:
 version, date, and groups of short lines. Each version carries its own notes, which therefore always match the code
-running and work offline. 1.2's entry is the "What's new" section of `docs/release-1.2-notes.md`, word for word. The
+running and work offline. The data file is the source of truth; the longer notes file under `docs/` is written from it
+(Adam, 2026-10-30, TASKS question 16). 1.2's entry is the "What's new" section of `docs/release-1.2-notes.md`, word for word. The
 rule-by-rule table under it is left out.
 
 **On the phone**: `lastSeenNotesVersion`, the newest version whose notes this phone has shown. It's kept where the app
@@ -78,7 +79,7 @@ is `0.1.0` and unused.
 **`v2_finished_run_counts(mesocycle_id)`** [8b], read-only. Returns what a full delete would remove:
 - weeks;
 - sessions;
-- logged sets;
+- logged sets (History's count: a head row, not skipped, not a warmup; Adam, 2026-10-30, TASKS question 3);
 - Coach analyses: session analyses (DECISIONS 249 row 10), the program analysis (row 13), and weekly analyses of weeks
   that held only this run's sessions (row 15);
 - Coach notes (row 14).
@@ -100,6 +101,9 @@ It goes: 249 rows 1–15 and 22. It stays: rows 16–21, unchanged. Refused unle
   `maintenance` is on and the caller isn't in `exempt_user_ids`.
 - It refuses with its own error code, so the app can tell this refusal from any other.
 - Only signed-in users' requests are refused. Migrations, the dashboard and the SQL editor are never refused.
+- How (Adam, 2026-10-30, TASKS questions 4 and 15): one statement-level trigger on every public table with a `user_id`
+  column (40 at 1.2's schema, `exercises` included) fires inside every RPC's writes, so every RPC is covered without
+  being edited; the two new delete functions check at their top as well. The five existing functions are not changed.
 
 ---
 
@@ -114,7 +118,8 @@ Prototype: "Settings · WHAT'S NEW", "Release notes", "After an update".
   VERSION on the running one. A row opens that release's notes.
 - The build hash and time stay, in small text under the list.
 - **Shown once:** the first time a version runs on a phone, its notes open as a sheet over the screen the app opened on,
-  with GOT IT. This happens when the running version is newer than `lastSeenNotesVersion`, or when there is no mark at
+  with GOT IT, over the first signed-in screen and never over the login page (Adam, 2026-10-30, TASKS question 7).
+  This happens when the running version is newer than `lastSeenNotesVersion`, or when there is no mark at
   all (so every phone sees 1.2.1's notes once). Closing the sheet any way sets the mark.
 - Never empty: 1.2 is seeded.
 
@@ -130,6 +135,11 @@ Prototype: "Maintenance".
 - **Offline writes during maintenance:** a queued write refused with the maintenance code stays in the queue. It is not
   counted as failed, doesn't add to the retry count, and shows no RETRY notice. It is sent when maintenance is off.
 - **Offline**, the app can't read the flag and works as usual.
+- **Signed out**, maintenance shows the same screen (there is no account to exempt); signing in still works, and an
+  exempt account then gets the strip (Adam, 2026-10-30, TASKS question 6).
+- **On staging** nobody but Adam can write `v2_app_status`: the reviewer proves the refusal on a replay and the screens
+  on the staging app with the status request intercepted; one real flip by Adam is on his review-pass list, and the seed
+  exempts the test account only (Adam, 2026-10-30, TASKS question 5).
 
 ### Update to continue [11]
 Prototype: "Update to continue".
@@ -137,9 +147,13 @@ Prototype: "Update to continue".
   UPDATE TO CONTINUE / This is 1.2.0. Overload needs 1.2.1 or newer." with an UPDATE button.
   - With unsent changes, it adds: "Unsent changes are kept and sent after the update."
 - **UPDATE** gets the new version and reloads: UPDATING…, then the new version opens and shows its notes once [9].
-  If that fails: "Couldn't update. Check your connection and try again.", and the button reads TRY AGAIN.
-- **It shows whatever the user is doing,** a workout included. After the update the workout reopens where it was
-  (Facts to verify). An old app must never keep writing into a newer database.
+  If that fails: "Couldn't update. Check your connection and try again.", and the button reads TRY AGAIN. "Fails" means
+  offline, an update check refused, or no new version installed within 20 seconds; the reload waits for a write in
+  flight, as the old RELOAD did (Adam, 2026-10-30, TASKS question 8).
+- **It shows whatever the user is doing,** a workout included. After the update the workout reopens on its logged rows,
+  the kept numbers of its unlogged sets and its added sets; the running rest timer and numbers typed but not logged are
+  lost, as after the old RELOAD (Adam, 2026-10-30, TASKS question 9; Facts to verify 4). An old app must never keep
+  writing into a newer database.
 - **Checked** at the same moments as maintenance. Offline the app can't read `min_version` and keeps working. Once it's
   online, it's gated.
 - **The offline queue survives the update** and is sent by the new version, never by the old one.
@@ -150,10 +164,12 @@ Prototype: "Update to continue".
 Prototype: "Programs · YOUR PROGRAMS".
 - Each row's foot gets a third button: OPEN · START · DELETE.
 - On the running program's row, DELETE is greyed out, with "FINISH IT FIRST" under it.
-- **Confirmation:** "Delete [name]?", "It leaves YOUR PROGRAMS. Its finished runs stay in History.", CANCEL and a red
-  DELETE.
+- **Confirmation:** "Delete [name]?", "It leaves YOUR PROGRAMS. Its finished programs stay in History." (Adam,
+  2026-10-30, TASKS question 2: the UI never says "run"), CANCEL and a red DELETE.
 - **Offline**, the confirmation says "You're offline. Deleting needs a connection." and DELETE is off.
 - There is no undo.
+- A deleted program opened by its address (the planner's `/program/:programId`, which reads by id) is refused like a
+  run's copy: "This program was deleted." (Adam, 2026-10-30, TASKS question 11).
 - **After a delete:** YOUR PROGRAMS and every saved-program picker leave marked programs out (Facts to verify lists
   them).
 - Empty state: "No programs yet", unchanged.
@@ -167,6 +183,9 @@ Prototype: "Finished program".
   - Then: "Deletes its [N weeks]: [N sessions] and [N logged sets][, plus N Coach analyses][ and N Coach notes]. Its
     results leave History, Progress and every stat. This can't be undone."
   - Each Coach part shows only when its count is above 0. Singular and plural follow the counts.
+  - "N logged sets" counts as History does: a set's head row, not skipped, not a warmup; drop stages are never counted
+    (Adam, 2026-10-30, TASKS question 3). "Coach analyses" are the session analyses of its sessions, its program analysis
+    and the weekly analyses of weeks that held only its sessions; "Coach notes" are the notes on its sessions.
   - CANCEL and a red DELETE.
 - **Offline:** "You're offline. Deleting needs a connection." and DELETE is off. The counts aren't read.
 - **On success,** the phone:
@@ -219,7 +238,8 @@ Prototype: "Workout". It's the real workout screen on board W1's data.
   sheet.
 - **[6]** Once every working set and stage is logged or skipped, the rest bar shows WORKOUT COMPLETE and a FINISH button
   (which opens the finish screen) instead of the rest timer and the jump button.
-  - Open warmups don't count. Added sets do.
+  - Open warmups don't count. Added sets do. A workout with no working set or stage at all keeps the usual bar (Adam,
+    2026-10-30, TASKS question 10).
   - The rest keeps being timed underneath. An added set or exercise brings the bar back, showing the rest since the last
     set, and the next log records it.
   - FINISH SESSION at the foot of the list stays.
@@ -274,7 +294,7 @@ Prototype: "Planner · 2 EXERCISES" → "Tempo picker".
 4. **Required updates:** every release raises `min_version`, including one that changes nothing incompatible.
 5. **Queued writes across a version change.** Queued writes are sent by the version that's running. A release that
    changes the shape of anything the queue writes also converts the queued writes of the old shape. This goes into
-   RULES.md as a standing rule.
+   RULES.md as a standing rule (done 2026-10-30: RULES.md, "Standing rules").
 6. **Queue fixes [16] [17]**, as decided:
    - DECISIONS 238 (1): the one-line change in the Library's preflight, a small DATA chunk;
    - 243: the two lines in `withQueuedSetLogs`.

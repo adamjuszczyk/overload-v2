@@ -1,5 +1,7 @@
 # Overload — Decisions
 
+*2026-10-30 (BUILD.md 2.1, step 3): this file is now a record only. New decisions are raised as decision cards (RULES.md, "Decision cards") and recorded here as entries once answered; no entry is ever rewritten. "Waiting on Adam" below is the 1.2 process's inbox as it last stood (2026-10-28) and is no longer maintained; the answers of 2026-10-30 are entries 250–267.*
+
 ## Waiting on Adam
 *Rewritten at every boundary. Last: 2026-10-28, Adam's answers to 249 (1.2.1 item 1 decided; the read-only count of runs deleted the old way, point 3, is yours to run); before it, his correction of 1.2.1 item 1 and the check of what hangs off a finished program (249).*
 - *1.2 is released: #240 and #241 are merged, and your smoke test passed on your phone (2026-10-28).*
@@ -1096,6 +1098,150 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 - Answer: (Adam, 2026-10-28) "(b) Full delete as proposed, rows 1–12 and 22, plus 13, 14 and 15 (Coach program analysis, Coach notes, weekly analyses of weeks holding only the run's sessions). Rule: anything that only describes this run goes; anything mixed with other runs stays. 16–21 stay as proposed; no "includes a deleted program" line. One database function, one transaction, in your order, refused unless the run is mine and completed. The confirmation names what goes, with counts. (a) Saved-program delete = a "deleted" mark, not a row delete and no re-linking: YOUR PROGRAMS and every saved-program picker leave marked rows out; runs' links (source_program_id, source_workout_day_id) stay as they are, so "all time" history stays whole. Refused while a run of it is active, enforced in the database function, not only the app. Point 3: give me the read-only count for my account only (run copies with no run, and the sessions on their days). Cleanup is decided after I see it. Record as DECISIONS 249 and update 1.2.1 item 1." Recorded in "1.2.1 list", item 1; point 3's count is in "Waiting on Adam". The table of rows 1–22, the probe and the full text: HISTORY.md, "2026-10-28 DECISIONS 249 answered".
 - Point 3 (the read-only orphan count, Adam's account only): run by Adam on production, 2026-10-28: no rows. Nothing was left behind by earlier deletes; no cleanup needed.
 - Date: 2026-10-28
+
+### 250 The old root `TASKS.md` was phase 1's plan: renamed `TASKS-phase-1.md`, not `TASKS-1.2-final.md` (1.2.1 setup, TASKS question 1)
+**Ask:** keep the name the planning session chose?
+**Recommendation:** keep `TASKS-phase-1.md` (the file's own title is "phase 1"; it matches `RETRO-phase-1.md`; 1.2's chunks are in `TASKS-1.2.md`).
+**Blocks:** nothing.
+**Options:** (a) keep; (b) another name, one `git mv`.
+**Answer:** (Adam, 2026-10-30) (a).
+**Evidence:** TASKS.md, "Questions for Adam", 1.
+
+### 251 [8a] The confirmation's wording said "runs", which the wording guard forbids (TASKS question 2)
+**Ask:** "It leaves YOUR PROGRAMS. Its finished runs stay in History." fails `scripts/check-wording.test.mjs` (SPEC Language [1.2] C12).
+**Recommendation:** "Its finished programs stay in History.", no allowlist entry.
+**Blocks:** chunk 74's wording.
+**Options:** (a) reword; (b) allowlist the line.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** the guard's `run` family; TASKS.md, 2.
+
+### 252 [8b] What "N logged sets" counts (TASKS question 3)
+**Ask:** which rows the confirmation's set count names.
+**Recommendation:** History's count: a head row, not skipped, not a warmup; stages never counted (as `v2_finished_run_counts` is drafted and proven).
+**Blocks:** chunk 70's function.
+**Options:** (a) History's count; (b) every log row.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** `v2_history_session_summary`'s `set_count` (035); the replay proof `2|2|3|3|1`.
+
+### 253 [10] "Inside every RPC that writes": triggers only, the two new functions check explicitly (TASKS question 4)
+**Ask:** edit the five existing functions to assert maintenance, or rely on the table triggers that fire inside them?
+**Recommendation:** triggers only (proven: seven callable functions refused `OL001` on the replay), plus the explicit check at the top of `v2_delete_saved_program` and `v2_delete_finished_run`; `v2_apply_ops`, `v2_plan_week`, `v2_start_run`, `v2_copy_program` and `reassign_exercise_history` untouched.
+**Blocks:** chunk 70's migration.
+**Options:** (a) as recommended; (b) `create or replace` the five with an assertion.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** TASKS.md, "Scratch proofs".
+
+### 254 [10] Maintenance can't be flipped on staging by the reviewer (TASKS question 5)
+**Ask:** how the maintenance screens and refusal are proven when only Adam can write `v2_app_status`.
+**Recommendation:** the refusal on the replay, the screens on the real staging app with the status request intercepted (Playwright, no write); one real flip on Adam's list; the seed exempts the test account only, so one flip shows both the strip (test) and the screen (stable).
+**Blocks:** chunk 72's staging check.
+**Options:** (a) as recommended; (b) a staging-only write path (rejected: staging would differ from production).
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** `v2_app_status`'s revokes; TASKS.md, 5.
+
+### 255 [10] Signed out, maintenance shows the screen (TASKS question 6)
+**Ask:** before sign-in there is no account to exempt: the screen, or the login page?
+**Recommendation:** the gate wraps the login page too; signing in still works (an auth write, never refused), and an exempt account then gets the strip.
+**Blocks:** chunk 72's gate.
+**Options:** (a) the screen; (b) the login page, the gate after sign-in.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** TASKS.md, 6.
+
+### 256 [9] The once-sheet opens over the first signed-in screen (TASKS question 7)
+**Ask:** when the app opens on the login page, where the notes sheet opens.
+**Recommendation:** over the first signed-in screen, never over the login page.
+**Blocks:** chunk 71.
+**Options:** (a) after sign-in; (b) over the login page too.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** TASKS.md, 7.
+
+### 257 [11] What "Couldn't update" means and how long UPDATE waits (TASKS question 8)
+**Ask:** the failure condition and the wait for the new service worker.
+**Recommendation:** offline, or the update check rejects, or no new worker has activated within 20 s → the error line and TRY AGAIN; the reload waits for in-flight writes as today's RELOAD does.
+**Blocks:** chunk 73.
+**Options:** (a) as recommended; (b) reload at once and let the old bundle show the screen again.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** `usePwaUpdate.ts` (autoUpdate, skipWaiting, clientsClaim); TASKS.md, 8.
+
+### 258 [11] After UPDATE's reload the rest timer and typed-but-unlogged numbers are lost, as after RELOAD (TASKS question 9; Facts to verify 4)
+**Ask:** accept for 1.2.1?
+**Recommendation:** accept; the session, its logged rows, the drafts and the added sets come back; the timer's survival is a later item.
+**Blocks:** nothing.
+**Options:** (a) accept; (b) persist the rest timer in 1.2.1.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** `restTimerStore` is in-memory; `useActiveSession` and chunk 63's Dexie tables; TASKS.md, Facts 4.
+
+### 259 [6] WORKOUT COMPLETE only when at least one working set or stage exists (TASKS question 10)
+**Ask:** `current === null` is also true of a session with no sets at all.
+**Recommendation:** the bar says WORKOUT COMPLETE only when at least one working set or stage exists; an empty workout keeps today's bar.
+**Blocks:** chunk 78.
+**Options:** (a) as recommended; (b) WORKOUT COMPLETE on an empty workout too.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** 46r's `currentSet`; TASKS.md, 10.
+
+### 260 [8a] A deleted program's planner address is refused (TASKS question 11)
+**Ask:** `/program/:programId` reads by id and would open a deleted program.
+**Recommendation:** refuse like a run copy, "This program was deleted."
+**Blocks:** chunk 74.
+**Options:** (a) refuse; (b) allow.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** `PlannerPage.tsx`'s `isRunCopy`; TASKS.md, Facts 1.
+
+### 261 [16] [17] One DATA chunk for both queue fixes (TASKS question 12)
+**Ask:** SPEC Rules 6 names 238 (1) and 243 separately.
+**Recommendation:** one DATA S chunk (80): both are the phone's reads of the queue's deletes; a second small DATA chunk costs a second full review.
+**Blocks:** nothing.
+**Options:** (a) one chunk; (b) two.
+**Answer:** (Adam, 2026-10-30) (a).
+**Evidence:** TASKS.md, chunk 80.
+
+### 262 Vercel's ignoreCommand excludes `prototype/` (TASKS question 13)
+**Ask:** the renames are covered (`.md` to `.md`), `prototype/` is not, so every prototype edit triggers a build.
+**Recommendation:** add `':(exclude)prototype/*'` with a test in `vercel-ignore.test.mjs`, in chunk 70.
+**Blocks:** nothing.
+**Options:** (a) add it in chunk 70; (b) leave it.
+**Answer:** (Adam, 2026-10-30) (a).
+**Evidence:** `scripts/vercel-ignore.test.mjs` (the rename case passes; 379/379); the command's length ≈ 195 of 256 with the exclude.
+
+### 263 Fact 7 on real data: Adam's read-only line on production (TASKS question 14; to-do, Adam's)
+**Ask:** row 15's query is proven on the replay against the builder's shape (`input_snapshot.sessions[].id`); staging holds no weekly analysis; production's rows are Adam's.
+**Recommendation:** before chunk 70 merges, in the SQL editor on his account: `select jsonb_object_keys(input_snapshot) from v2_coach_week_analyses where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' limit 1;` and `select input_snapshot -> 'sessions' -> 0 from v2_coach_week_analyses where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' limit 1;`, the keys (not the values) pasted here. **When:** before chunk 70 merges.
+**Blocks:** only row 15's exact query if the keys differ.
+**Options:** (a) run it; (b) accept the code-derived shape.
+**Answer:** (Adam, 2026-10-30) (a), his to run; left as a to-do.
+**Evidence:** `weekAnalysisInput.ts`; TASKS.md, Facts 7.
+
+### 264 The `exercises` table (shared with Northstar) gets the maintenance trigger (TASKS question 15)
+**Ask:** include it among the 40 tables?
+**Recommendation:** keep it: the app writes it (the Library); only writes made with a signed-in JWT during maintenance are refused; Northstar is abandoned and nothing here reads or writes its rows.
+**Blocks:** nothing.
+**Options:** (a) include; (b) exclude.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** the catalog query on the replay; TASKS.md, Facts 2.
+
+### 265 The 1.2.1 release notes: the data file is the source of truth (TASKS question 16)
+**Ask:** where the notes are written and which copy wins.
+**Recommendation:** `src/data/releaseNotes.ts`'s 1.2.1 entry is written at the release (step 1); `docs/release-1.2.1-notes.md` is the longer form and the release PR's body, written from it.
+**Blocks:** nothing.
+**Options:** (a) the data file first; (b) the docs file first.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** SPEC "Release notes"; TASKS.md, Release step 1.
+
+### 266 Seed additions for [8b]'s and [10]'s staging checks, one re-seed after chunk 70 (TASKS question 17)
+**Ask:** add Coach rows on the finished STG Full Body run and the exempt test account to the seed?
+**Recommendation:** yes, in chunk 70 (TASKS.md, "Seed"); one re-seed by Adam after 70's deploy.
+**Blocks:** chunks 72 and 75's staging checks until the re-seed.
+**Options:** (a) the seed; (b) the reviewer inserts the rows by API in each check.
+**Answer:** (Adam, 2026-10-30) (a).
+**Evidence:** staging's test account owns no Coach rows (read 2026-10-30).
+
+### 267 Every 1.2.1 chunk report records its context figure and its cost-weighted total (TASKS question 18)
+**Ask:** the estimate's plan share used 1.2's per-chunk context budgets as a proxy because the two units were never recorded side by side.
+**Recommendation:** every chunk report carries both figures (RULES.md, "Usage"), and Adam notes the weekly % before and after each chunk, so the next TASKS converts without a proxy.
+**Blocks:** nothing.
+**Options:** (a) record both; (b) keep the proxy.
+**Answer:** (Adam, 2026-10-30) (a).
+**Evidence:** TASKS.md, "Estimate".
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.

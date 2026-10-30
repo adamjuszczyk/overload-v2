@@ -30078,3 +30078,53 @@ App: fix 239–242 (`f6da7c8`; entry `index-BGcJKJbs.js`, stylesheet `index-CFAx
 - Baseline on the branch with the renames and `prototype/` in place: `npm run typecheck` 0, `npm run build` 0, `node --test "scripts/*.test.mjs"` 379/379, `npx vitest run` 6648/6648 in 361 files, `npx vitest run test --root .` from `prototype/` 9/9.
 - `bash scripts/replay-migrations.sh --keep`: 48 of 48, 42 tables (container `migration-replay-1962`); the 048 draft applied as `postgres` in one transaction; the proof as `supabase_admin` with `load 'safeupdate'` (canary `21000`), two fixture users through RLS, rolled back: the counts `2|2|3|3|1`; `OL003`; `P0002` ×2; maintenance on → `OL001` on insert/update/delete and on `v2_delete_saved_program`, `v2_delete_finished_run`, `v2_start_run`, `v2_plan_week`, `v2_apply_ops`, `reassign_exercise_history` (`v2_make_week_default` refused on its own precondition first); a read passed; `postgres` (no JWT) and the `service_role` claim wrote; the exempt user wrote, the other user refused; `anon` read the row, `42501` on a write; `authenticated` `42501` on a write (only once the draft revoked the platform's default ALL grants); the full delete left exactly DECISIONS 249's rows 16–21; a copy shared by two runs stayed until the second delete; the saved-program delete `OL002` while a run was active, the mark once completed, refused on a run copy. Full text: TASKS.md, "Scratch proofs run for this plan".
 - Staging, read-only: the Vercel deploy `200` with the bypass header (`302` without), entry `index-DgC6N5m5.js`; the Supabase branch at 1.2's schema (`v2_app_status` 404 PGRST205, `v2_programs.deleted_at` 400 42703, `rpc/v2_delete_finished_run` 404; `v2_programs?select=id&limit=0` signed out `200 []`); as the test account (`cf389fe5-…`): 0 Coach rows of every kind, 3 runs.
+
+## 2026-10-30 1.2.1 setup — BUILD.md 2.1 step 3: Adam's 18 answers recorded (DECISIONS 250–267, SPEC.md), TASKS.md put on BUILD.md 2.1 (the process section, two LIGHT batches, the estimate redone), RULES.md restructured (Escalation moved from CONTEXT.md unchanged; Reviewer rules, Verification by chunk type, Usage, Decision cards, Standing rules added), the three agents written, the environment checked, the resume mechanism tried; `spec/1.2.1` merged into `staging` as the build's first commit; BUILD.md and LEARNINGS-spec.md did not reach the session. Moved out of CONTEXT.md and RULES.md (replaced by BUILD.md 2.1), word for word
+
+*The "Waiting on Adam" inbox of DECISIONS.md ended on 2026-10-30 (BUILD.md 2.1: decision cards; DECISIONS.md is a record only). Its last state (2026-10-28) stays in DECISIONS.md unchanged, as the format there says entries are never rewritten.*
+
+### Moved from CONTEXT.md, "Staging and the 1.2 build", "Where chunks go" (the 1.2 process: per-chunk mode, two builders at once, day mode, the 1.2 cost rule)
+**Where chunks go**
+- Builders branch off `staging`. Every chunk merges into `staging` through a PR, squash-merged. Merge as you go; never stack branches. Every chunk leaves staging usable.
+- Per-chunk mode (2026-10-14): a subagent can't start a subagent here (probed), so the coordinator starts each chunk's builder itself, then a fresh reviewer subagent (opus, max effort) with the chunk number and the builder's report; the reviewer reviews, merges, runs the staging steps and updates CONTEXT.md / DECISIONS.md.
+- **Two builders at once (Adam, 2026-10-15; DECISIONS 140 has his words)**, only when both chunks' dependencies are merged (TASKS-1.2's order notes) and they share no files, at most one of them has a staging check beyond the smoke, and no migration chunk is unmerged (never two at once); each builder branches off the current staging. Reviews and merges stay one at a time, in TASKS order; after the first merges, the second is rebased on staging and its reviewer re-runs every script on the rebased branch; a rebase conflict goes back to its builder with the conflict stated (not a failure). Which chunks ran side by side, chunk by chunk: HISTORY.md ("2026-10-20 chunk 53 review 2", "2026-10-20 chunk 52 review 2" and "2026-10-21 chunk 188f review"); 188f was built beside 55 (day mode, 2026-10-21).
+- **Day mode (Adam, 2026-10-21; it replaces the night mode of 2026-10-20's evening):** two builders at a time, under the two-builders rule above; reviewers don't re-seed staging, and a smoke that runs out of LOG buttons is noted and the review goes on without it; a decision for Adam goes under "Waiting on Adam" with a recommendation and stops a chunk only when it blocks its merge. This week's budget and where the build stops: "Where the build is".
+- **The 1.2 cost rule (Adam, 2026-10-20):** which chunks keep the full review, break proofs and staging check, and which get a high-effort review with no staging click-through: RULES.md, "The 1.2 cost rule (Adam, 2026-10-20)".
+- Nothing in the build touches `master`: the reviewer never pushes to, opens a PR to, or merges into master during the build.
+
+### Moved from CONTEXT.md, "Release" (the 1.2 models sentence)
+Models (DECISIONS 120): coordinator and reviewers on Opus 5.5 at max effort; builders on Sonnet 5.5 through `.claude/agents/builder.md` (one chunk per run on `build/chunk-<N>` off `staging`, final commit "chunk N complete").
+
+### Moved from CONTEXT.md, "Reviewer's own rules" (the 1.2 reviewer rules; replaced by RULES.md "Reviewer rules")
+## Reviewer's own rules
+- **Never switch branches in the main checkout (`/home/user/overload-v2`) while a builder is running or resuming.** Builders work there; a reviewer works in a `git worktree` (`isolation: 'worktree'` or the scratchpad), and read-only ones are told not to switch branches (incidents 2026-10-06 and 2026-10-10: HISTORY.md, "2026-10-15 chunk 40 review").
+- Verify against the real thing. A passing check proves only
+  what it actually touched. If unreachable and passing produce
+  the same signal, the check is wrong.
+- Never fix before understanding the cause.
+- Don't read code to check what a script can check. If no
+  script covers it yet, write one — or verify manually and say
+  that's what happened.
+- Commit verification scripts to scripts/ and run all of them
+  at every chunk boundary, not just this chunk's.
+- Escalate with full reasoning, not a verdict and options.
+- Never write an unconfirmed belief into this file as fact.
+- Migrations follow the migration flow in Repo facts (1.2:
+  into staging; a check-migration flag is logged under "For
+  the release", not stopped on). A migration goes live (merged,
+  staging deploy succeeded) before the code that needs it.
+- The shared scripts (check-migration, migration-rules,
+  check-context-size) are never changed during a build. If a
+  chunk changes one, revert that change before merging and say
+  so in the chunk report.
+- At every merge: update this file (rewrite it only at merges; it stays under its ceiling), move anything no longer true into HISTORY.md. A fresh reviewer session every 2–3 chunks continues from this file instead of compacting one long session. Rules discovered during this build are written into RULES.md and never pruned — they don't stop being true.
+- 1.2 (staging): continue through every chunk without ending the turn at a boundary; stop only when something is waiting on Adam, and say exactly what in one line. Second-failure rule: a behaviour bug on the second failure is blocking. A failure that is only a missing proof (the behaviour is right) no longer goes back to a builder (Adam, 2026-10-20; RULES.md, "The 1.2 tests-owed rule"): the reviewer merges and logs the missing test under "Tests owed" in DECISIONS.md, and one tests-only builder run before the release checklist adds them all, as 176 does. Verification proportional to risk: break-prove every place that writes data; one break per call pattern for read-only display wiring; fingerprint the database only for migrations that touch existing rows. Every rule's verification asserts at the call site or screen that uses it, with fixtures that tell the right data source from the wrong one.
+
+### Moved from RULES.md, "The 1.2 cost rule (Adam, 2026-10-20)" (replaced by BUILD.md 2.1's roles)
+## The 1.2 cost rule (Adam, 2026-10-20)
+Usage is the constraint now. From the next chunk on:
+- Chunks that write data or add a migration (46's redraw, the 188 chunk, 51c, 53, 54a, 56, 58a, 59, 61–63): unchanged — full review, break proofs, staging check. 59 adds a migration and runs alone (Adam, 2026-10-20); 51c is a data fix (UNDO in CHANGE THE PROGRAM, before 54a).
+- Everything else (54b, 55, 58b, 60, 64, 65, 66, 67, 68, 69, display follow-ups): reviewer at high effort, not max; no per-chunk staging click-through — the fixture screenshots and tests are the review, and the release checklist covers staging for these screens; break proofs only where the chunk writes data.
+- The release checklist is split (Adam, 2026-10-20): the final reviewer runs the rows that write data or migrate; the screen-only rows go on Adam's list for his review pass on staging. The reviewer records each row as RUN with PASS or FAIL, or as "ADAM'S LIST".
+- Remaining D31 display choices: accept as built and list them; I'll change any in the review pass after the release checklist, not one follow-up at a time.
+
