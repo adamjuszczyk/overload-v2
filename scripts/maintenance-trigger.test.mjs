@@ -187,6 +187,9 @@ const { tables, views } = tablesOf(migrationFiles);
 // verify-rls.mjs's TABLES, read as text the way verify-rls-ahead.test.mjs reads it (it is not exported).
 const listedTables = [...(verifyRls.match(/const TABLES = \[([\s\S]*?)\];/)?.[1] ?? '').matchAll(/'([A-Za-z0-9_]+)'/g)].map((m) => m[1]);
 const READ_ONLY_LIBRARIES = new Set(['v2_exercise_libraries', 'v2_exercise_library_items']);
+// Chunk 72 moved `v2_app_status` from the ahead list into TABLES (its first `.from()`, appStatusService.ts). Like the libraries it is read-only through the
+// API (no write policy, select grants only), carries no user_id, and needs no maintenance trigger: nobody writes it through the API to be refused.
+const READ_ONLY_RELEASE_STATE = new Set(['v2_app_status']);
 
 test('the scan finds the 40 tables with a user_id column that SPEC counts at 1.2\'s schema, exercises included', () => {
   const withUserId = [...tables].filter(([, t]) => t.userId).map(([name]) => name);
@@ -196,16 +199,17 @@ test('the scan finds the 40 tables with a user_id column that SPEC counts at 1.2
   assert.deepEqual([...views].sort(), ['v2_exercise_set_history', 'v2_history_session_summary', 'v2_session_type_history']);
 });
 
-test('every table verify-rls lists, but the two read-only libraries and the views, carries a user_id column, so the loop covers it', () => {
+test('every table verify-rls lists, but the two read-only libraries, the read-only release state and the views, carries a user_id column, so the loop covers it', () => {
   assert.ok(listedTables.length > 30, 'could not read TABLES');
-  const uncovered = listedTables.filter((name) => !READ_ONLY_LIBRARIES.has(name) && !views.has(name) && !tables.get(name)?.userId);
-  assert.deepEqual(uncovered, [], `listed by verify-rls, not a library or a view, and no user_id column: ${uncovered.join(', ')}`);
+  const uncovered = listedTables.filter((name) => !READ_ONLY_LIBRARIES.has(name) && !READ_ONLY_RELEASE_STATE.has(name) && !views.has(name) && !tables.get(name)?.userId);
+  assert.deepEqual(uncovered, [], `listed by verify-rls, not a library, the release state or a view, and no user_id column: ${uncovered.join(', ')}`);
 });
 
-test('the one table without a user_id that the check reads, v2_app_status, is not covered and is probed ahead of the app', () => {
+test('the one table without a user_id that the check reads, v2_app_status, is not covered and is probed in TABLES since the app reads it (chunk 72), not ahead of the app', () => {
   assert.equal(tables.get('v2_app_status')?.userId, false);
   assert.equal(tables.get('v2_app_status')?.file, FILE);
-  assert.deepEqual(TABLES_AHEAD_OF_THE_APP, ['v2_app_status']);
+  assert.ok(listedTables.includes('v2_app_status'), 'v2_app_status is in TABLES');
+  assert.deepEqual(TABLES_AHEAD_OF_THE_APP, [], 'and no longer in the ahead list');
   // verify-rls reads a public-by-design table by the any-row rule, and a table without user_id cannot be classified by ownership.
   for (const name of ['PUBLIC_BY_DESIGN', 'NO_USER_ID_COLUMN']) {
     const set = new RegExp(`const ${name} = new Set\\(\\[([^\\]]*)\\]\\)`).exec(verifyRls)?.[1] ?? '';

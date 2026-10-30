@@ -46,6 +46,8 @@ vi.mock('./features/library/LibraryPage', () => ({ default: () => <div>LIBRARY P
 vi.mock('./features/coach/CoachPage', () => ({ default: () => <div>COACH PAGE</div> }))
 vi.mock('./components/Nav', () => ({ default: () => <div>NAV</div> }))
 vi.mock('./features/pwa/PwaUpdateNotice', () => ({ default: () => null }))
+// Chunk 72 — the release gate (maintenance) is not what this file looks at (App.maintenance.test.tsx mounts the real one in this shell): no gate.
+vi.mock('./features/release/useAppStatus', () => ({ useGate: () => null }))
 // Settings: a stand-in that holds the REAL card, so a row's path meets the real route. (SettingsPage itself is proven in
 // SettingsPage.whatsNew.test.tsx.)
 vi.mock('./features/settings/SettingsPage', async () => {

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './lib/queryClient'
@@ -30,6 +30,8 @@ import { useSettings } from './features/settings/useSettings'
 import { useSyncQueueInit, useSyncQueueRunner } from './features/offline/useSyncQueue'
 import SyncFailedNotice from './features/offline/SyncFailedNotice'
 import { useSeedDefaultExercisesIfEmpty } from './features/library/useExercises'
+import { MaintenanceScreen, MaintenanceStrip } from './features/release/gates'
+import { useGate } from './features/release/useAppStatus'
 
 function SyncManager() {
   useSyncQueueInit()
@@ -57,6 +59,15 @@ export default function App() {
   )
 }
 
+// 1.2.1 (chunk 72; DECISIONS 270) — the maintenance screen over the sign-in page, for a visitor who is not signed in. "Signing in still works" (SPEC), so an
+// account that is exempt can still sign in and then gets the strip: the screen's small SIGN IN action opens the sign-in page. Signing in is an auth write
+// the maintenance check never touches. A visitor who signs in and is not exempt is signed in and sees the screen without the action; the choice to
+// sign in is this component's own state, so it ends with it (a later sign-out starts from the screen again).
+function SignedOutMaintenance() {
+  const [signingIn, setSigningIn] = useState(false)
+  return signingIn ? <LoginPage /> : <MaintenanceScreen onSignIn={() => setSigningIn(true)} />
+}
+
 // Exported (chunk 26) so App.test.tsx can mount the real route table under
 // its own <MemoryRouter> — the exact same <Routes>/<Route> tree App() wires
 // under <BrowserRouter> in production, just reachable from a test without
@@ -67,6 +78,9 @@ export default function App() {
 export function AppRoutes() {
   const { user, loading } = useAuth()
   const { data: settings } = useSettings()
+  // 1.2.1 (chunk 72; SPEC Maintenance [10]) — what the release state asks of this account: the maintenance screen, the strip an exempt account
+  // works under, or nothing (also when it is unread or the phone is offline: the app works as usual).
+  const gate = useGate()
 
   // Apply accent colour from settings (falls back to #FF8C42 default)
   useAccentColour(settings.accentColour)
@@ -75,6 +89,9 @@ export function AppRoutes() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', settings.theme)
   }, [settings.theme])
+
+  // The theme and the accent are applied above the gate, here, before anything below returns: the maintenance screen draws in the user's own
+  // theme and accent as the app does (chunk 72's pre-read, 72-6; the prototype's Shell does the same).
 
   if (loading) {
     return (
@@ -93,6 +110,11 @@ export function AppRoutes() {
     )
   }
 
+  // 1.2.1 (chunk 72) — maintenance on and this account not exempt: a full screen that replaces the whole app, navigation included, and the sign-in
+  // page too while nobody is signed in (there is no account to exempt before sign-in; Adam, 2026-10-30, TASKS question 6, DECISIONS 255). The shell
+  // below is not mounted meanwhile, and it opens again by itself, where the address was, when `useAppStatus` reads maintenance off.
+  if (gate === 'maintenance') return user ? <MaintenanceScreen /> : <SignedOutMaintenance />
+
   if (!user) {
     return (
       <Routes>
@@ -103,6 +125,8 @@ export function AppRoutes() {
 
   return (
     <div className="flex flex-col h-dvh">
+      {/* An exempt account works as usual with the strip on top (SPEC: "styled as the old RELOAD banner was"): in this column, above the screen. */}
+      {gate === 'strip' && <MaintenanceStrip />}
       <SyncManager />
       <main className="flex-1 overflow-y-auto min-h-0">
         <Routes>

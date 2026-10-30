@@ -42,6 +42,9 @@ const REBUILT_SCREENS: Record<string, string> = {
   'features/settings/WhatsNewCard.tsx': "Settings' WHAT'S NEW card",
   'features/settings/ReleaseNotesPage.tsx': 'the release notes',
   'features/settings/AfterUpdateSheet.tsx': 'the sheet after an update',
+  // 1.2.1 (chunk 72): the maintenance screen and the strip an exempt account works under (chunk 73 adds the update screen to this file). Its first
+  // accent site is chunk 73's UPDATE button; the strip is a tint (`--accent-muted`), which is not the accent, and its text stays `--accent`.
+  'features/release/gates.tsx': 'the maintenance screen and strip',
 }
 
 // Components that more than one screen loads, or that sit in the folder of a screen other than the one that loads them, each with the
