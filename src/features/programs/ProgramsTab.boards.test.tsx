@@ -45,6 +45,8 @@ vi.mock('./usePrograms', () => ({
 }))
 vi.mock('../plan/useProgramPriorities', () => ({ useProgramPriorities: () => ({ data: state.marks }) }))
 vi.mock('../plan/useSequenceCurrentCycle', () => ({ useSequenceCurrentCycle: () => ({ cycle: null, failed: false, error: null }) }))
+// the card's weekday rows (1.2.1 item 19): none, so the run's own copy is in force in every week, as these boards were drawn
+vi.mock('../plan/useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('../../hooks/useToday', () => ({ useToday: () => state.today }))
 
 const { default: ProgramsTab } = await import('./ProgramsTab')

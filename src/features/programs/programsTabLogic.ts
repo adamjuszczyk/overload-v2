@@ -1,5 +1,5 @@
 import { differenceInCalendarWeeks, format, parseISO } from 'date-fns'
-import type { Mesocycle, PlanningType, Program, ScheduleType } from '../../types'
+import type { Mesocycle, PlanningType, Program, ScheduleType, WeeklySchedule } from '../../types'
 import { MUSCLE_GROUP_LABELS, MUSCLE_SUBGROUP_LABELS } from '../../lib/exerciseTags'
 import { buildGroupMarkEntries } from '../../lib/priorityMarks'
 import type { PriorityMark, StoredMark } from '../../lib/priorityMarks'
@@ -65,13 +65,19 @@ type TypesOf = Pick<Program, 'scheduleType' | 'planningType' | 'schedule'>
  * The first part is the schedule type, the second the planning type; a weekday program adds how many weekdays have a workout. A
  * sequence program has no weekdays, so it says nothing about days (ours: no board draws one). A program with no workout on any weekday
  * yet says nothing about days either: an unset feature shows nothing (the standing UI rule).
+ *
+ * `days` is the weekday map whose workouts are counted (1.2.1 item 19, SPEC "PROGRAMS · CURRENT PROGRAM card", DECISIONS 190 (a)). Left out, it is
+ * the program's own `schedule`, which is what a saved program in YOUR PROGRAMS counts. The card of the running program passes the schedule in
+ * force this week (`scheduleForWeek`), because the run copy's `schedule` holds the newest days, which a change that starts next week has
+ * already put there. `null` says the days are not known yet (the run's schedule rows are still being read): there is nothing to count, and the
+ * line says nothing about days, rather than a number from the wrong week.
  */
-export function programTypesLine(program: TypesOf, capitals = false): string {
+export function programTypesLine(program: TypesOf, capitals = false, days: Partial<WeeklySchedule> | null = program.schedule): string {
   const scheduleType: ScheduleType = program.scheduleType ?? 'weekday'
   const parts = [scheduleType === 'sequence' ? 'Sequence' : 'Weekdays', (program.planningType ?? 'week_dependent') === 'stable' ? 'stable' : 'week-dependent']
   if (scheduleType === 'weekday') {
-    const days = Object.values(program.schedule ?? {}).filter(Boolean).length
-    if (days > 0) parts.push(`${days} ${days === 1 ? 'day' : 'days'} a week`)
+    const count = Object.values(days ?? {}).filter(Boolean).length
+    if (count > 0) parts.push(`${count} ${count === 1 ? 'day' : 'days'} a week`)
   }
   const line = parts.join(' · ')
   return capitals ? line.toUpperCase() : line
