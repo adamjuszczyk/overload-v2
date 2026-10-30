@@ -9,6 +9,7 @@ import {
   fetchPrograms,
   fetchSavedPrograms,
   createProgram,
+  deleteSavedProgram,
   updateProgramName,
   updateSchedule,
   updatePlanningType,
@@ -79,6 +80,19 @@ export function useCreateProgram() {
     networkMode: 'always',
     mutationFn: ({ name, scheduleType, planningType }: { name: string } & NewProgramTypes) =>
       createProgram(user!.id, name, { scheduleType, planningType }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
+  })
+}
+
+// DELETE a saved program (chunk 74; SPEC Programs · YOUR PROGRAMS [8a], Rules 2): `networkMode: 'always'`, like every write — deleting is
+// online-only, so offline it must fail with the real reason instead of pausing for ever behind DELETING…. The invalidation is returned, so the
+// mutation stays pending until the program lists have been read again: the confirm then closes on a YOUR PROGRAMS that no longer holds the
+// program (RULES, chunk 65), and ['v2_programs'] reaches ['v2_programs', 'saved'] by TanStack's prefix matching (useSavedPrograms above), the
+// list YOUR PROGRAMS and START's both read. A refetch that fails doesn't fail a delete that happened.
+export function useDeleteSavedProgram() {
+  return useMutation({
+    networkMode: 'always',
+    mutationFn: (id: string) => deleteSavedProgram(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['v2_programs'] }),
   })
 }
