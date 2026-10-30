@@ -1,0 +1,10 @@
+{
+  "migration": "048_p121_release_state_and_deletes.sql",
+  "new": [],
+  "columns": {
+    "v2_programs": [
+      "deleted_at"
+    ]
+  },
+  "note": "v2_app_status is not listed: this probe filters every table on user_id=eq.<Adam>, and v2_app_status has no user_id column (it would answer 400 / 42703 for the wrong reason). Its row is read signed out with a plain GET, and verify-rls.mjs probes it from TABLES_AHEAD_OF_THE_APP (public by design)."
+}
