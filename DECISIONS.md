@@ -1268,7 +1268,7 @@ Evidence: HISTORY.md "2026-10-30 chunk 70"; `scripts/schema-compare-exclude.txt`
 ## 269 [80] An offline DELETE of a planned set reads as an open row, and a LOG on it leaves a log the workout hides but History counts: does the read also apply the queued change rows?
 Chunk: 80   Date: 2026-10-30
 Recommendation: (a) the read also applies the session's queued `v2_session_set_changes` upserts with `withChangeRecords`'s matching (read-only, a third line beyond SPEC Rule 6's two); (b) only the two lines, the staging check narrowed to UNLOG and an added set's DELETE, the planned-set shape recorded as known. Recommend (a): Rule 6's two lines alone make the planned-set case worse (setDelete.ts:8-9's "never").
-Answer: open — blocks chunk 80 only (last in the order); the build goes on meanwhile.
+Answer: (a) (Adam, 2026-10-30): "The workout's read also applies the queued deletion records (read-only; nothing in the queue changes), with a break-proven test of the offline planned-set delete then LOG case (the set stays hidden, and History/Volume don't count it). Record it in SPEC.md's Rule 6 as a third line for [17]." Written into SPEC.md Rule 6. Chunk 80 is unblocked.
 Evidence: HISTORY.md "2026-10-30 independent gap pre-read of chunks 72, 73, 75 and 80", 80-1.
 
 ## 270 [10] Signed out during maintenance the screen covers the login page, so an exempt account can't sign in (SPEC "signing in still works", DECISIONS 255)

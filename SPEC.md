@@ -298,6 +298,7 @@ Prototype: "Planner · 2 EXERCISES" → "Tempo picker".
 6. **Queue fixes [16] [17]**, as decided:
    - DECISIONS 238 (1): the one-line change in the Library's preflight, a small DATA chunk;
    - 243: the two lines in `withQueuedSetLogs`.
+   - [17], a third line (Adam, 2026-10-30, DECISIONS 269 (a)): the workout's read also applies this phone's queued deletion records (`v2_session_set_changes` upserts, matched as `withChangeRecords` matches them), read-only: nothing in the queue changes. So a planned set deleted offline stays gone at once, and a LOG can't land on it: the set stays hidden, and History and Volume never count a log the workout hides.
 7. **Display only:** items 1, 2, 4, 5, 6, 12–15, 18–21, 24 and 25 write nothing new. Items 1 and 15 write less than
    today (no priority edits; an untick unlogs instead of deleting).
 
