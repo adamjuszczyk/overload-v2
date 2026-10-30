@@ -1,6 +1,16 @@
 # Overload — Decisions
 
-*2026-10-30 (BUILD.md 2.1, step 3): this file is now a record only. New decisions are raised as decision cards (RULES.md, "Decision cards") and recorded here as entries once answered; no entry is ever rewritten. "Waiting on Adam" below is the 1.2 process's inbox as it last stood (2026-10-28) and is no longer maintained; the answers of 2026-10-30 are entries 250–267.*
+*2026-10-30 (BUILD.md 2.1, step 3): this file is now a record only. New decisions are raised as decision cards (RULES.md, "Decision cards") and recorded here as entries once answered; no entry is ever rewritten. "Waiting on Adam" below is the 1.2 process's inbox as it last stood (2026-10-28) and is no longer maintained; the answers of 2026-10-30 are entries 250–267 (written in the older layout before BUILD.md reached the setup session; they stay as written).*
+
+*Entries from 268 on use BUILD.md 2.1's format:*
+```
+## [n] [The ask, one line]
+Chunk: [n]   Date: [date]
+Recommendation: [one line]
+Answer: [Adam's, as given to the coordinator]
+Evidence: [short; or a pointer to HISTORY.md]
+```
+*Answered entries stay, so the same question is never asked twice. "For the release" keeps every flagged migration, one line each.*
 
 ## Waiting on Adam
 *Rewritten at every boundary. Last: 2026-10-28, Adam's answers to 249 (1.2.1 item 1 decided; the read-only count of runs deleted the old way, point 3, is yours to run); before it, his correction of 1.2.1 item 1 and the check of what hangs off a finished program (249).*
@@ -1210,6 +1220,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Options:** (a) run it; (b) accept the code-derived shape.
 **Answer:** (Adam, 2026-10-30) (a), his to run; left as a to-do.
 **Evidence:** `weekAnalysisInput.ts`; TASKS.md, Facts 7.
+**Done (Adam, 2026-10-30, later the same day, on production, his account only):** `input_snapshot`'s keys are `phase`, `occurrences`, `avgFormRating`, `bySubgroup`, `week`, `byPattern`, `sessions`, `avgPumpRating`, `notes`, `memory`, `avgEnergyRating`, `weightTrend`; the keys of `input_snapshot -> 'sessions' -> 0` are `mesocycleName`, `pumpRating`, `energyRating`, `date`, `workoutDayName`, `status`, `dayOfWeek`, `id`, `isDeload`, `weekNumber`. So row 15's match on `sessions[].id` holds on real data; chunk 70's merge is no longer blocked by it.
 
 ### 264 The `exercises` table (shared with Northstar) gets the maintenance trigger (TASKS question 15)
 **Ask:** include it among the 40 tables?
