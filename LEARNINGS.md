@@ -232,3 +232,15 @@ definition, no writes), its findings recorded in DECISIONS.md and only a blockin
 Possible change: BUILD.md's TASKS step ends with an independent read-only pre-read by a fresh agent against SPEC, the
 prototype and the code, before the build starts; for an app with risky DATA chunks, one more before them.
 Verdict:
+
+## L24 SPEC said "word for word" about text the wording guard forbids   status: open
+Stage: spec / build (1.2.1, chunk 71)
+What happened: SPEC: 1.2's release-notes entry is `docs/release-1.2-notes.md`'s "What's new" "word for word"; TASKS 71: "check-wording green on the notes' text". Two of the notes' lines say run, meso, mesocycle and tags, which the standing guard forbids in `src/`. The builder had to pick (reworded, a card for the release batch).
+Possible change: the spec chat runs the standing guards (`check-wording`) over any text SPEC copies into the app before writing "word for word".
+Verdict:
+
+## L25 A staging check named data the seed doesn't hold   status: open
+Stage: tasks (1.2.1, chunk 79; seen again in the pre-read's 72-1 and 75-6)
+What happened: TASKS 79's staging line says "the planner's STG PPL shows the superset row"; STG PPL has no superset (the seed's is STG Upper/Lower's Upper A). The reviewer checked it there. The pre-read found two more checks staging can't run as written (72's interception, 75's "account empty again").
+Possible change: TASKS's staging lines are checked against the seed (the smoke's own reads) when they are written; a check that needs a shape names the seed row that holds it.
+Verdict:
