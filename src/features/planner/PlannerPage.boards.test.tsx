@@ -309,6 +309,69 @@ describe('PP2d and PP2d2 — the add sheet', () => {
   })
 })
 
+// 1.2.1 chunk 79 — the prototype's "Planner · 2 EXERCISES", two states (`CAPTURE_RENDER=1` writes `__fixtures__/planner-<name>.html`; `npm run shot` turns
+// each into design/1.2.1/built/<DEMO state>.png + .txt): "Pull 1 with a superset" and "Tempo picker". The world is the prototype's own Pull 1: Lat Pulldown, a
+// three-member superset (Seated Cable Row, Face Pull, Rear Delt Fly) and EZ Bar Curl; the superset's round rest is 2:00 and Seated Cable Row carries a tempo.
+describe('1.2.1 chunk 79 — the planner’s superset row and the tempo picker (DEMO states)', () => {
+  const PULL_WITH_A_SUPERSET: ProgramExercise[] = [
+    pe('pe-lat', 'wd-pull1', 0, ex('ex-lat', 'Lat Pulldown'), { restAfterSeconds: 180 }),
+    pe('pe-row', 'wd-pull1', 1, ex('ex-row', 'Seated Cable Row'), { tempo: '3-1-1-0', supersetBlockId: 'blk-1' }),
+    pe('pe-face', 'wd-pull1', 2, ex('ex-face', 'Face Pull', 'shoulders'), { supersetBlockId: 'blk-1' }),
+    pe('pe-fly', 'wd-pull1', 3, ex('ex-fly', 'Rear Delt Fly', 'shoulders'), { supersetBlockId: 'blk-1' }),
+    pe('pe-ez', 'wd-pull1', 4, ex('ex-ez', 'EZ Bar Curl', 'biceps')),
+  ]
+  const world = () => {
+    bulkWorld()
+    state.exercisesByDay = { 'wd-pull1': PULL_WITH_A_SUPERSET }
+    state.blockRests = [{ id: 'blk-1', restAfterRoundSeconds: 120, restWithinRoundSeconds: null }]
+  }
+  const follows = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+
+  it('Pull 1 with a superset: its own row above the first member, with the link icon, the letter, the count and ↑ ↓', () => {
+    world()
+    const { container } = renderPlanner()
+    step('2 · EXERCISES')
+    fireEvent.click(screen.getByLabelText('Show editor for Pull 1'))
+    captureRender('planner-superset-row', container)
+
+    const header = screen.getByText('SUPERSET A · 3 EXERCISES')
+    expect(header.parentElement!.querySelector('svg')).toBeTruthy()
+    const order = [screen.getByLabelText('Edit Lat Pulldown'), header, screen.getByLabelText('Edit Seated Cable Row'), screen.getByLabelText('Edit Face Pull'), screen.getByLabelText('Edit Rear Delt Fly'), screen.getByLabelText('Edit EZ Bar Curl')]
+    for (let i = 1; i < order.length; i++) expect(follows(order[i - 1], order[i])).toBe(true)
+    expect(screen.getByLabelText('Move superset A up')).toBeTruthy()
+    expect(screen.getByLabelText('Move superset A down')).toBeTruthy()
+    expect(screen.getByText('TEMPO 3-1-1-0')).toBeTruthy()
+    expect(screen.getByText('REST AFTER 3min 0s')).toBeTruthy()
+  })
+
+  it('Tempo picker: Seated Cable Row open, its TEMPO row tapped, the picker over the planner on 3-1-1-0', () => {
+    world()
+    // the planner in a phone-high frame, as the app's own scroller holds it, so the picture is the phone's 844 px with the sheet at its foot (a
+    // body capture without the frame is as tall as the whole page, which puts the fixed sheet in the middle of it)
+    render(
+      <div style={{ height: 844, overflow: 'hidden' }}>
+        <MemoryRouter initialEntries={['/program/prog-bulk']}>
+          <Routes>
+            <Route path="/program/:programId" element={<PlannerPage />} />
+          </Routes>
+        </MemoryRouter>
+      </div>,
+    )
+    step('2 · EXERCISES')
+    fireEvent.click(screen.getByLabelText('Show editor for Pull 1'))
+    fireEvent.click(screen.getByLabelText('Edit Seated Cable Row'))
+    fireEvent.click(screen.getByLabelText('Tempo for Seated Cable Row'))
+    captureRender('planner-tempo-picker', document.body)
+
+    const picker = within(screen.getByRole('dialog', { name: 'Tempo' }))
+    expect(picker.getByText('Seated Cable Row')).toBeTruthy()
+    expect(picker.getByRole('button', { name: 'SET' }).getAttribute('aria-pressed')).toBe('true')
+    expect(['Down', 'Bottom', 'Up', 'Top'].map((phase) => (picker.getByRole('textbox', { name: `${phase} seconds` }) as HTMLInputElement).value)).toEqual(['3', '1', '1', '0'])
+    expect(picker.getByText('Seconds per phase. X is as fast as you can.')).toBeTruthy()
+    expect(picker.getByRole('button', { name: 'SET TEMPO 3-1-1-0' })).toBeTruthy()
+  })
+})
+
 describe('PP2e and PP2f — editing in place', () => {
   it('PP2e: renaming the program', () => {
     bulkWorld()
@@ -328,28 +391,15 @@ describe('PP2e and PP2f — editing in place', () => {
     expect((screen.getByLabelText('Workout name') as HTMLInputElement).value).toBe('Pull 1')
   })
 
-  it('PP2e: tempo — typing, refused, saved', () => {
+  it('PP2e: tempo — a tempo that is saved (1.2.1: the typing and refused states went with the text box; the TEMPO row opens the tempo picker)', () => {
     bulkWorld()
-    const { container } = renderPlanner()
-    step('2 · EXERCISES')
-    fireEvent.click(screen.getByLabelText('Show editor for Pull 1'))
-    fireEvent.click(screen.getByLabelText('Edit Lat Pulldown'))
-    fireEvent.click(screen.getByText('—'))
-    captureRender('planner-pp2e-tempo-typing', container)
-    expect(screen.getByPlaceholderText('3-1-1-0')).toBeTruthy()
-
-    fireEvent.change(screen.getByPlaceholderText('3-1-1-0'), { target: { value: '3-1-1' } })
-    fireEvent.blur(screen.getByPlaceholderText('3-1-1-0'))
-    captureRender('planner-pp2e-tempo-invalid', container)
-    expect(screen.getByText('Use 4 fields, e.g. 3-1-1-0 (X allowed)')).toBeTruthy()
-
-    cleanup()
     renderPlanner()
     step('2 · EXERCISES')
     fireEvent.click(screen.getByLabelText('Show editor for Pull 1'))
     fireEvent.click(screen.getByLabelText('Edit Seated Cable Row'))
     captureRender('planner-pp2e-tempo-saved', document.body)
-    expect(screen.getByText('3-1-1-0')).toBeTruthy()
+    expect(screen.getByLabelText('Tempo for Seated Cable Row').textContent).toBe('3-1-1-0')
+    expect(screen.queryByPlaceholderText('3-1-1-0')).toBeNull()
   })
 
   it('PP2f: the warmup routine, one item being edited, and an item being added (the board draws both at once; a tap from one to the other settles the first)', () => {

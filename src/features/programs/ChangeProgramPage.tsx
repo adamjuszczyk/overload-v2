@@ -322,7 +322,10 @@ function ChangeProgramScreen({ meso, program, savedName, currentWeek, onDone }: 
     const rest = isSuperset && blockId ? blockRest(blockId) : undefined
     return {
       key: unit[0].id,
-      items: unit.map((m, i) => itemOf(m.entry, !isSuperset && canLinkBelow(selected, m.id), isSuperset ? letterOf(i) : null)),
+      // SUPERSET (1.2.1 item 18, DECISIONS 246 (a)) is offered on a unit of one and on a superset's last member, which links the exercise below
+      // into that superset: wherever there is an exercise below and the gap to it is not linked already (`canLinkBelow`), so a member with another
+      // member below it never has it, and a superset split inside the card can be joined again before SAVE.
+      items: unit.map((m, i) => itemOf(m.entry, canLinkBelow(selected, m.id), isSuperset ? letterOf(i) : null)),
       superset:
         isSuperset && blockId
           ? {

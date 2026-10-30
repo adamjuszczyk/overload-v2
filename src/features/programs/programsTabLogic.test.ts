@@ -88,6 +88,41 @@ describe('programTypesLine', () => {
   it('a program whose types were never stored reads as the columns\' own defaults: weekdays, week-dependent', () => {
     expect(programTypesLine({ schedule: NO_DAYS })).toBe('Weekdays · week-dependent')
   })
+
+  // 1.2.1 item 19 (SPEC "PROGRAMS · CURRENT PROGRAM card", DECISIONS 190 (a)): the card of the running program counts the days in force this week,
+  // which it passes; left out, the days are the program's own (YOUR PROGRAMS rows, saved programs). The program here has five days of its own, and
+  // each schedule passed has another number, so the line says which was counted.
+  describe('the days counted (1.2.1 item 19)', () => {
+    const TWO_DAYS = { monday: 'wd-1', tuesday: null, wednesday: null, thursday: 'wd-2', friday: null, saturday: null, sunday: null }
+    const stable = { scheduleType: 'weekday', planningType: 'stable', schedule: FIVE_DAYS } as const
+
+    it('the schedule passed is the one counted, not the program’s own', () => {
+      expect(programTypesLine(stable, false, TWO_DAYS)).toBe('Weekdays · stable · 2 days a week')
+      expect(programTypesLine(stable, true, MONDAY_WORKOUT)).toBe('WEEKDAYS · STABLE · 1 DAY A WEEK')
+    })
+
+    it('left out, the program’s own schedule is counted (what YOUR PROGRAMS rows have always said)', () => {
+      expect(programTypesLine(stable)).toBe('Weekdays · stable · 5 days a week')
+      expect(programTypesLine(stable, true)).toBe('WEEKDAYS · STABLE · 5 DAYS A WEEK')
+    })
+
+    it('a schedule with no workout on any weekday says nothing about days, though the program’s own has five', () => {
+      expect(programTypesLine(stable, false, NO_DAYS)).toBe('Weekdays · stable')
+    })
+
+    it('null says the days are not known yet: nothing about days, though the program’s own has five', () => {
+      expect(programTypesLine(stable, false, null)).toBe('Weekdays · stable')
+      expect(programTypesLine(stable, true, null)).toBe('WEEKDAYS · STABLE')
+    })
+
+    it('a sequence program names no days whatever it is given', () => {
+      expect(programTypesLine({ ...stable, scheduleType: 'sequence' }, false, TWO_DAYS)).toBe('Sequence · stable')
+    })
+
+    it('a weekday map with a missing weekday counts the days it has (the seed writes sparse maps)', () => {
+      expect(programTypesLine(stable, false, { monday: 'wd-1', friday: 'wd-2' })).toBe('Weekdays · stable · 2 days a week')
+    })
+  })
 })
 
 describe('finishedMeta', () => {

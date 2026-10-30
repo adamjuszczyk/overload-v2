@@ -7,6 +7,7 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import ExercisePickerSheet from '../../components/ExercisePickerSheet'
 import { errorReason } from '../../components/exercisePickerLogic'
 import { hairline } from '../../components/pickers/pickerControls'
+import TempoPicker from '../../components/pickers/TempoPicker'
 import type { Exercise, Program, WorkoutDay, ProgramExercise, DayOfWeek, ScheduleType } from '../../types'
 import { queryClient } from '../../lib/queryClient'
 import {
@@ -37,7 +38,7 @@ import { useSettingsStore } from '../settings/settingsStore'
 import { useSettings } from '../settings/useSettings'
 import { groupIntoUnits, moveUnit, isLinkedGap, planLinkToggle } from '../../lib/supersetGroups.js'
 import { formatRestTime } from '../../lib/formatRestTime'
-import { RestStepper, TempoEditor, UnitChips, BlockRestEditor, WarmupRoutineEditor } from './designFieldEditors'
+import { RestStepper, UnitChips, BlockRestEditor, WarmupRoutineEditor } from './designFieldEditors'
 import { CAPTION, CARD, Chevron, DashedButton, HEADING, IconButton, MONO, Spinner, ruleAbove, ruleBelow } from './plannerChrome'
 
 // Step 2 — Exercises and order (SPEC.md "Stepped program planner" step 2; TASKS.md "step 2 adds workouts, exercises (existing picker), order
@@ -68,6 +69,12 @@ import { CAPTION, CARD, Chevron, DashedButton, HEADING, IconButton, MONO, Spinne
 // types (designFieldEditors.tsx's WarmupRoutineEditor). Rest / rest-after / superset rest (chunk 16), tempo (chunk 17) and superset grouping
 // (chunk 13) are design fields too: run-wide, never gated by volumeReadOnly. A reorder moves a whole linked run as one unit (moveUnit).
 //
+// 1.2.1 chunk 79 (SPEC Planner, step 2 [2] [3]; Tempo picker [3]; prototype "Planner · 2 EXERCISES"): a superset has its own row above its first member
+// (the link icon, "SUPERSET A · 3 EXERCISES", ↑ ↓) and those arrows move the whole superset, as a member's did (`moveExercise`); a member's ↑ ↓ now
+// move it past the member next to it, inside the superset only, greyed at the superset's edges (`moveWithinSuperset`); single exercises are
+// unchanged. The TEMPO row opens the tempo picker (`TempoField`) in place of the text box, and writes what the picker hands back through the same
+// `onTempo` the box did.
+//
 // `volumeReadOnly` (chunk 9's own rule, SPEC.md "Programs and runs" — "Volume — the exercise list and the sets... week-dependent: read-only")
 // gates workout-level and exercise-level structure alike: add/rename/delete a workout, add/reorder/delete an exercise. It never gates the weekday
 // assignment — scheduling WHEN a workout runs isn't "volume" (how much).
@@ -88,6 +95,11 @@ const NAME_STYLE: CSSProperties = { ...HEADING, fontSize: 18, color: 'var(--text
 
 function offline(): boolean {
   return typeof navigator !== 'undefined' && navigator.onLine === false
+}
+
+/** A superset's letter (A, B …); past Z its number, as the workout and the finished program say it. */
+function supersetLetter(index: number): string {
+  return index < 26 ? String.fromCharCode(65 + index) : `#${index + 1}`
 }
 
 const SUBMIT_STYLE: CSSProperties = { height: 52, boxSizing: 'border-box', borderRadius: 10, borderWidth: 0, fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 15, letterSpacing: '0.03em' }
@@ -275,11 +287,38 @@ function WorkoutCard({
     reorder.mutate(next.map((ex, i) => ({ id: ex.id, position: i })))
   }
 
+  // The member next to exercises[index], in the direction asked, as an index; null at the superset's edge (the exercise beyond is in no superset or in
+  // another one, or there is none). It decides both whether a member's arrow is offered and where its move goes, so the two cannot disagree.
+  function neighbourInSuperset(index: number, direction: 'up' | 'down'): number | null {
+    const other = direction === 'up' ? index - 1 : index + 1
+    return isLinkedGap(exercises, Math.min(index, other)) ? other : null
+  }
+
+  // A superset member's ↑ ↓ (1.2.1 item 2): it swaps with the member next to it, inside its superset only; the edge of the superset is not crossed
+  // (the arrow is greyed there). The list is held in its new order at once, as `moveExercise` does it, and every place is the row's index; only the
+  // exercises whose stored place is not their new one are sent, through the same `reorder` mutation. In a list stored 0, 1, 2 … that is the two
+  // members that swapped; a list with a gap or a tie in it (a delete leaves the gap and the next add takes the same place twice) is put right by the
+  // same move, which is what `moveExercise` does for every move.
+  function moveWithinSuperset(index: number, direction: 'up' | 'down') {
+    const other = neighbourInSuperset(index, direction)
+    if (other === null) return
+    const next = [...exercises]
+    ;[next[index], next[other]] = [next[other], next[index]]
+    const ordered = next.map((ex, i) => ({ ...ex, position: i }))
+    const storedPlace = new Map(exercises.map((ex) => [ex.id, ex.position]))
+    queryClient.setQueryData(['v2_programExercises', workoutDay.id], ordered)
+    reorder.mutate(ordered.filter((ex) => storedPlace.get(ex.id) !== ex.position).map((ex) => ({ id: ex.id, position: ex.position })))
+  }
+
   // Toggles the gap after exercises[gapIndex] — link merges the two neighbouring runs into one block, unlink splits one run in two
   // (supersetGroups.ts's planLinkToggle decides exactly which ids get which block id, including minting a fresh one when needed).
   function handleToggleLink(gapIndex: number) {
     toggleLink.mutate(planLinkToggle(exercises, gapIndex))
   }
+
+  // A superset's letter among this workout's supersets, in list order (A, B …), by its first member: the letter its row says.
+  const supersetLetters = new Map<string, string>()
+  for (const unit of units) if (unit.length >= 2) supersetLetters.set(unit[0].id, supersetLetter(supersetLetters.size))
 
   const weekday = (scheduleType ?? 'weekday') === 'weekday'
   const currentDow = DAYS.find((d) => schedule[d.key] === workoutDay.id)?.key ?? null
@@ -383,8 +422,23 @@ function WorkoutCard({
           const linkedAbove = index > 0 && isLinkedGap(exercises, index - 1)
           const linkedBelow = index < exercises.length - 1 && isLinkedGap(exercises, index)
           const exerciseName = ex.exercise?.name ?? '—'
+          // A member of a superset moves inside it (`neighbourInSuperset`); anything else is a unit of one, which moves past its neighbouring unit
+          // as it always did.
+          const member = unit.length >= 2
           return (
             <Fragment key={ex.id}>
+              {/* 1.2.1 item 2: a superset's own row, above its first member. Its arrows move the whole superset. */}
+              {member && unit[0].id === ex.id && (
+                <SupersetHeader
+                  letter={supersetLetters.get(ex.id) ?? 'A'}
+                  count={unit.length}
+                  readOnly={volumeReadOnly}
+                  canMoveUp={unitIndex > 0}
+                  canMoveDown={unitIndex < units.length - 1}
+                  onMoveUp={() => moveExercise(index, 'up')}
+                  onMoveDown={() => moveExercise(index, 'down')}
+                />
+              )}
               {openExerciseId === ex.id ? (
                 <OpenExercise
                   pe={ex}
@@ -392,14 +446,14 @@ function WorkoutCard({
                   railUp={linkedAbove}
                   railDown={linkedBelow}
                   readOnly={volumeReadOnly}
-                  canMoveUp={unitIndex > 0}
-                  canMoveDown={unitIndex < units.length - 1}
+                  canMoveUp={member ? neighbourInSuperset(index, 'up') !== null : unitIndex > 0}
+                  canMoveDown={member ? neighbourInSuperset(index, 'down') !== null : unitIndex < units.length - 1}
                   inSuperset={unit.length >= 2 && !!ex.supersetBlockId}
                   blockRest={ex.supersetBlockId ? (blockRestById.get(ex.supersetBlockId) ?? null) : null}
                   globalWeightUnit={globalWeightUnit}
                   onClose={() => setOpenExerciseId(null)}
-                  onMoveUp={() => moveExercise(index, 'up')}
-                  onMoveDown={() => moveExercise(index, 'down')}
+                  onMoveUp={() => (member ? moveWithinSuperset(index, 'up') : moveExercise(index, 'up'))}
+                  onMoveDown={() => (member ? moveWithinSuperset(index, 'down') : moveExercise(index, 'down'))}
                   onDelete={() => setConfirmDeleteExercise({ id: ex.id, name: ex.exercise?.name ?? 'this exercise' })}
                   onWeightUnit={(weightUnit) => updateWeightUnit.mutate({ id: ex.id, weightUnit })}
                   onRest={(changes) => updateRest.mutate({ id: ex.id, changes })}
@@ -591,7 +645,8 @@ function OpenExercise({
   railUp: boolean
   railDown: boolean
   readOnly: boolean
-  // The UNIT's own position among units, not this row's among rows (a superset moves as one).
+  // A single exercise's: its unit's place among units. A superset member's (1.2.1 item 2): whether the member next to it is in its superset;
+  // the superset as a whole moves from its own row.
   canMoveUp: boolean
   canMoveDown: boolean
   inSuperset: boolean
@@ -606,8 +661,8 @@ function OpenExercise({
   // regardless). null = "no override": REST falls through to the global Settings value, REST AFTER simply never applies (the exercise's own last
   // set then also falls through to REST, then global); no tempo means none is shown during the workout.
   onRest: (changes: { restSeconds?: number | null; restAfterSeconds?: number | null }) => void
-  // Chunk 17 (SPEC "Tempo") — same posture. Already-normalised text or null; TempoEditor is the one place that calls normaliseTempo, so this callback
-  // only ever receives a valid tempo or null, never raw user input.
+  // Chunk 17 (SPEC "Tempo") — same posture. Already-normalised text or null: the tempo picker hands back `normaliseTempo`'s own text (1.2.1 item 3),
+  // so this callback only ever receives a valid tempo or null, never raw user input.
   onTempo: (tempo: string | null) => void
   onBlockRest: (changes: { restWithinRoundSeconds?: number | null; restAfterRoundSeconds?: number | null }) => void
 }) {
@@ -654,13 +709,83 @@ function OpenExercise({
           </div>
           <RestStepper label="REST" value={pe.restSeconds ?? null} disabled={false} onChange={(v) => onRest({ restSeconds: v })} defaultText="GLOBAL" ariaLabel="rest" />
           <RestStepper label="REST AFTER" value={pe.restAfterSeconds ?? null} disabled={false} onChange={(v) => onRest({ restAfterSeconds: v })} defaultText="NONE" ariaLabel="rest after" />
-          <TempoEditor value={pe.tempo ?? null} disabled={false} onChange={onTempo} />
+          <TempoField name={name} value={pe.tempo ?? null} onChange={onTempo} />
         </div>
 
         {/* Chunk 16 (SPEC "Rest"/"Supersets": "Both overridable per superset") — a member's editor carries its block's own two fields; never gated
             by volumeReadOnly, same posture as the grouping toggle. */}
         {inSuperset && pe.supersetBlockId && <BlockRestEditor blockId={pe.supersetBlockId} rest={blockRest} onChange={onBlockRest} />}
       </div>
+    </div>
+  )
+}
+
+// The TEMPO row (1.2.1 item 3; SPEC Tempo picker): the tempo set on the exercise, or "—", and a tap opens the tempo picker (the rep and RIR pickers'
+// sheet) in place of the text box typed with dashes. A pick that is the tempo already there writes nothing. Never gated by `volumeReadOnly`: tempo is a
+// design field, as it was. The picker is mounted to open it and is not inside anything clickable.
+function TempoField({ name, value, onChange }: { name: string; value: string | null; onChange: (tempo: string | null) => void }) {
+  const [open, setOpen] = useState(false)
+  const set = value !== null
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '92px minmax(0, 1fr)', alignItems: 'center' }}>
+      <span style={{ ...MONO, fontSize: 10, letterSpacing: '0.12em', color: 'var(--text-muted)' }}>TEMPO</span>
+      <button
+        type="button"
+        aria-label={`Tempo for ${name}`}
+        onClick={() => setOpen(true)}
+        style={{ ...MONO, height: 44, boxSizing: 'border-box', borderRadius: 8, ...hairline(set ? 'var(--accent)' : 'var(--border)'), background: set ? 'var(--accent-muted)' : 'var(--surface)', padding: '0 14px', textAlign: 'left', fontSize: 13, fontWeight: set ? 700 : 600, color: set ? 'var(--accent)' : 'var(--text-dim)', cursor: 'pointer' }}
+      >
+        {/* '—' (not "NONE": REST AFTER's own default text is that word, and a text query would find two). */}
+        {value ?? '—'}
+      </button>
+      {open && (
+        <TempoPicker
+          exerciseName={name}
+          value={value}
+          onSubmit={(tempo) => {
+            if (tempo !== value) onChange(tempo)
+            setOpen(false)
+          }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// A superset's own row (1.2.1 item 2; SPEC Planner, step 2; prototype "Pull 1 with a superset"), above its first member: the link icon, its letter and how
+// many exercises it holds, and ↑ ↓ that move the whole superset. The arrows are reordering, so `volumeReadOnly` hides them as it hides a member's.
+function SupersetHeader({
+  letter,
+  count,
+  readOnly,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+}: {
+  letter: string
+  count: number
+  readOnly: boolean
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onMoveUp: () => void
+  onMoveDown: () => void
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '4px 6px 0 16px', background: 'var(--accent-muted)' }}>
+      <Link2 size={13} aria-hidden="true" style={{ color: 'var(--accent)', flex: '0 0 auto' }} />
+      <span style={{ ...MONO, flex: '1 1 0%', minWidth: 0, fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: 'var(--accent)' }}>{`SUPERSET ${letter} · ${count} EXERCISES`}</span>
+      {!readOnly && (
+        <>
+          <IconButton label={`Move superset ${letter} up`} onClick={onMoveUp} disabled={!canMoveUp}>
+            <ChevronUp size={16} strokeWidth={2.2} />
+          </IconButton>
+          <IconButton label={`Move superset ${letter} down`} onClick={onMoveDown} disabled={!canMoveDown}>
+            <ChevronDown size={16} strokeWidth={2.2} />
+          </IconButton>
+        </>
+      )}
     </div>
   )
 }

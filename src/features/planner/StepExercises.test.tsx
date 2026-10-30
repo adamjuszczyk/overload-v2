@@ -2,6 +2,8 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, act, within } from '@testing-library/react'
 import type { Exercise, Program, WorkoutDay, ProgramExercise, WarmupRoutineItem, SequenceItem } from '../../types'
+import { queryClient } from '../../lib/queryClient'
+import { pickTempo } from '../../components/pickers/tempoPicker.testutil'
 
 // Chunk 11 — step 2 (exercises, order, weekday). Heavy-mocked at the hook
 // boundary, same precedent as ProgramPage.test.tsx/PrioritiesEditor.test.tsx:
@@ -63,7 +65,7 @@ vi.mock('../programs/usePrograms', () => ({
   useUpdateProgramExerciseWeightUnit: () => ({ mutate: updateWeightUnitMutateMock, isPending: false }),
   useUpdateProgramExerciseRest: () => ({ mutate: updateRestMutateMock, isPending: false }),
   // Chunk 17 (SPEC "Tempo") — same "not this test file's own concern" posture
-  // as useSupersetBlockRests below; TempoEditor's own describe block is the
+  // as useSupersetBlockRests below; the tempo describe block is the
   // one that cares what this mock is called with.
   useUpdateProgramExerciseTempo: () => ({ mutate: updateTempoMutateMock, isPending: false }),
   useToggleSupersetLink: () => ({ mutate: toggleLinkMutateMock, isPending: false }),
@@ -136,6 +138,7 @@ const { default: StepExercises } = await import('./StepExercises')
 
 afterEach(() => {
   cleanup()
+  queryClient.clear()
   createDayMutateAsyncMock.mockReset()
   updateNameMutateAsyncMock.mockReset()
   deleteDayMutateMock.mockReset()
@@ -389,7 +392,7 @@ describe('StepExercises — superset grouping (chunk 13, never gated by volumeRe
     expect(toggleLinkMutateMock).toHaveBeenCalled()
   })
 
-  it('reorder moves a 2-member block as one unit past a neighbouring single exercise', () => {
+  it('reorder moves a 2-member block as one unit past a neighbouring single exercise (the superset’s own row: 1.2.1 item 2; this test moved there from a member’s arrows)', () => {
     workoutDays = [day({ id: 'wd-1' })]
     exercisesByDay['wd-1'] = [
       exercise({ id: 'pe-1', position: 0, supersetBlockId: 'blk-1', exercise: { ...exercise().exercise!, name: 'Bench Press' } }),
@@ -398,25 +401,261 @@ describe('StepExercises — superset grouping (chunk 13, never gated by volumeRe
     ]
     render(<StepExercises program={program()} volumeReadOnly={false} />)
 
-    // Only the open exercise has arrows (PP2): one pair, whichever member of the block it is, and it moves the whole block.
-    openExercise('Bench Press')
+    // The block has one pair of arrows on its own row, with every exercise shut, and it moves the whole block.
     expect(screen.getAllByRole('button').filter((b) => b.querySelector('svg.lucide-chevron-down'))).toHaveLength(1)
-    fireEvent.click(screen.getByLabelText('Move Bench Press down')) // moves [pe-1, pe-2] down past pe-3
+    fireEvent.click(screen.getByLabelText('Move superset A down')) // moves [pe-1, pe-2] down past pe-3
 
     expect(reorderMutateMock).toHaveBeenCalledWith([
       { id: 'pe-3', position: 0 },
       { id: 'pe-1', position: 1 },
       { id: 'pe-2', position: 2 },
     ])
-
+    // the same block, opened at either member: the member’s arrows move the member inside the block now, and the whole block stays where it is
     reorderMutateMock.mockClear()
-    fireEvent.click(screen.getByLabelText('Close Bench Press'))
-    openExercise('Incline Press') // the block's second member: the same block moves, as one
-    fireEvent.click(screen.getByLabelText('Move Incline Press down'))
+    openExercise('Incline Press')
+    fireEvent.click(screen.getByLabelText('Move Incline Press up'))
     expect(reorderMutateMock).toHaveBeenCalledWith([
-      { id: 'pe-3', position: 0 },
+      { id: 'pe-2', position: 0 },
       { id: 'pe-1', position: 1 },
-      { id: 'pe-2', position: 2 },
+    ])
+  })
+})
+
+// 1.2.1 item 2 (SPEC Planner, step 2; prototype "Pull 1 with a superset"): a superset has its own row above its first member, with its letter, how many
+// exercises it holds and ↑ ↓ that move the whole superset; a member's ↑ ↓ move it past the member next to it, inside the superset only, and are greyed at
+// the superset's edges; a single exercise is as it was. The prototype's Pull 1 is the world: Lat Pulldown, a trio (Seated Cable Row, Face Pull, Rear
+// Delt Fly) and EZ Bar Curl, and the members' places are told apart by their ids, so a write that lands on the wrong exercise fails.
+describe('StepExercises — a superset’s own row and its members’ arrows (1.2.1 item 2)', () => {
+  const named = (name: string) => ({ ...exercise().exercise!, name })
+  /** Lat Pulldown, the trio A/B/C, EZ Bar Curl — in the places given (0 to 4 unless a test gives others). */
+  function pull(places: number[] = [0, 1, 2, 3, 4]): ProgramExercise[] {
+    return [
+      exercise({ id: 'pe-lat', position: places[0], exercise: named('Lat Pulldown') }),
+      exercise({ id: 'pe-row', position: places[1], supersetBlockId: 'blk-1', exercise: named('Seated Cable Row') }),
+      exercise({ id: 'pe-face', position: places[2], supersetBlockId: 'blk-1', exercise: named('Face Pull') }),
+      exercise({ id: 'pe-fly', position: places[3], supersetBlockId: 'blk-1', exercise: named('Rear Delt Fly') }),
+      exercise({ id: 'pe-ez', position: places[4], exercise: named('EZ Bar Curl') }),
+    ]
+  }
+  const draw = (list: ProgramExercise[], volumeReadOnly = false) => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = list
+    return render(<StepExercises program={program()} volumeReadOnly={volumeReadOnly} />)
+  }
+  const arrow = (label: string) => screen.getByLabelText(label) as HTMLButtonElement
+  const follows = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+  // The list the move holds at once (the planner's own query key), read from the cache the mocked hook doesn't use.
+  const cachedList = () => {
+    const list = queryClient.getQueryData<ProgramExercise[]>(['v2_programExercises', 'wd-1'])
+    expect(list, 'the move holds the new order in the cache').toBeTruthy()
+    return list!
+  }
+  const cachedOrder = () => cachedList().map((e) => e.id)
+
+  it('a superset has its own row above its first member: its letter and how many exercises, between the exercise before it and the first member; a single exercise has none', () => {
+    draw(pull())
+    const header = screen.getByText('SUPERSET A · 3 EXERCISES')
+    expect(screen.getAllByText(/^SUPERSET [A-Z] · \d+ EXERCISES$/)).toHaveLength(1)
+    const order = [screen.getByLabelText('Edit Lat Pulldown'), header, screen.getByLabelText('Edit Seated Cable Row'), screen.getByLabelText('Edit Face Pull'), screen.getByLabelText('Edit Rear Delt Fly'), screen.getByLabelText('Edit EZ Bar Curl')]
+    for (let i = 1; i < order.length; i++) expect(follows(order[i - 1], order[i])).toBe(true)
+    expect(header.parentElement!.querySelector('svg')).toBeTruthy() // the link icon
+  })
+
+  it('two supersets in a workout are A and B, each with its own count and its own arrows', () => {
+    draw([
+      exercise({ id: 'pe-bench', position: 0, supersetBlockId: 'blk-1', exercise: named('Bench Press') }),
+      exercise({ id: 'pe-incline', position: 1, supersetBlockId: 'blk-1', exercise: named('Incline Press') }),
+      exercise({ id: 'pe-dips', position: 2, exercise: named('Dips') }),
+      exercise({ id: 'pe-row', position: 3, supersetBlockId: 'blk-2', exercise: named('Row') }),
+      exercise({ id: 'pe-pulldown', position: 4, supersetBlockId: 'blk-2', exercise: named('Pulldown') }),
+      exercise({ id: 'pe-curl', position: 5, supersetBlockId: 'blk-2', exercise: named('Curl') }),
+    ])
+    expect(screen.getAllByText(/^SUPERSET [A-Z] · \d+ EXERCISES$/).map((n) => n.textContent)).toEqual(['SUPERSET A · 2 EXERCISES', 'SUPERSET B · 3 EXERCISES'])
+    fireEvent.click(arrow('Move superset B up')) // past Dips, not past a member of A
+    expect(reorderMutateMock).toHaveBeenCalledWith([
+      { id: 'pe-bench', position: 0 },
+      { id: 'pe-incline', position: 1 },
+      { id: 'pe-row', position: 2 },
+      { id: 'pe-pulldown', position: 3 },
+      { id: 'pe-curl', position: 4 },
+      { id: 'pe-dips', position: 5 },
+    ])
+  })
+
+  it('the row’s ↑ moves the whole superset above the exercise before it, and its ↓ below the one after, with every exercise shut', () => {
+    draw(pull())
+    fireEvent.click(arrow('Move superset A up'))
+    expect(reorderMutateMock).toHaveBeenLastCalledWith([
+      { id: 'pe-row', position: 0 },
+      { id: 'pe-face', position: 1 },
+      { id: 'pe-fly', position: 2 },
+      { id: 'pe-lat', position: 3 },
+      { id: 'pe-ez', position: 4 },
+    ])
+    fireEvent.click(arrow('Move superset A down'))
+    expect(reorderMutateMock).toHaveBeenLastCalledWith([
+      { id: 'pe-lat', position: 0 },
+      { id: 'pe-ez', position: 1 },
+      { id: 'pe-row', position: 2 },
+      { id: 'pe-face', position: 3 },
+      { id: 'pe-fly', position: 4 },
+    ])
+  })
+
+  it('the row’s arrows are greyed at the edges of the list: ↑ on the first unit, ↓ on the last, and neither when it is the only unit', () => {
+    const [lat, row, face, fly, ez] = pull()
+    draw([row, face, fly, lat, ez])
+    expect(arrow('Move superset A up').disabled).toBe(true)
+    expect(arrow('Move superset A down').disabled).toBe(false)
+    fireEvent.click(arrow('Move superset A up'))
+    expect(reorderMutateMock).not.toHaveBeenCalled()
+    cleanup()
+    draw([lat, ez, row, face, fly])
+    expect(arrow('Move superset A up').disabled).toBe(false)
+    expect(arrow('Move superset A down').disabled).toBe(true)
+    fireEvent.click(arrow('Move superset A down'))
+    expect(reorderMutateMock).not.toHaveBeenCalled()
+    cleanup()
+    draw([row, face, fly])
+    expect(arrow('Move superset A up').disabled).toBe(true)
+    expect(arrow('Move superset A down').disabled).toBe(true)
+    cleanup()
+    draw(pull())
+    expect(arrow('Move superset A up').disabled).toBe(false)
+    expect(arrow('Move superset A down').disabled).toBe(false)
+  })
+
+  it('the row stays and its arrows go when volumeReadOnly: moving is reordering, which a run’s copy refuses', () => {
+    draw(pull(), true)
+    expect(screen.getByText('SUPERSET A · 3 EXERCISES')).toBeTruthy()
+    expect(screen.queryByLabelText('Move superset A up')).toBeNull()
+    expect(screen.queryByLabelText('Move superset A down')).toBeNull()
+    openExercise('Face Pull')
+    expect(screen.queryByLabelText('Move Face Pull up')).toBeNull()
+    expect(screen.queryByLabelText('Move Face Pull down')).toBeNull()
+  })
+
+  it('the middle member’s ↑ swaps it with the member above, and only those two places are written; the block is as it was', () => {
+    draw(pull())
+    openExercise('Face Pull')
+    expect(arrow('Move Face Pull up').disabled).toBe(false)
+    expect(arrow('Move Face Pull down').disabled).toBe(false)
+    fireEvent.click(arrow('Move Face Pull up'))
+    expect(reorderMutateMock).toHaveBeenCalledTimes(1)
+    expect(reorderMutateMock).toHaveBeenCalledWith([
+      { id: 'pe-face', position: 1 },
+      { id: 'pe-row', position: 2 },
+    ])
+    // the list is held in its new order at once, the exercises outside the block where they were, the block still one block
+    expect(cachedOrder()).toEqual(['pe-lat', 'pe-face', 'pe-row', 'pe-fly', 'pe-ez'])
+    expect(cachedList().map((e) => e.supersetBlockId ?? null)).toEqual([null, 'blk-1', 'blk-1', 'blk-1', null])
+    expect(cachedList().map((e) => e.position)).toEqual([0, 1, 2, 3, 4])
+    expect(toggleLinkMutateMock).not.toHaveBeenCalled()
+    expect(updateBlockRestMutateMock).not.toHaveBeenCalled()
+  })
+
+  it('the middle member’s ↓ swaps it with the member below, and only those two places are written', () => {
+    draw(pull())
+    openExercise('Face Pull')
+    fireEvent.click(arrow('Move Face Pull down'))
+    expect(reorderMutateMock).toHaveBeenCalledTimes(1)
+    expect(reorderMutateMock).toHaveBeenCalledWith([
+      { id: 'pe-fly', position: 2 },
+      { id: 'pe-face', position: 3 },
+    ])
+    expect(cachedOrder()).toEqual(['pe-lat', 'pe-row', 'pe-fly', 'pe-face', 'pe-ez'])
+  })
+
+  it('the first member’s ↑ and the last member’s ↓ are greyed, the superset’s edges, and a press there writes nothing; the other arrow of each works', () => {
+    draw(pull())
+    openExercise('Seated Cable Row')
+    expect(arrow('Move Seated Cable Row up').disabled).toBe(true) // Lat Pulldown is above, outside the superset
+    expect(arrow('Move Seated Cable Row down').disabled).toBe(false)
+    fireEvent.click(arrow('Move Seated Cable Row up'))
+    expect(reorderMutateMock).not.toHaveBeenCalled()
+    fireEvent.click(arrow('Move Seated Cable Row down'))
+    expect(reorderMutateMock).toHaveBeenLastCalledWith([
+      { id: 'pe-face', position: 1 },
+      { id: 'pe-row', position: 2 },
+    ])
+    reorderMutateMock.mockClear()
+    fireEvent.click(screen.getByLabelText('Close Seated Cable Row'))
+    openExercise('Rear Delt Fly')
+    expect(arrow('Move Rear Delt Fly down').disabled).toBe(true) // EZ Bar Curl is below, outside the superset
+    expect(arrow('Move Rear Delt Fly up').disabled).toBe(false)
+    fireEvent.click(arrow('Move Rear Delt Fly down'))
+    expect(reorderMutateMock).not.toHaveBeenCalled()
+    fireEvent.click(arrow('Move Rear Delt Fly up'))
+    expect(reorderMutateMock).toHaveBeenLastCalledWith([
+      { id: 'pe-fly', position: 2 },
+      { id: 'pe-face', position: 3 },
+    ])
+  })
+
+  it('a member does not leave its superset for the one beside it: two supersets one above the other keep their edges', () => {
+    draw([
+      exercise({ id: 'pe-bench', position: 0, supersetBlockId: 'blk-1', exercise: named('Bench Press') }),
+      exercise({ id: 'pe-incline', position: 1, supersetBlockId: 'blk-1', exercise: named('Incline Press') }),
+      exercise({ id: 'pe-row', position: 2, supersetBlockId: 'blk-2', exercise: named('Row') }),
+      exercise({ id: 'pe-pulldown', position: 3, supersetBlockId: 'blk-2', exercise: named('Pulldown') }),
+    ])
+    openExercise('Incline Press')
+    expect(arrow('Move Incline Press down').disabled).toBe(true) // Row is the next exercise, in the other superset
+    expect(arrow('Move Incline Press up').disabled).toBe(false)
+    fireEvent.click(screen.getByLabelText('Close Incline Press'))
+    openExercise('Row')
+    expect(arrow('Move Row up').disabled).toBe(true)
+    expect(arrow('Move Row down').disabled).toBe(false)
+  })
+
+  it('a single exercise is as it was: its arrows move it past the neighbouring unit, a whole superset and not one member of it', () => {
+    draw(pull())
+    openExercise('Lat Pulldown')
+    expect(arrow('Move Lat Pulldown up').disabled).toBe(true)
+    fireEvent.click(arrow('Move Lat Pulldown down'))
+    expect(reorderMutateMock).toHaveBeenLastCalledWith([
+      { id: 'pe-row', position: 0 },
+      { id: 'pe-face', position: 1 },
+      { id: 'pe-fly', position: 2 },
+      { id: 'pe-lat', position: 3 },
+      { id: 'pe-ez', position: 4 },
+    ])
+    reorderMutateMock.mockClear()
+    fireEvent.click(screen.getByLabelText('Close Lat Pulldown'))
+    openExercise('EZ Bar Curl')
+    expect(arrow('Move EZ Bar Curl down').disabled).toBe(true)
+    fireEvent.click(arrow('Move EZ Bar Curl up'))
+    expect(reorderMutateMock).toHaveBeenLastCalledWith([
+      { id: 'pe-lat', position: 0 },
+      { id: 'pe-ez', position: 1 },
+      { id: 'pe-row', position: 2 },
+      { id: 'pe-face', position: 3 },
+      { id: 'pe-fly', position: 4 },
+    ])
+  })
+
+  // A delete leaves a gap in the stored places and the next add takes the last place twice, so the stored places are not always 0, 1, 2 … The move
+  // holds the list to its indexes, as the whole-superset move always has, and sends the exercises whose stored place is not their index now.
+  it('with a gap in the stored places the move puts them right: the exercises whose place is not their index are written, the two that swapped among them', () => {
+    draw(pull([0, 2, 3, 4, 7]))
+    openExercise('Face Pull')
+    fireEvent.click(arrow('Move Face Pull up'))
+    expect(reorderMutateMock).toHaveBeenCalledTimes(1)
+    expect(reorderMutateMock).toHaveBeenCalledWith([
+      { id: 'pe-face', position: 1 },
+      { id: 'pe-fly', position: 3 },
+      { id: 'pe-ez', position: 4 },
+    ])
+  })
+
+  it('with two exercises in one place the move breaks the tie, and what it writes is every place that is not its index', () => {
+    draw(pull([0, 1, 2, 3, 3]))
+    openExercise('Face Pull')
+    fireEvent.click(arrow('Move Face Pull up'))
+    expect(reorderMutateMock).toHaveBeenCalledWith([
+      { id: 'pe-face', position: 1 },
+      { id: 'pe-row', position: 2 },
+      { id: 'pe-ez', position: 4 },
     ])
   })
 })
@@ -500,11 +739,13 @@ describe('StepExercises — rest / rest after / superset rest (chunk 16, never g
   })
 })
 
-// Chunk 17 (SPEC "Tempo") — TempoEditor lives in the same row as REST/REST
-// AFTER (ExerciseRow), so these mirror that describe block's own shape:
-// same mock hook (useUpdateProgramExerciseTempo), same "even when
-// volumeReadOnly" proof.
-describe('StepExercises — tempo (chunk 17, never gated by volumeReadOnly)', () => {
+// Chunk 17 (SPEC "Tempo") — the TEMPO row lives in the same open exercise as REST/REST AFTER, so these mirror that describe block's own shape: same mock
+// hook (useUpdateProgramExerciseTempo), same "even when volumeReadOnly" proof. Since 1.2.1 (item 3, SPEC Tempo picker) the row opens the tempo picker in
+// place of a text box typed with dashes: the picker's own rules (four boxes, X, 0-20) are proven in TempoPicker.test.tsx, and here what the row writes.
+describe('StepExercises — tempo (chunk 17, never gated by volumeReadOnly; the tempo picker since 1.2.1)', () => {
+  const tempoRow = (name = 'Bench Press') => screen.getByLabelText(`Tempo for ${name}`) as HTMLButtonElement
+  const picker = () => screen.getByRole('dialog', { name: 'Tempo' })
+
   it('shows "—" with no tempo', () => {
     workoutDays = [day({ id: 'wd-1' })]
     exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0 })]
@@ -512,6 +753,7 @@ describe('StepExercises — tempo (chunk 17, never gated by volumeReadOnly)', ()
 
     openExercise('Bench Press')
     expect(screen.getByText('—')).toBeTruthy()
+    expect(tempoRow().textContent).toBe('—')
   })
 
   it('shows the exercise\'s own tempo text when set (on its shut row too: TEMPO 3-1-1-0, PP2)', () => {
@@ -522,53 +764,115 @@ describe('StepExercises — tempo (chunk 17, never gated by volumeReadOnly)', ()
     expect(screen.getByText('TEMPO 3-1-1-0')).toBeTruthy()
     openExercise('Bench Press')
     expect(screen.getByText('3-1-1-0')).toBeTruthy()
+    expect(tempoRow().textContent).toBe('3-1-1-0')
   })
 
-  it('a valid entry writes the normalised tempo via updateProgramExerciseTempo, even when volumeReadOnly', () => {
-    workoutDays = [day({ id: 'wd-1' })]
-    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0 })]
-    render(<StepExercises program={program()} volumeReadOnly />)
-
-    openExercise('Bench Press')
-    fireEvent.click(screen.getByText('—'))
-    const input = screen.getByPlaceholderText('3-1-1-0')
-    fireEvent.change(input, { target: { value: '3-1-x-0' } }) // lowercase x
-    fireEvent.blur(input)
-
-    // normaliseTempo upper-cases the X (chunk 2) — the editor writes exactly
-    // what the parser returns, never the raw input.
-    expect(updateTempoMutateMock).toHaveBeenCalledWith({ id: 'pe-1', tempo: '3-1-X-0' })
-  })
-
-  it('an invalid entry is refused with an inline message, and nothing is written', () => {
-    workoutDays = [day({ id: 'wd-1' })]
-    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0 })]
-    render(<StepExercises program={program()} volumeReadOnly={false} />)
-
-    openExercise('Bench Press')
-    fireEvent.click(screen.getByText('—'))
-    const input = screen.getByPlaceholderText('3-1-1-0')
-    fireEvent.change(input, { target: { value: 'not-a-tempo' } })
-    fireEvent.blur(input)
-
-    expect(updateTempoMutateMock).not.toHaveBeenCalled()
-    expect(screen.getByText(/use 4 fields/i)).toBeTruthy()
-    // The raw (unparsed) input is still right there, not silently cleared.
-    expect((input as HTMLInputElement).value).toBe('not-a-tempo')
-  })
-
-  it('clearing the field writes null', () => {
+  it('a tap on TEMPO opens the tempo picker, named for the exercise, on the tempo it has; there is no text box to type dashes in', () => {
     workoutDays = [day({ id: 'wd-1' })]
     exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0, tempo: '3-1-1-0' })]
     render(<StepExercises program={program()} volumeReadOnly={false} />)
 
     openExercise('Bench Press')
-    fireEvent.click(screen.getByText('3-1-1-0'))
-    const input = screen.getByPlaceholderText('3-1-1-0')
-    fireEvent.change(input, { target: { value: '' } })
-    fireEvent.blur(input)
+    expect(screen.queryByRole('dialog', { name: 'Tempo' })).toBeNull()
+    expect(screen.queryByPlaceholderText('3-1-1-0')).toBeNull()
+    fireEvent.click(tempoRow())
+    expect(within(picker()).getByText('Bench Press')).toBeTruthy() // the eyebrow
+    expect((within(picker()).getByRole('textbox', { name: 'Bottom seconds' }) as HTMLInputElement).value).toBe('1')
+    expect(within(picker()).getByRole('button', { name: 'SET TEMPO 3-1-1-0' })).toBeTruthy()
+  })
 
+  it('a pick writes the picked tempo through onTempo, the text the box wrote (four fields, X in capitals), even when volumeReadOnly', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0 })]
+    render(<StepExercises program={program()} volumeReadOnly />)
+
+    openExercise('Bench Press')
+    fireEvent.click(tempoRow())
+    pickTempo(picker(), '3-1-x-0') // a lowercase x typed in a box, as the text box once took it
+    expect(updateTempoMutateMock).toHaveBeenCalledTimes(1)
+    expect(updateTempoMutateMock).toHaveBeenCalledWith({ id: 'pe-1', tempo: '3-1-X-0' })
+    expect(screen.queryByRole('dialog', { name: 'Tempo' })).toBeNull() // the pick closes the picker
+  })
+
+  it('a valid pick is never written as null: SET with the start tempo writes 3-0-1-0, and no call carries a null tempo', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0 })]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    openExercise('Bench Press')
+    fireEvent.click(tempoRow())
+    fireEvent.click(within(picker()).getByRole('button', { name: 'SET' }))
+    fireEvent.click(within(picker()).getByRole('button', { name: 'SET TEMPO 3-0-1-0' }))
+    expect(updateTempoMutateMock).toHaveBeenCalledWith({ id: 'pe-1', tempo: '3-0-1-0' })
+    expect(updateTempoMutateMock.mock.calls.filter(([arg]) => (arg as { tempo: string | null }).tempo === null)).toEqual([])
+  })
+
+  it('a pick writes to the exercise whose TEMPO was tapped: the middle one of three, one of them a superset member', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [
+      exercise({ id: 'pe-1', position: 0, exercise: { ...exercise().exercise!, name: 'Bench Press' } }),
+      exercise({ id: 'pe-2', position: 1, supersetBlockId: 'blk-1', exercise: { ...exercise().exercise!, name: 'Incline Press' } }),
+      exercise({ id: 'pe-3', position: 2, supersetBlockId: 'blk-1', exercise: { ...exercise().exercise!, name: 'Dips' } }),
+    ]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    openExercise('Incline Press')
+    fireEvent.click(tempoRow('Incline Press'))
+    pickTempo(picker(), '2-0-X-1')
+    expect(updateTempoMutateMock).toHaveBeenCalledTimes(1)
+    expect(updateTempoMutateMock).toHaveBeenCalledWith({ id: 'pe-2', tempo: '2-0-X-1' })
+    fireEvent.click(screen.getByLabelText('Close Incline Press'))
+    openExercise('Dips')
+    fireEvent.click(tempoRow('Dips'))
+    pickTempo(picker(), '4-0-1-0')
+    expect(updateTempoMutateMock).toHaveBeenLastCalledWith({ id: 'pe-3', tempo: '4-0-1-0' })
+  })
+
+  it('NONE writes null: clearing a tempo that was set', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0, tempo: '3-1-1-0' })]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    openExercise('Bench Press')
+    fireEvent.click(tempoRow())
+    pickTempo(picker(), '')
     expect(updateTempoMutateMock).toHaveBeenCalledWith({ id: 'pe-1', tempo: null })
+  })
+
+  it('a pick that is the tempo already there writes nothing, and closes the picker', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0, tempo: '3-1-1-0' })]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    openExercise('Bench Press')
+    fireEvent.click(tempoRow())
+    fireEvent.click(within(picker()).getByRole('button', { name: 'SET TEMPO 3-1-1-0' }))
+    expect(updateTempoMutateMock).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: 'Tempo' })).toBeNull()
+    // and with no tempo, NONE is the tempo already there
+    cleanup()
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0 })]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+    openExercise('Bench Press')
+    fireEvent.click(tempoRow())
+    fireEvent.click(within(picker()).getByRole('button', { name: 'SET NO TEMPO' }))
+    expect(updateTempoMutateMock).not.toHaveBeenCalled()
+  })
+
+  it('closing the picker (×, Escape) writes nothing', () => {
+    workoutDays = [day({ id: 'wd-1' })]
+    exercisesByDay['wd-1'] = [exercise({ id: 'pe-1', position: 0, tempo: '3-1-1-0' })]
+    render(<StepExercises program={program()} volumeReadOnly={false} />)
+
+    openExercise('Bench Press')
+    fireEvent.click(tempoRow())
+    fireEvent.click(within(picker()).getByRole('button', { name: 'NONE' }))
+    fireEvent.click(within(picker()).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog', { name: 'Tempo' })).toBeNull()
+    fireEvent.click(tempoRow())
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Tempo' })).toBeNull()
+    expect(updateTempoMutateMock).not.toHaveBeenCalled()
   })
 })
 
