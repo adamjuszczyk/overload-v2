@@ -244,3 +244,15 @@ Stage: tasks (1.2.1, chunk 79; seen again in the pre-read's 72-1 and 75-6)
 What happened: TASKS 79's staging line says "the planner's STG PPL shows the superset row"; STG PPL has no superset (the seed's is STG Upper/Lower's Upper A). The reviewer checked it there. The pre-read found two more checks staging can't run as written (72's interception, 75's "account empty again").
 Possible change: TASKS's staging lines are checked against the seed (the smoke's own reads) when they are written; a check that needs a shape names the seed row that holds it.
 Verdict:
+
+## L26 The agents' self-reported costs ran low; the meter now reports the session's real cost   status: open
+Stage: build (1.2.1)
+What happened: no subagent can read a meter, so every chunk report estimated its own cost-weighted total from its
+transcript. At 22:05 UTC `get_session` (no argument) returned `usage` for the first time this build: cost_usd $93.50,
+cache reads 448.5M, writes 5.3M, output 1.51M (≈ 63M cost-weighted), for the coordinator and every agent it started.
+The reports' estimates summed to ≈ 31M (≈ $68 with coordination): about half. Chunk 70's "50% under its estimate"
+(L19), which fired the 30% rule, rested on those estimates. At 17:27 the same call returned no `usage` field.
+Possible change: per-chunk cost is the meter's delta, read by the coordinator before a chunk's builder starts and
+after its merge (with agents of other chunks running at once, the delta is per stretch, not per chunk); agents stop
+estimating dollars. BUILD.md's Bootstrap names `get_session`'s `usage.cost_usd` as the meter.
+Verdict:
