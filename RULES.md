@@ -1,25 +1,28 @@
-# Overload — Rules
+# RULES.md
 
-**Index** (read this, then the sections marked ALWAYS, then only the sections the builder or reviewer brief names; sections are in file order)
-- **ALWAYS** — Escalation (BUILD.md 2.1; the 1.2 criteria unchanged): when to stop and report.
-- **ALWAYS** — Reviewer rules (BUILD.md 2.1, step 4): roles, merges, failures, records.
-- **ALWAYS** — Verification by chunk type (BUILD.md 2.1): DATA and LIGHT.
-- **ALWAYS** — Usage (BUILD.md 2.1): reads, tests, turns, the usage line, resuming.
-- **ALWAYS** — Decision cards (BUILD.md 2.1): the format.
-- Standing rules: rules SPEC made standing (queued writes across a version change).
-- Checks that lied: checks that passed while wrong; re-seed checks.
-- Rules discovered during this build: three groups.
-  - Data and architecture: Query/Zustand, colours, Coach, flagged-migration merges.
-  - Database / migrations: migration rules, fixtures, replay stack, staging config.
-  - **ALWAYS** Verification and process: proofs, reviews, worktrees, PR/merge/docs mechanics.
-- The 1.2 usage rules (2026-10-16), 58b's breakdown (2026-10-22), break proofs (2026-10-26), turn count (2026-10-26): still in force; Usage above summarises them.
-- The 1.2 tests-owed rule (2026-10-20): still in force (Reviewer rules above say the same).
+## Index
+Read this index, then the sections marked ALWAYS, then only the sections your brief names. Sections are in file order. Rules are never pruned; a rule discovered during a build is added the session it is found. The BUILD.md 2.1 sections were aligned with BUILD.md's own text on 2026-10-30 (the setup's second docs PR); where they and BUILD.md still disagree, BUILD.md wins.
+- **ALWAYS** Escalation — what is brought to Adam, never decided.
+- **ALWAYS** Reviewer rules — how a review is done and recorded.
+- **ALWAYS** Verification by chunk type — DATA and LIGHT.
+- **ALWAYS** Usage — reads, tests, turns, the report's cost line, limits.
+- **ALWAYS** Decision cards — the format a stop takes.
+- **ALWAYS** The build loop — roles, where chunks go, the loop, running without Adam, the stop rules (BUILD.md 2.1, step 4, for agents who never read BUILD.md).
+- Standing rules — BUILD.md's standing rules and SPEC rules made standing.
+- Models — the tiers and efforts per role.
+- Checks that lied — checks that passed while wrong; re-seed checks.
+- Rules discovered during this build — three groups: Data and architecture (Query/Zustand, colours, Coach, the standing UI rule, flagged-migration merges); Database / migrations (migration rules, fixtures, the replay stack, staging config); **ALWAYS** Verification and process (proofs, reviews, worktrees, PR/merge/docs mechanics).
+- The 1.2 usage rules (2026-10-16), 58b's breakdown (2026-10-22), break proofs (2026-10-26), turn count (2026-10-26): still in force where Usage above doesn't say otherwise.
+- The 1.2 tests-owed rule (2026-10-20): still in force (the build loop's stop rules say the same).
 - Moved to HISTORY.md on 2026-10-30, replaced by BUILD.md 2.1: the 1.2 cost rule ("2026-10-30 1.2.1 setup").
 
-*Rules are never pruned from this file; a rule discovered during a build is added to it in the same session. "Checks that lied" and "Rules discovered during this build" were moved here from CONTEXT.md unchanged on 2026-10-15 (Adam: "yes, split it"). The five BUILD.md sections were written at the 1.2.1 setup (2026-10-30) from the brief's description of BUILD.md 2.1, whose text did not reach that session: where they and BUILD.md disagree, BUILD.md wins and they are corrected.*
+## Escalation — bring these to Adam, don't decide them
+- Anything SPEC.md is ambiguous or silent about.
+- Any change beyond the chunk's stated scope.
+- A failed staging or production deploy.
+- Without staging: any migration check-migration flags.
 
-## Escalation (BUILD.md 2.1; the 1.2 criteria, moved from CONTEXT.md on 2026-10-30 unchanged)
-A stop is a decision card (below) with full reasoning, not a verdict and options.
+A stop reaches Adam as a decision card (below), with full reasoning. The 1.2 criteria, moved from CONTEXT.md on 2026-10-30 unchanged, still hold:
 Stop and report to Adam (do not route around, do not ask "should I continue without it") when:
 1. **Live verification is required and browser tooling is unavailable.** 1.2: the reviewer's browser must load staging and sign in with the test account; probe it before starting the build (`requestAnimationFrame` probe or a real navigation — never assume from a prior session). Same weight as a failing test. Only exception: Adam, in-session, told plainly what won't be verified, overrides it for that step.
 2. **A query surfaces data that isn't Adam's.** That is a bug in the query: stop, don't investigate, don't record what it returned, narrow it, re-run.
@@ -41,45 +44,103 @@ Stop and report to Adam (do not route around, do not ask "should I continue with
 18. (1.2: retired — `verify-rls` has a standing go-ahead.)
 19. Any UI that can't be built from the app's existing components and design tokens. Builders never invent a new visual language.
 
-## Reviewer rules (BUILD.md 2.1, step 4)
-- A DATA chunk gets its own fresh reviewer (`.claude/agents/reviewer-data.md`, Opus 5.5, max): full review, every break re-run, the staging check, the merge, the record. LIGHT chunks are built two or three at a time, in batches that share no files and depend on nothing unmerged, then one reviewer for the batch (`.claude/agents/reviewer-light.md`, Sonnet 5.5, high) reviews them together, merges them in the batch's order and runs one smoke. The coordinator (Opus 5.5, max) starts every builder and reviewer itself (a subagent can't start a subagent here) and keeps CONTEXT.md and HISTORY.md. No day mode, no night mode, no per-chunk mode.
+## Reviewer rules
+- Verify against the real thing. A passing check proves only what it touched. If unreachable and passing look the same, the check is wrong.
+- Never fix before understanding the cause.
+- Don't read code to check what a script can check. No script yet: write one, or verify by hand and say so.
+- Run every script in scripts/ at every chunk boundary.
+- Never write an unconfirmed belief into CONTEXT.md as fact.
+- Shared scripts are never changed during a build. A chunk that changes one gets the change reverted before merging.
+
+Also, from 1.2's reviewer rules (kept):
 - Never switch branches in the main checkout while a builder runs or resumes; a reviewer works in its own `git worktree`.
-- Verify against the real thing: a passing check proves only what it touched; if unreachable and passing give the same signal, the check is wrong. Never fix before understanding the cause. Don't read code to check what a script can check; if no script covers it, write one, or verify by hand and say that's what happened. Commit verification scripts to `scripts/` and run all of them at every chunk boundary, not just this chunk's.
-- A behaviour failure goes back to the builder with the exact failing case; the second behaviour failure of one chunk stops the build for Adam (a decision card). A missing proof (behaviour verified right, a test missing) is merged and logged as an owed test for the next chunk that touches the same file; never bounced.
-- Migrations: a migration goes live on staging (merged, its deploy read, the probe green) before the code that needs it; a `check-migration` flag is logged under DECISIONS "For the release", never stopped on during the build; the shared scripts (`check-migration`, `migration-rules`, `check-context-size`) are never changed during a build (a chunk that changes one reverts it before merging and says so).
-- Escalate with full reasoning, not a verdict and options. Never write an unconfirmed belief into CONTEXT.md as fact. A rule discovered is written into this file in the same session and never pruned.
-- At every merge: one line in CONTEXT.md "Where the build is", the long form in HISTORY.md, the answered cards and the flagged migrations in DECISIONS.md; CONTEXT.md stays under its ceiling and is rewritten only at merges. A fresh coordinator or reviewer session continues from CONTEXT.md instead of compacting a long one.
-- Screens are compared with the prototype once, before the release (BUILD.md step 5, "Before the release"), by the final reviewer; a chunk's review checks that the captures exist and that the tests prove the wiring.
-- Verification proportional to risk: break-prove every place that writes data; one break per call pattern for read-only display wiring; fingerprint the database only for a migration that touches existing rows.
+- Commit verification scripts to `scripts/` and run all of them at every chunk boundary, not just this chunk's.
+- Escalate with full reasoning, not a verdict and options. Verification proportional to risk: break-prove every place that writes data; one break per call pattern for read-only display wiring; fingerprint the database only for a migration that touches existing rows.
+- A migration goes live on staging (merged, its deploy read, the probe green) before the code that needs it; a `check-migration` flag is logged under DECISIONS "For the release", never stopped on during a build with staging.
+- At every merge: one line in CONTEXT.md "Where the build is" (and its spend and hours), the long form in HISTORY.md, answered cards and flagged migrations in DECISIONS.md; CONTEXT.md stays under its ceiling and is rewritten at merges only. A rule discovered is written into this file the same session.
+- Screens are compared with the prototype once, before the release (BUILD.md step 5, "Before the release"); a chunk's review checks that the captures exist and that the tests prove the wiring. Prototype data handling in a real file fails a review.
 - Nothing in the build touches `master`; the release is BUILD.md step 5 (1.2.1 the 1.2 way: TASKS.md, "Release").
 
-## Verification by chunk type (BUILD.md 2.1)
-- **DATA** (writes data or migrates): every rule asserted at the call site or screen that uses it, with fixtures that tell the right data source from the wrong one (the status row vs a cached one, `deleted_at` vs `kind`, the queue's delete vs the server's row, the week in force vs the run copy's schedule); every place that writes break-proven once (change the asserted payload, watch the test fail, restore from a `cp` backup, never `git checkout --`); a migration proven on the replay as the signed-in role with pg-safeupdate loaded and by its effect on staging; a staging check as the staging accounts; the reviewer re-runs every break and adds one only where a writer has none.
-- **LIGHT** (writes nothing new, SPEC 1.2.1 Rules 7): one break per call pattern (a hook, a query shape, a rule's call site), the captures at 390 px (375 px inside a sheet, `check-sheet-overflow.mjs`), no per-chunk click-through; one smoke after the batch's merges. A LIGHT chunk that adds a request, a column or a queue item is a DATA question (a decision card).
-- **Both:** fixture dates derived from weekdays with the queue printed (Checks that lied #21); a test is proven by injecting the break it claims to catch; what a chunk's verification would not catch is written in TASKS.md and read by its reviewer; prototype data handling in a real file fails the review.
+## Verification by chunk type
+- DATA: one break proof per place that writes data; staging check; database fingerprint only for migrations touching existing rows.
+- LIGHT: one break per call pattern; no per-chunk staging check.
+- No mutation sweeps.
 
-## Usage (BUILD.md 2.1; the 1.2 usage rules below still hold)
-- Builders read narrowly (grep and line ranges, only files the chunk touches), run only the affected test files while building and the full suite once at the end; break proofs run against the specific test file; commands stay under five minutes; independent reads, edits and checks are batched into one turn (turn count is the biggest cost driver).
-- Reviewers read this file's index and ALWAYS sections plus the sections their brief names, and from CONTEXT.md only the sections the chunk touches plus "Where the build is".
-- Quiet reporters (`--reporter=dot`), failures and summaries only, never a full passing log in context; screenshots compared from the text dumps first, a PNG only where the text can't settle it.
-- Every chunk report carries its context figure and its cost-weighted total (re-reads 0.1, writes 2, output 5), and Adam notes the weekly % before and after a chunk (DECISIONS 267), so the next estimate converts without a proxy.
-- A builder or reviewer that hits its budget stops at a clean point and leaves its branch as it is; a usage-limit stop of the coordinator is resumed by its own scheduled task (CONTEXT.md, "Resuming after a limit"), never by Adam. Never resume a long-running agent; start a fresh one from a short summary.
+How (1.2's practice, kept): every rule is asserted at the call site or screen that uses it, with fixtures that tell the right data source from the wrong one (the status row vs a cached one, `deleted_at` vs `kind`, the queue's delete vs the server's row, the week in force vs the run copy's schedule); a break proof changes the asserted payload, watches the test fail, and restores from a `cp` backup, never `git checkout --`; a migration is proven on the replay as the signed-in role with pg-safeupdate loaded and by its effect on staging; the reviewer re-runs every break and adds one only where a writer has none; fixture dates are derived from weekdays with the queue printed; a LIGHT chunk writes nothing new (SPEC 1.2.1 Rules 7), and one that adds a request, a column or a queue item is a DATA question (a decision card); what a chunk's verification would not catch is written in TASKS.md and read by its reviewer.
 
-## Decision cards (BUILD.md 2.1)
-A decision card is how a builder or reviewer raises what it may not decide: something SPEC leaves open or contradicts, a prototype state that contradicts SPEC, a change beyond the chunk's scope, a shared-script change, anything that changes data or behaviour. It goes in the chunk report, and the coordinator puts it to Adam between chunks, in this shape:
+## Usage
+- Commands finish in under 5 minutes.
+- Affected test files only, until one full suite before release.
+- Narrow reads: grep, line ranges, touched files only.
+- Batch tool calls.
+- Quiet test output.
+- Every chunk report ends with its cost, its running time and the running totals.
+
+Also: a chunk over 2M context stops and reports (a stop rule); the cost line gives the context figure and the cost-weighted total (re-reads 0.1, writes 2, output 5), and the coordinator writes the weekly % before and after each chunk next to them (DECISIONS 267; chunk 70 measures what 1% is in cost-weighted terms, BUILD.md Bootstrap); reviewers read this file's index and ALWAYS sections plus the sections their brief names, and from CONTEXT.md only the sections the chunk touches plus "Where the build is"; never resume a long-running agent, start a fresh one from a short summary; a usage-limit stop of the coordinator is resumed by its own scheduled task (CONTEXT.md, "Resuming after a limit"), never by Adam. The 1.2 usage rules below still hold, except their "full suite at the end of every chunk", which BUILD.md replaces with one full suite before the release (every script in `scripts/` still runs at every chunk boundary).
+
+## Decision cards
+The coordinator stops with a decision card: self-contained, in plain words, so Adam can paste it into Chat. One ask per item; decisions and to-dos listed separately, ordered by what they block. Only blocking questions stop the build; non-blocking ones wait and come as one batch at the release. A builder or reviewer raises what it may not decide (Escalation above) in its report, in the same shape, and the coordinator carries it.
 
 ```
-**Card:** [one line: what must be decided]
-**Found:** [where: the file and SPEC's words, or the prototype's DEMO state]
-**Recommendation:** [one option, and why in one line]
-**Options:** (a) … (b) …
-**Blocks:** [the merge / nothing: the chunk continues on the recommendation]
+WAITING ON ADAM — [what it blocks]
+
+Decisions
+1. [The ask.] Options: [a / b]. Recommend: [x], because [one line].
+   Blocks: [chunk].
+
+To-dos
+1. [What to do.] Blocks: [chunk].
+
+Evidence: DECISIONS.md [entry numbers].
 ```
 
-A card that blocks the merge stops the chunk at a clean point; one that doesn't is built on the recommendation, and the report says so. Adam's answer becomes a DECISIONS.md entry (the next number; an old entry is never rewritten) and, when it changes behaviour or wording, a line in SPEC.md. DECISIONS.md is a record, not an inbox.
+Adam discusses in Chat and replies to the coordinator with the answers; the coordinator records them in DECISIONS.md (BUILD.md 2.1's entry format, in that file's header) and, when an answer changes behaviour or wording, in SPEC.md. DECISIONS.md is a record, not an inbox.
+
+## The build loop (BUILD.md 2.1, step 4)
+**Roles.** The coordinator is the one session Adam starts: it starts every builder and reviewer, merges, keeps one line per chunk, tracks cost, writes decision cards, and never reviews code itself. A builder (`.claude/agents/builder.md`) is one per chunk, fresh: it builds on a branch and reports briefly with its cost. A reviewer is fresh, started by the coordinator after the builder reports: a DATA chunk gets its own full reviewer (`reviewer-data.md`); for LIGHT chunks the coordinator runs the builders for 2–3 of them, then one reviewer (`reviewer-light.md`) checks all their diffs and tests together; a batch holds only chunks that don't depend on each other, and they merge in TASKS.md order. Subagents can't start subagents, so the coordinator does all the starting. Every brief names the exact files and RULES.md sections the agent needs.
+
+**Where chunks go.** Overload has real users: builders branch off `staging`; every chunk merges into `staging` through a squash-merged PR; nothing touches the default branch (`master`) until the release; never stack branches.
+
+**The loop.** (1) The coordinator starts the builder with the chunk, the files and the RULES.md sections it needs; the builder ends with a commit beginning `chunk N complete` and a short report with its cost. (2) The coordinator starts the reviewer (or batches LIGHT chunks first). (3) The reviewer checks against the chunk's verification and scope, runs every script, and reports. (4) The coordinator merges (the squash-merged PR; the reviewer reports merge-ready, it never merges), updates CONTEXT.md, and moves on without ending its turn. The coordinator never starts a chunk that has an open question in DECISIONS.md; it builds another chunk meanwhile. After any stop, the coordinator checks the branch for what was already committed and continues from there. The coordinator writes every record (CONTEXT.md's line, the reviewer's report as HISTORY.md's long form, DECISIONS.md's tests owed and flagged migrations, RULES.md's rules discovered, LEARNINGS.md's lessons); builders and reviewers write none of these files.
+
+**Running without Adam.** The build runs until something is waiting on him or the budget is reached; no day or night modes. He gets one line per chunk, and a summary whenever he messages the coordinator. Limit stops resume by themselves (CONTEXT.md, "Resuming after a limit"); he never sends "continue".
+
+**Stop rules.**
+- Budget reached: finish the chunk in progress, then stop and ask.
+- First chunk off the estimate by more than 30%: re-estimate the whole build and tell Adam before going on.
+- A chunk over 2M context: stop and report.
+- Behaviour failure: diagnose the cause first, then the same builder retries once with the cause stated. A second behaviour failure comes to Adam. A chunk that failed twice may move to the stronger model.
+- Missing proof only (behaviour right): goes on the "tests owed" list (DECISIONS.md), cleared in one tests-only run before the release.
+- Display-only choices a builder made are accepted as built and listed for Adam's vibe check.
+
+**When Adam changes his mind mid-build:** it goes into the next-version notes as `later`, unless re-chunking now is cheaper than building the wrong thing; re-chunking means back to TASKS.
+
+**Before the release** (BUILD.md step 5): agents check everything a screenshot or query can decide against SPEC.md and the prototype, including that the built screens match the prototype; tests owed are cleared in one tests-only run, then one full suite; Adam's vibe check on staging (like, dislike, confused; dislikes go to the next version unless one stops the app being used, which gets one fix pass); every non-blocking question comes to him as one batch.
 
 ## Standing rules
+BUILD.md 2.1's, for every build:
+- **SQL.** The Supabase SQL Editor bypasses RLS. Every live query filters explicitly to Adam's own user_id. If another user's data appears, stop: that's a query bug. Never store another user's data anywhere persistent.
+- **Migrations.** Forward-only. Applied migrations verified against local source. Destructive ones always come to Adam.
+- **AI features.** Deterministic work in tested pure functions. The LLM gets judgment only, fed pre-computed data. Real-data dry run before any AI write touching real history.
+- **Credentials.** Agents never get production database credentials. Never provision broad access for a narrow one-time task; Adam does the narrow action himself.
+- **Records.** Analyses, logs and other records are never deleted by agents, migrations or regenerations. Only the user's own explicit delete removes one.
+- **Backups.** Before every release, and before anything destructive.
+- **Snippets.** Any code an agent asks Adam to run in a signed-in page is read first: no network calls, storage access or eval.
+
+SPEC rules made standing:
 - **Queued writes across a version change** (SPEC 1.2.1 Rules 5; standing since 2026-10-30): queued writes are sent by the version that's running. A release that changes the shape of anything the queue writes also converts the queued writes of the old shape. The old version never sends once the version check has refused it, and never before that check has answered (chunk 73).
+
+## Models (BUILD.md 2.1; names and prices in `scripts/cost-table.md`)
+| Role | Tier | Effort |
+|---|---|---|
+| Spec chat and prototype | Opus | high |
+| TASKS: sweep, gap pre-read, estimate | Opus (Fable on trial) | max |
+| Coordinator | Opus | medium |
+| Builder | Sonnet; Opus after two behaviour failures | highest coding |
+| DATA reviewer | Opus | max |
+| LIGHT batch reviewer | Sonnet | high |
+| Bug investigation | Sonnet | high |
+| Audits | most capable | max |
 
 ## Checks that lied
 Each of these gave a false result. Treat the check as insufficient on its own.
@@ -129,6 +190,7 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 
 ## Rules discovered during this build
 **Data and architecture**
+- **Standing UI rule (Adam, 2026-10-10; every fix follows it; moved here from CONTEXT.md on 2026-10-30):** "Show by default only what's used on every set or every visit. On a set row: set number, weight, reps, RIR. Everything else — set kind, tags, rest override, swap, reorder, remove, delete — lives behind a ⋯ menu on the row or exercise it belongs to. A feature that's set shows a small marker on its row (e.g. a tag shows as a compact label only on sets that have one). An unset feature shows nothing: no empty fields, chips or placeholders."
 - TanStack Query owns all Supabase data; Zustand owns UI state only. Never mix.
 - All colours via `--accent` and other CSS custom properties; no hardcoded hex in components.
 - **Text or an icon on the accent is `var(--on-accent)`, never `--base`, in the screens 1.2 rebuilds and the shared components they use; the other screens keep their code (`--base`), and Coach stays exactly as it is** (Adam, 2026-10-15: "use it wherever text sits on the accent"; DECISIONS 128 (g); the display follow-up, #135; narrowed by Adam's 154, 2026-10-16: "--on-accent applies to the screens 1.2 rebuilds and the shared components they use; screens 1.2 doesn't touch keep their current code"; built in d31b, #162). `textOnAccent.static.test.ts` fails on a place in a rebuilt screen, or in a file one loads at run time, that draws anything else on a `var(--accent)` background, and on any change to the places of the screens left alone (`NOT_REBUILT`); a new dot, bar or track with nothing to read goes into its `NOTHING_TO_READ`, and a chunk that adds, renames or replaces a rebuilt screen edits `REBUILT_SCREENS`. A tint made from the accent (`--accent-muted`, a `color-mix`) isn't the accent: its text stays `--accent`.
