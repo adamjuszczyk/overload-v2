@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { QueryClientProvider, useMutation } from '@tanstack/react-query'
 import type { ReactNode } from 'react'

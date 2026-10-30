@@ -5,6 +5,7 @@
 // the real scroll hook and the real `FinishScreen`: what is asserted is what the person would see and where the scroller ends up. The screen's own words, tiles, chips and
 // payloads are `FinishScreen.test.tsx`'s; what COMPLETE writes is `FinishScreen.write.test.tsx`'s.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, fireEvent, act, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'

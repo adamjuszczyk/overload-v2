@@ -44,7 +44,7 @@ const REBUILT_SCREENS: Record<string, string> = {
   'features/settings/AfterUpdateSheet.tsx': 'the sheet after an update',
   // 1.2.1 (chunk 72): the maintenance screen and the strip an exempt account works under (chunk 73 adds the update screen to this file). Its first
   // accent site is chunk 73's UPDATE button; the strip is a tint (`--accent-muted`), which is not the accent, and its text stays `--accent`.
-  'features/release/gates.tsx': 'the maintenance screen and strip',
+  'features/release/gates.tsx': 'the maintenance and update screens and the strip',
 }
 
 // Components that more than one screen loads, or that sit in the folder of a screen other than the one that loads them, each with the
@@ -83,7 +83,6 @@ const NOT_REBUILT: Record<string, number> = {
   'features/library/ReassignSheet.tsx': 2, // Library
   'features/progress/ExercisePicker.tsx': 2, // Progress and History's exercise lists: the muscle chips
   'features/progress/ProgressPage.tsx': 1, // Progress: the picked tab
-  'features/pwa/PwaUpdateNotice.tsx': 1, // the update notice, the app shell's strip
   'features/settings/DeloadRulesEditor.tsx': 1, // Settings: the chips
   'features/settings/SettingsPage.tsx': 1, // Settings: the chips (chunk 49's two rows draw with them)
 }

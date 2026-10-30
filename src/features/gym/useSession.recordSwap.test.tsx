@@ -5,6 +5,7 @@
 // shows nothing before the server has the row (no optimistic card: a swap that isn't saved leaves every set as it was); the row it puts
 // into the cache is the one the server answered, record and all.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { renderHook, act } from '@testing-library/react'
 import { QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import type { ReactNode } from 'react'

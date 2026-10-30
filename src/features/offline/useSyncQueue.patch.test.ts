@@ -12,6 +12,7 @@
 // when the upsert fails in the pass that would send it; a log whose delete is queued is never recreated by it; a failed patch is
 // kept, counted and retried; the finish and the "couldn't sync" notice see it.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 
 interface QueueItem {
   id: number
@@ -130,6 +131,12 @@ vi.mock('../../lib/supabase', () => ({
   },
 }))
 vi.mock('../../lib/queryClient', () => ({ queryClient: { invalidateQueries: vi.fn() } }))
+// Chunk 73: the version check is not what this file looks at (useSyncQueue.versionGate.test.tsx is); the queue here sends as it always did.
+vi.mock('../release/versionGate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../release/versionGate')>()),
+  readVersionGate: () => 'ok' as const,
+  useVersionGate: () => 'ok' as const,
+}))
 vi.mock('../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }))
 
 const { flushSyncQueue, retrySyncFailures, hasQueuedWritesFor, queueSetLogPatch, queueSetLogStageKindClear, MAX_SYNC_ATTEMPTS } = await import('./useSyncQueue')

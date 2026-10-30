@@ -9,6 +9,8 @@
 // answers the session read with its logs embedded). The device's database applies a write on a later tick and returns copies (chunk 57's fakes). Every case has another log of the same
 // queue, and the queue is the same after the read as before it: a read drops, holds and sends nothing.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
+import { versionCheckAnswers } from '../release/versionGate.testutil'
 import { renderHook, act, waitFor, cleanup } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -76,6 +78,7 @@ beforeEach(() => {
   world.nextId = 1
   server.reset()
   queryClient.clear()
+  versionCheckAnswers() // the version check has answered: this version may send the queue (chunk 73)
   queryClient.setDefaultOptions({ queries: { retry: false, refetchOnWindowFocus: false } })
   useOfflineStore.setState({ syncFailures: [], failedIds: new Set(), pendingIds: new Set() })
   errorLog = vi.spyOn(console, 'error').mockImplementation(() => {}) // the queue logs each failed attempt
@@ -187,6 +190,7 @@ describe('a set logged offline whose first send fails is still in the session th
     expect(useOfflineStore.getState().failedIds.has('L1')).toBe(true)
     first.unmount()
     queryClient.clear() // the reload
+    versionCheckAnswers() // and the new run's first read of the status has answered
     useOfflineStore.setState({ pendingIds: new Set(['L1']) }) // what `useSyncQueueInit` restores from the queue
     const reloaded = mount('s1')
     await waitFor(() => expect(reloaded.result.current.data).toBeDefined())

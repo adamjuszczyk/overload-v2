@@ -7,6 +7,7 @@
 // program, a session with no program says so, only a FINISHED program offers a delete, and its confirm deletes nothing
 // until CONFIRM DELETE. Dates are real weekdays (Mondays for starts, Wednesdays for sessions).
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, screen, fireEvent, within } from '@testing-library/react'
 import type { Mesocycle } from '../../types'
 import type { HistoryRow } from './historyService'

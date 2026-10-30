@@ -4,6 +4,7 @@
 // src/features/gym/GymSession.boards59.test.tsx` writes `__fixtures__/w5.html`, `w10.html`, `w10-closed.html`, `w11.html` and `w14.html`
 // for `npm run shot` (design/1.2/built/); each picture is held against its board by the text dump first (RULES: usage rules).
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, fireEvent, act, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'

@@ -82,17 +82,16 @@ vi.mock('./features/library/LibraryPage', () => ({ default: () => <div>LIBRARY P
 vi.mock('./features/settings/SettingsPage', () => ({ default: () => <div>SETTINGS PAGE</div> }))
 vi.mock('./features/coach/CoachPage', () => ({ default: () => <div>COACH PAGE</div> }))
 vi.mock('./components/Nav', () => ({ default: () => <div>NAV</div> }))
-// Not rendered by AppRoutes at all (only by App()'s own BrowserRouter
-// wrapper, not under test here) — mocked anyway, because its import chain
-// (usePwaUpdate.ts) reaches vite-plugin-pwa's "virtual:pwa-register/react"
-// module, which only exists under vite.config.ts's own plugin pipeline, not
-// vitest's (vitest.config.ts's own header comment: deliberately not that
-// config). Merely importing App.tsx evaluates this statement regardless of
-// what AppRoutes renders — ESM top-level imports always run on module load.
-vi.mock('./features/pwa/PwaUpdateNotice', () => ({ default: () => null }))
+// Not called by AppRoutes at all (only by App() itself, not under test here) — mocked anyway, because the module
+// reaches vite-plugin-pwa's "virtual:pwa-register/react" module, which only exists under vite.config.ts's own plugin
+// pipeline, not vitest's (vitest.config.ts's own header comment: deliberately not that config). Merely importing App.tsx
+// evaluates this statement regardless of what AppRoutes renders — ESM top-level imports always run on module load.
+vi.mock('./features/pwa/useServiceWorker', () => ({ useServiceWorker: () => {}, serviceWorkerRecord: () => ({ registration: undefined, newWorkerActive: false }) }))
 // Chunk 72 — the release gate (maintenance) reads `v2_app_status` through TanStack and Supabase. It is not routing, and App.maintenance.test.tsx mounts
 // the real one in this same shell; here it is stood in for as no gate, so every route below is proven with the app as it is when nothing is on.
 vi.mock('./features/release/useAppStatus', () => ({ useGate: () => null }))
+// Chunk 73 — the update screen ("Update to continue") is not what this file looks at (App.update.test.tsx mounts the real one in this shell): no update is required.
+vi.mock('./features/release/useRequiredUpdate', () => ({ useRequiredUpdate: () => ({ required: false, minVersion: '', state: 'ready', update: async () => {} }) }))
 // Chunk 71 — the sheet after an update reads the app's version (a build-time define vitest doesn't run) and this phone's mark; it is not
 // routing, and App.whatsNew.test.tsx mounts the real one in this same shell. Stood in for here like the pages.
 vi.mock('./features/settings/AfterUpdateSheet', () => ({ default: () => null }))

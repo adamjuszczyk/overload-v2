@@ -5,6 +5,7 @@
 // online. `useSyncQueue` is the spy here; the queue's own rules (order, retries, the shape of the request) are
 // `useSyncQueue.patch.test.ts`.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, fireEvent, act, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ExerciseSwap } from './sessionService'

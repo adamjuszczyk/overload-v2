@@ -7,6 +7,7 @@
 // PostgREST reads it (only the shape the app sends is understood: anything else throws, so a read that stops filtering can't pass by returning everything). The hooks beneath the
 // scheduler other than the sessions (runs, programs, plans, the run's schedule rows) are mocked, as `useScheduler.test.tsx` has them.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { addDays, format, parseISO } from 'date-fns'
