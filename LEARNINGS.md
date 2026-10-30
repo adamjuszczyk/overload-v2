@@ -179,3 +179,35 @@ force.
 Possible change: BUILD.md's Bootstrap and the cost loop name where the weekly % is read (Adam's usage page, noted by
 him at the chunk lines), or drop the per-chunk weekly % and keep the cost-weighted totals, which agents can report.
 Verdict:
+
+## L19 Chunk 70 cost half its estimate; its hours were on it   status: open
+Stage: build (1.2.1, chunk 70; the 30% stop rule fired)
+What happened: the estimate gave a DATA chunk ≈ 30M cost-weighted (≈ $84) and 1.5 h. Chunk 70 read: builder ≈ 12.1M
+(Sonnet, ≈ $24, 50 min), reviewer ≈ 2.3M before the merge (Opus, ≈ $9, its own estimate: no agent has a meter of its
+own), coordinator ≈ $3: ≈ $36, 57% under. Brief to merge 1 h 20 min, plus the post-merge staging check. Chunk 70 lifted
+a migration already drafted and proven at the setup, so it may be cheaper than 72, 73 and 75.
+Possible change: the cost table's DATA seed drops toward ≈ 15M cost-weighted once a second DATA chunk confirms it; a
+chunk whose work was proven at the setup is estimated apart from one built from scratch.
+Verdict:
+
+## L20 The 5-hour window stopped the build after 1.5 hours   status: open
+Stage: build (1.2.1)
+What happened: the estimate said "~4% of a window per hour → no stop". The window (reset 19:20 UTC) was hit at about
+18:50 with three agents running at once (chunk 70's post-merge review and batch 1's two builders), about 1.5 h after
+the build started; every agent stopped with a 429. The window's size had never been measured; it was shared with the
+setup sessions earlier that day. Adam sent "continue" after the reset; the hourly task was set and would have fired
+at 19:27.
+Possible change: the estimate measures the window (read `resetsAt` and when it stops), counts the window's use before
+the build, and plans one stop per ~1.5–2 h of three-agent running; the coordinator runs fewer agents at once near a
+window's end.
+Verdict:
+
+## L21 The coordinator started the next chunks before checking chunk 70's 30% rule   status: open
+Stage: build (1.2.1, coordinator)
+What happened: right after merging 70, the coordinator started batch 1's two builders (their dependency was met) and
+only then compared 70 with the estimate, which was off by more than 30% (L19): the rule says re-estimate and tell
+Adam before going on. Nothing was lost (both builders were stopped by the window before committing), but the order
+was wrong.
+Possible change: the coordinator's loop reads "merge → record the chunk's line against the estimate → only then the
+next start"; the coordinator prompt names the 30% check as the step after chunk 70's merge.
+Verdict:
