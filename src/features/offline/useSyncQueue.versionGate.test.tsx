@@ -267,6 +267,26 @@ describe('73-1: every caller of flushSyncQueue is held while the check has not a
     expect(await hasQueuedWritesFor('s1'), 'the finish then finds the session\'s writes still queued').toBe(true)
   })
 
+  it('a held call touches nothing: a never-sent pair is not cancelled, the "couldn\'t sync" state is not rewritten, the session is not read again', async () => {
+    // The queue is what the new version will find (it may have to convert it: SPEC Rule 5), so a call that is held leaves it exactly as it is.
+    upsertLog('l1') // never sent...
+    put({ table: 'v2_set_logs', operation: 'delete', payload: { id: 'l1' }, sessionId: 's1' }) // ...and its delete: a pass would cancel the pair
+    useOfflineStore.setState({ syncFailures: [{ queueId: 99, table: 'v2_set_logs', recordId: 'x', sessionId: 's1' }], failedIds: new Set(['x']) })
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    versionCheckAnswers(STATUS_REQUIRES_1_2_2)
+    await flushSyncQueue()
+    expect(queued()).toEqual(['upsert v2_set_logs:l1', 'delete v2_set_logs:l1'])
+    expect(useOfflineStore.getState().syncFailures, 'a pass recomputes this from the queue').toHaveLength(1)
+    expect(invalidate, 'a pass ends by reading the session again').not.toHaveBeenCalled()
+
+    // the control: with the check ok the same call is a pass, and it cancels the pair (nothing is sent: the row never reached the server)
+    versionCheckAnswers(STATUS_ALLOWS_1_2_1)
+    await flushSyncQueue()
+    expect(queue()).toEqual([])
+    expect(server.requests).toEqual([])
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['v2_session'] })
+  })
+
   it('the finish, check ok: the log is sent, then the session is completed on the server (the path the held finish does not take)', async () => {
     upsertLog('l1')
     versionCheckAnswers(STATUS_ALLOWS_1_2_1)
@@ -281,10 +301,10 @@ describe('73-1: every caller of flushSyncQueue is held while the check has not a
     versionCheckAnswers(STATUS_REQUIRES_1_2_2)
     const { result } = renderHook(() => useCompleteSession(), { wrapper })
     await act(async () => void (await result.current.mutateAsync({ id: 's1', note: null })))
+    expect(queued(), 'the finish waits behind the log it could not send').toEqual(['upsert v2_set_logs:l1', 'upsert v2_sessions:s1'])
     const finish = queue().find((q) => q.table === 'v2_sessions')!
     expect(finish.operation).toBe('upsert')
     expect(finish.recomputeFinish).toBe(true)
-    expect(queued()).toEqual(['upsert v2_set_logs:l1', 'upsert v2_sessions:s1'])
     expect(server.requests).toEqual([])
   })
 })
@@ -522,6 +542,22 @@ describe('a pass already running stops sending once the check says blocked', () 
     await Promise.all([first, second])
     expect(requestsOf()).toEqual(['upsert v2_set_logs:l1'])
     expect(queued()).toEqual(['upsert v2_set_logs:l2'])
+  })
+
+  it('and that pass does not even begin: it would cancel a never-sent pair queued meanwhile, which a held call leaves alone', async () => {
+    versionCheckAnswers(STATUS_ALLOWS_1_2_1)
+    upsertLog('l1')
+    const held = server.hold('upsert v2_set_logs:l1')
+    const first = flushSyncQueue()
+    await held.reached
+    upsertLog('l2') // queued meanwhile, with its delete: only a pass cancels the pair
+    put({ table: 'v2_set_logs', operation: 'delete', payload: { id: 'l2' }, sessionId: 's1' })
+    const second = flushSyncQueue()
+    act(() => void queryClient.setQueryData(APP_STATUS_KEY, STATUS_REQUIRES_1_2_2))
+    held.release()
+    await Promise.all([first, second])
+    expect(requestsOf()).toEqual(['upsert v2_set_logs:l1'])
+    expect(queued()).toEqual(['upsert v2_set_logs:l2', 'delete v2_set_logs:l2'])
   })
 
   it('control: with the answer still ok the same two calls send both, in two passes', async () => {

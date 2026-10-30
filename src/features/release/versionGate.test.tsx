@@ -138,6 +138,16 @@ describe('73-2: an answer older than the phone\'s return online is not an answer
     expect(readVersionGate()).toBe('blocked')
   })
 
+  it('an answer that lands while the phone is offline (a read that was already out when the connection dropped) is not one made after the return', () => {
+    versionCheckAnswers(STATUS_ALLOWS_1_2_1)
+    goOffline()
+    read(STATUS_ALLOWS_1_2_1) // the reply of a request sent before the connection dropped, landing late: the server's answer from before the stretch
+    goOnline()
+    expect(readVersionGate()).toBe('unknown')
+    read(STATUS_REQUIRES_1_2_2)
+    expect(readVersionGate()).toBe('blocked')
+  })
+
   it('every offline stretch does it, not only the first', () => {
     versionCheckAnswers(STATUS_ALLOWS_1_2_1)
     for (let stretch = 1; stretch <= 3; stretch += 1) {
