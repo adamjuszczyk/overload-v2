@@ -18,23 +18,30 @@ import { queryClient } from '../../lib/queryClient'
 //   - CREATE PROGRAM (`useCreateProgram`): the user, the name and BOTH types reach the service, as chosen.
 //   - All three are `networkMode: 'always'` (CONTEXT.md, Offline: every write mutation is): offline they run and fail with the service's own
 //     error, which the sheets show as the real reason (SPEC Errors (15)); with the default they would pause for ever behind STARTING….
+//   - DELETE (`useDeleteSavedProgram`, chunk 74): the id reaches the service once; the mutation stays pending until BOTH program lists have been
+//     read again — ['v2_programs'] and the ['v2_programs', 'saved'] YOUR PROGRAMS reads, which the first reaches by TanStack's prefix matching —
+//     and re-reads nothing else; never paused offline; a failed delete re-reads nothing.
 //
 // Nothing about the cache or the invalidation is mocked: only the services.
 
 const startRunMock = vi.fn()
 const completeMesoMock = vi.fn()
 const createProgramMock = vi.fn()
+const deleteSavedProgramMock = vi.fn()
 vi.mock('./runService', () => ({ startRun: (...args: unknown[]) => startRunMock(...args) }))
 vi.mock('./mesoService', () => ({
   fetchMesos: vi.fn(),
   completeMeso: (...args: unknown[]) => completeMesoMock(...args),
   deleteMeso: vi.fn(),
 }))
-vi.mock('./programService', () => ({ createProgram: (...args: unknown[]) => createProgramMock(...args) }))
+vi.mock('./programService', () => ({
+  createProgram: (...args: unknown[]) => createProgramMock(...args),
+  deleteSavedProgram: (...args: unknown[]) => deleteSavedProgramMock(...args),
+}))
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'user-1' } }) }))
 
 const { useStartRun, useCompleteMeso } = await import('./useMesos')
-const { useCreateProgram } = await import('./usePrograms')
+const { useCreateProgram, useDeleteSavedProgram } = await import('./usePrograms')
 
 const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 
@@ -49,8 +56,9 @@ const deferred = (): Deferred => {
 // Two active queries under the keys the writers invalidate, each fetch a promise the test holds open: [0] is the first load, [1] the refetch.
 const MESOS = ['v2_mesos']
 const PROGRAMS = ['v2_programs']
-const fetches: Record<string, Deferred[]> = { mesos: [], programs: [] }
-const nextFetch = (name: 'mesos' | 'programs') => {
+const PROGRAMS_SAVED = ['v2_programs', 'saved']
+const fetches: Record<string, Deferred[]> = { mesos: [], programs: [], saved: [] }
+const nextFetch = (name: 'mesos' | 'programs' | 'saved') => {
   const d = deferred()
   fetches[name].push(d)
   return d.promise
@@ -75,9 +83,33 @@ async function loaded() {
   })
 }
 
+// The same two reads plus YOUR PROGRAMS' own (chunk 74): the third key is a child of the second, which is what DELETE's one invalidation has to reach.
+function mountReadsWithSaved() {
+  return renderHook(
+    () => {
+      useQuery({ queryKey: MESOS, queryFn: () => nextFetch('mesos') })
+      useQuery({ queryKey: PROGRAMS, queryFn: () => nextFetch('programs') })
+      useQuery({ queryKey: PROGRAMS_SAVED, queryFn: () => nextFetch('saved') })
+    },
+    { wrapper },
+  )
+}
+
+async function loadedWithSaved() {
+  await waitFor(() => expect(fetches.mesos).toHaveLength(1))
+  await waitFor(() => expect(fetches.programs).toHaveLength(1))
+  await waitFor(() => expect(fetches.saved).toHaveLength(1))
+  await act(async () => {
+    fetches.mesos[0].resolve([])
+    fetches.programs[0].resolve([])
+    fetches.saved[0].resolve([])
+  })
+}
+
 beforeEach(() => {
   fetches.mesos = []
   fetches.programs = []
+  fetches.saved = []
 })
 afterEach(() => {
   cleanup()
@@ -86,6 +118,7 @@ afterEach(() => {
   startRunMock.mockReset()
   completeMesoMock.mockReset()
   createProgramMock.mockReset()
+  deleteSavedProgramMock.mockReset()
   queryClient.clear()
 })
 
@@ -288,5 +321,115 @@ describe('CREATE PROGRAM — useCreateProgram', () => {
     await waitFor(() => expect(result.current.isPaused).toBe(false))
     await waitFor(() => expect(result.current.isError).toBe(true))
     expect(createProgramMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('DELETE — useDeleteSavedProgram (chunk 74)', () => {
+  it('hands the service the id it is given, once', async () => {
+    deleteSavedProgramMock.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useDeleteSavedProgram(), { wrapper })
+
+    await act(async () => {
+      await result.current.mutateAsync('prog-3')
+    })
+
+    expect(deleteSavedProgramMock).toHaveBeenCalledTimes(1)
+    expect(deleteSavedProgramMock).toHaveBeenCalledWith('prog-3')
+  })
+
+  it('stays pending until the program list AND the saved list (YOUR PROGRAMS\' own key, a child of the first) have been read again, whichever answers last; nothing else is read again', async () => {
+    for (const lastToAnswer of ['programs', 'saved'] as const) {
+      fetches.mesos = []
+      fetches.programs = []
+      fetches.saved = []
+      queryClient.clear()
+      deleteSavedProgramMock.mockResolvedValue(undefined)
+      const reads = mountReadsWithSaved()
+      await loadedWithSaved()
+      const { result } = renderHook(() => useDeleteSavedProgram(), { wrapper })
+
+      let outcome!: ReturnType<typeof settled>
+      await act(async () => {
+        outcome = settled(result.current.mutateAsync('prog-1'))
+      })
+      await waitFor(() => expect(fetches.programs).toHaveLength(2))
+      await waitFor(() => expect(fetches.saved).toHaveLength(2))
+      await tick()
+      expect(outcome.done, `${lastToAnswer} last: still waiting on both`).toBe(false)
+      expect(result.current.isPending).toBe(true)
+
+      const first = lastToAnswer === 'programs' ? 'saved' : 'programs'
+      await act(async () => {
+        fetches[first][1].resolve([])
+      })
+      await tick()
+      expect(outcome.done, `${first} answered, ${lastToAnswer} hasn't: still pending`).toBe(false)
+
+      await act(async () => {
+        fetches[lastToAnswer][1].resolve([])
+      })
+      await waitFor(() => expect(outcome.done).toBe(true))
+      expect(result.current.isSuccess).toBe(true)
+      // a delete changes no run: the run list is not read again
+      expect(fetches.mesos).toHaveLength(1)
+      reads.unmount()
+    }
+  })
+
+  it('a refetch that fails after the delete has happened does not turn it into a failed delete', async () => {
+    deleteSavedProgramMock.mockResolvedValue(undefined)
+    mountReadsWithSaved()
+    await loadedWithSaved()
+    const { result } = renderHook(() => useDeleteSavedProgram(), { wrapper })
+
+    let outcome!: ReturnType<typeof settled>
+    await act(async () => {
+      outcome = settled(result.current.mutateAsync('prog-1'))
+    })
+    await waitFor(() => expect(fetches.programs).toHaveLength(2))
+    await waitFor(() => expect(fetches.saved).toHaveLength(2))
+    await act(async () => {
+      fetches.programs[1].reject(new Error('refetch failed'))
+      fetches.saved[1].reject(new Error('refetch failed'))
+      // the queries' own retry (one, in the app's client) asks again: let those fail too
+      await new Promise((resolve) => setTimeout(resolve, 1200))
+      for (const f of [...fetches.programs, ...fetches.saved]) f.reject(new Error('refetch failed'))
+    })
+    await waitFor(() => expect(outcome.done).toBe(true))
+    expect(outcome.error).toBeUndefined()
+    expect(result.current.isSuccess).toBe(true)
+  })
+
+  it('never pauses when TanStack thinks it is offline: it runs, and a failure keeps the service\'s own error (the real reason, SPEC Errors 15)', async () => {
+    deleteSavedProgramMock.mockRejectedValue({ message: 'Failed to fetch' })
+    const { result } = renderHook(() => useDeleteSavedProgram(), { wrapper })
+
+    onlineManager.setOnline(false)
+    act(() => {
+      result.current.mutate('prog-1')
+    })
+
+    await waitFor(() => expect(result.current.isPaused).toBe(false))
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(deleteSavedProgramMock).toHaveBeenCalledTimes(1)
+    expect(result.current.error).toEqual({ message: 'Failed to fetch' })
+  })
+
+  it('a refused delete (the database said OL002) invalidates nothing: no list is read again for a delete that did not happen, and the error keeps its code', async () => {
+    const refusal = { code: 'OL002', message: 'a program with a running program cannot be deleted: finish it first' }
+    deleteSavedProgramMock.mockRejectedValue(refusal)
+    mountReadsWithSaved()
+    await loadedWithSaved()
+    const { result } = renderHook(() => useDeleteSavedProgram(), { wrapper })
+
+    await act(async () => {
+      await result.current.mutateAsync('prog-1').catch(() => undefined)
+    })
+    await tick()
+
+    expect(result.current.error).toBe(refusal)
+    expect(fetches.mesos).toHaveLength(1)
+    expect(fetches.programs).toHaveLength(1)
+    expect(fetches.saved).toHaveLength(1)
   })
 })
