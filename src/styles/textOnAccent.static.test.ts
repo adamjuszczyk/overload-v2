@@ -37,6 +37,11 @@ const REBUILT_SCREENS: Record<string, string> = {
   'features/programs/ChangeProgramPage.tsx': 'CHANGE THE PROGRAM',
   'features/planner/PlannerPage.tsx': 'the stepped program planner',
   'features/gym/GymSession.tsx': 'the workout screen',
+  // 1.2.1 (chunk 71): Settings' WHAT'S NEW. SettingsPage.tsx itself keeps its current code (NOT_REBUILT below); these are the new files it
+  // loads or opens, drawn in the new look, so a place on the accent in them takes the token (the sheet's GOT IT does).
+  'features/settings/WhatsNewCard.tsx': "Settings' WHAT'S NEW card",
+  'features/settings/ReleaseNotesPage.tsx': 'the release notes',
+  'features/settings/AfterUpdateSheet.tsx': 'the sheet after an update',
 }
 
 // Components that more than one screen loads, or that sit in the folder of a screen other than the one that loads them, each with the
@@ -149,9 +154,12 @@ describe('text on the accent is --on-accent in the screens 1.2 rebuilds and the 
       expect(folders, folder).toContain(folder)
     }
     // and none of the folders of the screens 1.2 doesn't rebuild
-    for (const folder of ['features/auth', 'features/history', 'features/library', 'features/progress', 'features/pwa', 'features/settings']) {
+    for (const folder of ['features/auth', 'features/history', 'features/library', 'features/progress', 'features/pwa']) {
       expect(folders, folder).not.toContain(folder)
     }
+    // Settings is one of them, with 1.2.1's new files beside SettingsPage.tsx: the token is in the sheet after an update and nowhere else
+    // in that folder (SettingsPage.tsx and DeloadRulesEditor.tsx keep their places on --base: NOT_REBUILT below)
+    expect([...new Set(drawn.filter((site) => site.file.startsWith('features/settings/')).map((site) => site.file))]).toEqual(['features/settings/AfterUpdateSheet.tsx'])
     expect(REBUILT_SITES.length + NOT_REBUILT_SITES.length).toBeGreaterThan(70)
   })
 

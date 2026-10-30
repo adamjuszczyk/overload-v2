@@ -13,6 +13,8 @@ import SessionTypeHistoryPage from './features/history/SessionTypeHistoryPage'
 import PlannerPage from './features/planner/PlannerPage'
 import LibraryPage from './features/library/LibraryPage'
 import SettingsPage from './features/settings/SettingsPage'
+import ReleaseNotesPage from './features/settings/ReleaseNotesPage'
+import AfterUpdateSheet from './features/settings/AfterUpdateSheet'
 import CoachPage from './features/coach/CoachPage'
 import MesoPrioritiesPage from './features/coach/MesoPrioritiesPage'
 import PrioritiesEditor from './features/plan/PrioritiesEditor'
@@ -133,6 +135,8 @@ export function AppRoutes() {
           <Route path="/meso/:mesocycleId/priorities"   element={<MesoPrioritiesPage />}   />
           <Route path="/library"  element={<LibraryPage />}  />
           <Route path="/settings" element={<SettingsPage />} />
+          {/* 1.2.1 (chunk 71) — one release's notes, opened from Settings' WHAT'S NEW; the notes ship with the app. */}
+          <Route path="/settings/whats-new/:version" element={<ReleaseNotesPage />} />
           {/* Unconditional route — CoachPage itself renders the locked
               placeholder for every account except the gated one, so
               opening /coach directly still resolves to *something*
@@ -146,6 +150,9 @@ export function AppRoutes() {
       </main>
       <Toast />
       <Nav />
+      {/* 1.2.1 (chunk 71) — the running version's notes, once per phone, over the first signed-in screen (DECISIONS 256): it is mounted
+          here, in the signed-in shell, so it never opens over the login page. It decides for itself whether the version is new here. */}
+      <AfterUpdateSheet />
     </div>
   )
 }

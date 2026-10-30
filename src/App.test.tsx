@@ -90,6 +90,9 @@ vi.mock('./components/Nav', () => ({ default: () => <div>NAV</div> }))
 // config). Merely importing App.tsx evaluates this statement regardless of
 // what AppRoutes renders — ESM top-level imports always run on module load.
 vi.mock('./features/pwa/PwaUpdateNotice', () => ({ default: () => null }))
+// Chunk 71 — the sheet after an update reads the app's version (a build-time define vitest doesn't run) and this phone's mark; it is not
+// routing, and App.whatsNew.test.tsx mounts the real one in this same shell. Stood in for here like the pages.
+vi.mock('./features/settings/AfterUpdateSheet', () => ({ default: () => null }))
 
 const { AppRoutes } = await import('./App')
 

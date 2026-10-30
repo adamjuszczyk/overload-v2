@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render as renderBare, screen, cleanup, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import type { UserSettings } from '../../types'
 import { DEFAULT_SETTINGS } from './settingsStore'
 import { DEFAULT_DELOAD_SETS_RULE } from '../../lib/plannerVocabulary.js'
@@ -26,12 +27,17 @@ vi.mock('./useSettings', () => ({
 }))
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ signOut: vi.fn() }) }))
 
-// SettingsPage's own ABOUT section reads these two vite `define` globals
-// (vite.config.ts) — real under the app's own Vite build, but vitest.config.ts
-// runs no such define step, so they're undefined under plain `vitest run`
-// for this, the first test file to import SettingsPage.tsx directly.
+// SettingsPage's own WHAT'S NEW section (ABOUT until 1.2.1) reads these vite
+// `define` globals (vite.config.ts) — real under the app's own Vite build, but
+// vitest.config.ts runs no such define step, so they're undefined under plain
+// `vitest run` for this, the first test file to import SettingsPage.tsx
+// directly. __APP_VERSION__ is the third (chunk 71: the card marks THIS VERSION).
 vi.stubGlobal('__BUILD_HASH__', 'test')
 vi.stubGlobal('__BUILD_TIME__', '2026-01-01T00:00:00.000Z')
+vi.stubGlobal('__APP_VERSION__', '1.2.1')
+
+// The WHAT'S NEW rows navigate (chunk 71), so the page renders inside a router.
+const render = (ui: React.ReactElement) => renderBare(ui, { wrapper: MemoryRouter })
 
 const { default: SettingsPage } = await import('./SettingsPage')
 
