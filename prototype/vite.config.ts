@@ -72,6 +72,8 @@ export default defineConfig({
   define: {
     __BUILD_HASH__: JSON.stringify('proto'),
     __BUILD_TIME__: JSON.stringify('2026-10-29T21:00:00.000Z'),
+    // package.json's version, as vite.config.ts defines it for the app (scripts/release-version.test.mjs keeps the two equal).
+    __APP_VERSION__: JSON.stringify('1.2.1'),
   },
   build: {
     cssCodeSplit: false,

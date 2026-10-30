@@ -1,0 +1,97 @@
+SETTINGS
+
+SETTINGS
+
+APPEARANCE
+
+THEME
+
+DARK
+LIGHT
+
+ACCENT COLOUR
+
+REST TIMER
+
+Show rest timer
+
+TARGET DURATION
+
+2:00
+Vibrate when rest ends
+
+WORKOUT
+
+Log sets in order
+
+Off: LOG never asks.
+
+SET TIMING
+
+Measure set time
+
+AUTO-FINISH SESSION
+
+Auto-finish session
+
+AFTER X MINUTES OF INACTIVITY
+
+UNITS
+
+WEIGHT UNIT
+
+KG
+LBS
+
+WARMUP SETS
+
+DISPLAY
+
+ROWS
+TICK
+
+PLANNING
+
+DROPS AND STAGES COUNT AS
+
+WHOLE SET = 1
+EACH DROP = 1
+EACH DROP = ½
+
+For Plan's VOLUME sheet. History and Progress count as before.
+
+DELOAD RULES
+
+Sets
+Weight
+Reps
+RIR
+
+ACCOUNT
+
+SIGN OUT
+
+WHAT'S NEW
+
+1.2.1
+THIS VERSION
+5 NOV 2026
+1.2
+28 OCT 2026
+
+BUILD test · Jan 1, 2026 12:00
+
+UPDATED · 5 NOV 2026
+OVERLOAD 1.2.1
+
+PROGRAMS
+
+Delete a saved program from YOUR PROGRAMS.
+Deleting a finished program now removes its sessions and logged sets too.
+
+THE APP
+
+What's new, here in Settings.
+A maintenance screen while an update is applied.
+Old versions ask to update before they can be used.
+GOT IT

@@ -4,6 +4,7 @@ import { useSettings, useUpdateSettings, useUpdateDeloadRules } from './useSetti
 import { useAuth } from '../auth/useAuth'
 import type { StageVolumeRule, UserSettings } from '../../types'
 import DeloadRulesEditor from './DeloadRulesEditor'
+import WhatsNewCard from './WhatsNewCard'
 
 // SPEC [1.2] Settings: "Drops and stages count as" — whole set = 1 / each drop
 // = 1 / each drop = ½. The values are v2_user_settings.stage_volume_rule's
@@ -458,20 +459,22 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* ── About ────────────────────────────────────────────────────── */}
-        {/* Which build is actually running, for support/debugging — and,
-            not incidentally, the concrete artifact that let the PWA
-            update-detection fix (see usePwaUpdate.ts) be live-verified
-            against two real, distinguishable production deploys instead of
-            two byte-identical ones (comments alone don't survive
-            minification — confirmed empirically before adding this). */}
+        {/* ── What's new ───────────────────────────────────────────────── */}
+        {/* 1.2.1 item 9: ABOUT became WHAT'S NEW — one row per release, newest
+            first, a row opens that release's notes (WhatsNewCard.tsx). The
+            build stays, in small text under the list: which build is actually
+            running, for support/debugging — and, not incidentally, the
+            concrete artifact that let the PWA update-detection fix (see
+            usePwaUpdate.ts) be live-verified against two real,
+            distinguishable production deploys instead of two byte-identical
+            ones (comments alone don't survive minification — confirmed
+            empirically before adding this). */}
         <section>
-          {sectionTitle('ABOUT')}
-          <div className="rounded-xl p-4" style={cardStyle}>
-            <p className="text-xs" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-              BUILD {__BUILD_HASH__} · {format(parseISO(__BUILD_TIME__), 'MMM d, yyyy HH:mm')}
-            </p>
-          </div>
+          {sectionTitle("WHAT'S NEW")}
+          <WhatsNewCard cardStyle={cardStyle} />
+          <p className="text-xs mt-3" style={{ color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>
+            BUILD {__BUILD_HASH__} · {format(parseISO(__BUILD_TIME__), 'MMM d, yyyy HH:mm')}
+          </p>
         </section>
       </div>
     </div>

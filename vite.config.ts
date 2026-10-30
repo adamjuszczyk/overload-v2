@@ -1,4 +1,6 @@
 import { execSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
@@ -20,6 +22,20 @@ function resolveBuildHash(): string {
 
 const BUILD_HASH = resolveBuildHash()
 const BUILD_TIME = new Date().toISOString()
+
+// The app's version: `package.json`'s `version`, the one place it is set (SPEC.md 1.2.1, "The app's version"; TASKS.md, Facts to verify 5).
+// It reaches the app as `__APP_VERSION__`, beside the build hash and time, and src/lib/version.ts is the one place the app reads it.
+// Read from the file next to this one, not from the working directory, and refused when it is not dotted numbers: a version the
+// app could not compare would pass or fail the release gates (chunks 72, 73) wrongly.
+function resolveAppVersion(): string {
+  const { version } = JSON.parse(readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8')) as { version?: unknown }
+  if (typeof version !== 'string' || !/^\d+(\.\d+){1,2}$/.test(version)) {
+    throw new Error(`package.json's "version" must be dotted numbers such as 1.2.1, got ${JSON.stringify(version)}`)
+  }
+  return version
+}
+
+const APP_VERSION = resolveAppVersion()
 
 // The staging build (VITE_APP_ENV=staging; same reading as src/lib/appEnv.ts's
 // resolveAppEnv) installs as a different PWA — another name, the cyan icons
@@ -52,6 +68,7 @@ export default defineConfig(({ mode }) => {
     define: {
       __BUILD_HASH__: JSON.stringify(BUILD_HASH),
       __BUILD_TIME__: JSON.stringify(BUILD_TIME),
+      __APP_VERSION__: JSON.stringify(APP_VERSION),
     },
     server: {
       port: process.env.PORT ? parseInt(process.env.PORT) : 5173,
