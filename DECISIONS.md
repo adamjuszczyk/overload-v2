@@ -1264,6 +1264,37 @@ Recommendation: keep: both apps are abandoned, nothing reads or writes their row
 Answer: keep (Adam, 2026-10-30: "Atlas is not a live app, so keep 048's trigger on the ns_* and atlas_* tables").
 Evidence: HISTORY.md "2026-10-30 chunk 70"; `scripts/schema-compare-exclude.txt`; DECISIONS 264. Before the release (to-do): one read-only list of production's public tables with a `user_id` column, so the release expects 40 triggers plus those.
 
+
+## 269 [80] An offline DELETE of a planned set reads as an open row, and a LOG on it leaves a log the workout hides but History counts: does the read also apply the queued change rows?
+Chunk: 80   Date: 2026-10-30
+Recommendation: (a) the read also applies the session's queued `v2_session_set_changes` upserts with `withChangeRecords`'s matching (read-only, a third line beyond SPEC Rule 6's two); (b) only the two lines, the staging check narrowed to UNLOG and an added set's DELETE, the planned-set shape recorded as known. Recommend (a): Rule 6's two lines alone make the planned-set case worse (setDelete.ts:8-9's "never").
+Answer: open — blocks chunk 80 only (last in the order); the build goes on meanwhile.
+Evidence: HISTORY.md "2026-10-30 independent gap pre-read of chunks 72, 73, 75 and 80", 80-1.
+
+## 270 [10] Signed out during maintenance the screen covers the login page, so an exempt account can't sign in (SPEC "signing in still works", DECISIONS 255)
+Chunk: 72   Date: 2026-10-30
+Recommendation: (b) a small SIGN IN action on the signed-out maintenance screen only, because SPEC decides behaviour; (a) as drawn, with "be signed in first" on 1.2.2's run sheet. Built as (b) unless Adam says otherwise; non-blocking (unused until 1.2.2).
+Answer: open — release batch.
+Evidence: HISTORY.md pre-read, 72-3.
+
+## 271 [10] [11] A direct write refused `OL001` doesn't bring the maintenance screen up until the next hourly read
+Chunk: 72   Date: 2026-10-30
+Recommendation: any response with `code === 'OL001'` re-reads `['v2_appStatus']` at once (the queue's catch and one `MutationCache` `onError`), so the run sheet's "within a minute" holds and an old app stops writing at once; otherwise the run sheet's line changes. Built as recommended; non-blocking.
+Answer: open — release batch.
+Evidence: HISTORY.md pre-read, 72-4.
+
+## 272 [8b] A Coach note queued offline on a deleted run's session survives the full delete, unlinked
+Chunk: 75   Date: 2026-10-30
+Recommendation: drop such queued notes in the full delete (249 row 14 says the run's notes go); or accept it as rare (Adam's account only). Built as the drop unless Adam says otherwise; non-blocking.
+Answer: open — release batch.
+Evidence: HISTORY.md pre-read, 75-5.
+
+## 273 Independent gap pre-read of 72, 73, 75 and 80: the non-blocking findings go into each chunk's brief
+Chunk: 72, 73, 75, 80   Date: 2026-10-30
+Recommendation: the coordinator puts each chunk's findings (72-1/2/5/6, 73-1 to 73-7, 75-1 to 75-8, 80-2 to 80-5) into its builder's and reviewer's brief as readings and scope additions; only 80-1 is a card (269).
+Answer: Adam asked for the pre-read and this handling (2026-10-30: "only a question that blocks a chunk becomes a decision card").
+Evidence: HISTORY.md "2026-10-30 independent gap pre-read of chunks 72, 73, 75 and 80".
+
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
 - Answer: (Adam, 2026-10-16) "(a) changed: a picker switched to a segment the set doesn't have carries the set's own value over: NUMBER n → RANGE n–(n+2); RANGE a–b → NUMBER a. The boards' examples are used only when the set has no target at all. (b) and (c) accepted." So (a) changes, built in d31b (#162, `bc2de7c`); its AMRAP case and "the set's own value" are 180; (b) and (c) stand. No SPEC rule says what a picker's segment switch starts from, so (a) has no SPEC line (as 128's starting target). Full text in HISTORY.md.
