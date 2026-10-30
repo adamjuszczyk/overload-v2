@@ -41,7 +41,21 @@ vi.mock('./features/release/appStatusService', () => ({
 }))
 vi.mock('./features/release/useQueuedWriteCount', () => ({ useQueuedWriteCount: () => world.queued }))
 
-vi.mock('./features/auth/LoginPage', () => ({ default: () => <div>LOGIN PAGE</div> }))
+// A sign-in page with state of its own, as the real one has (the email and password being typed): a page that is drawn again loses it.
+vi.mock('./features/auth/LoginPage', async () => {
+  const { useState } = await import('react')
+  return {
+    default: function LoginStandIn() {
+      const [email, setEmail] = useState('')
+      return (
+        <div>
+          LOGIN PAGE
+          <input aria-label="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+        </div>
+      )
+    },
+  }
+})
 vi.mock('./features/gym/TodayPage', () => ({ default: () => <div>TODAY PAGE</div> }))
 vi.mock('./features/plan/PlanPage', () => ({ default: () => <div>PLAN PAGE</div> }))
 vi.mock('./features/plan/PrioritiesEditor', () => ({ default: () => <div>PRIORITIES EDITOR</div> }))
@@ -303,6 +317,20 @@ describe('signed out: the same screen (there is no account to exempt), and signi
     expect(await screen.findByText(SCREEN)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'SIGN IN' })).toBeNull()
     expect(screen.queryByText('LOGIN PAGE')).toBeNull()
+  })
+
+  it('maintenance ending while someone is typing on the sign-in page does not start the page again: what was typed stays', async () => {
+    const view = mount()
+    fireEvent.click(await screen.findByRole('button', { name: 'SIGN IN' }))
+    fireEvent.change(screen.getByLabelText('email'), { target: { value: 'adam@example.test' } })
+    expect((screen.getByLabelText('email') as HTMLInputElement).value).toBe('adam@example.test')
+
+    world.status = { ...world.status, maintenance: false }
+    await reread()
+    await waitFor(() => expect(world.reads).toBeGreaterThanOrEqual(2))
+    expect(screen.getByText('LOGIN PAGE')).toBeTruthy()
+    expect((screen.getByLabelText('email') as HTMLInputElement).value, 'the same page, not a new one').toBe('adam@example.test')
+    view.unmount()
   })
 
   it('a visitor who signed in, was shown the screen and signed out again starts from the screen, not from the sign-in page', async () => {

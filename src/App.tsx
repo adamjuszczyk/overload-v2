@@ -59,13 +59,20 @@ export default function App() {
   )
 }
 
-// 1.2.1 (chunk 72; DECISIONS 270) — the maintenance screen over the sign-in page, for a visitor who is not signed in. "Signing in still works" (SPEC), so an
-// account that is exempt can still sign in and then gets the strip: the screen's small SIGN IN action opens the sign-in page. Signing in is an auth write
-// the maintenance check never touches. A visitor who signs in and is not exempt is signed in and sees the screen without the action; the choice to
-// sign in is this component's own state, so it ends with it (a later sign-out starts from the screen again).
-function SignedOutMaintenance() {
+// 1.2.1 (chunk 72; DECISIONS 270) — what a visitor who is not signed in sees: the sign-in page, and over it the maintenance screen while maintenance is on.
+// "Signing in still works" (SPEC), so an account that is exempt can still sign in and then gets the strip: the screen's small SIGN IN action opens the
+// sign-in page. Signing in is an auth write the maintenance check never touches. A visitor who signs in and is not exempt is signed in and sees the
+// screen without the action. The choice to sign in is this component's own state, so it ends with it (a later sign-out starts from the screen again).
+// The sign-in page is the same element, in the same place, whether maintenance is on (the visitor asked for it) or off, so maintenance ending while
+// someone types does not start the page again and lose what they typed.
+function SignedOutEntry({ maintenance }: { maintenance: boolean }) {
   const [signingIn, setSigningIn] = useState(false)
-  return signingIn ? <LoginPage /> : <MaintenanceScreen onSignIn={() => setSigningIn(true)} />
+  if (maintenance && !signingIn) return <MaintenanceScreen onSignIn={() => setSigningIn(true)} />
+  return (
+    <Routes>
+      <Route path="*" element={<LoginPage />} />
+    </Routes>
+  )
 }
 
 // Exported (chunk 26) so App.test.tsx can mount the real route table under
@@ -113,15 +120,9 @@ export function AppRoutes() {
   // 1.2.1 (chunk 72) — maintenance on and this account not exempt: a full screen that replaces the whole app, navigation included, and the sign-in
   // page too while nobody is signed in (there is no account to exempt before sign-in; Adam, 2026-10-30, TASKS question 6, DECISIONS 255). The shell
   // below is not mounted meanwhile, and it opens again by itself, where the address was, when `useAppStatus` reads maintenance off.
-  if (gate === 'maintenance') return user ? <MaintenanceScreen /> : <SignedOutMaintenance />
+  if (user && gate === 'maintenance') return <MaintenanceScreen />
 
-  if (!user) {
-    return (
-      <Routes>
-        <Route path="*" element={<LoginPage />} />
-      </Routes>
-    )
-  }
+  if (!user) return <SignedOutEntry maintenance={gate === 'maintenance'} />
 
   return (
     <div className="flex flex-col h-dvh">
