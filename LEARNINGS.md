@@ -158,3 +158,24 @@ estimate's weekly share rests on a proxy (1.2's per-chunk context budgets). BUIL
 Possible change: every chunk report ends with its cost, its running time and the running totals (BUILD.md Usage), and
 the coordinator writes the weekly % before and after each chunk next to them, so the close's cost loop has the pair.
 Verdict:
+
+## L17 Staging's re-seed lands on Adam mid-build   status: open
+Stage: spec / build (1.2.1; added at the coordinator's start, 2026-10-30, from the spec chat)
+What happened: chunk 70 changes `supabase/seed.sql` (the exempt test account, the Coach shapes for [8b]), and a
+changed seed reaches staging only when Adam pastes it into the staging branch's SQL editor. So chunks 72's and 75's
+staging checks wait on Adam in the middle of a build meant to run without him, while BUILD.md says staging is the
+agents' job.
+Possible change: the starter's staging scripts include an agent-run re-seed (a narrow, staging-only path the guards
+already fence). Until then, the coordinator raises the re-seed as a to-do card the moment chunk 70's deploy is read.
+Verdict:
+
+## L18 The meter has no weekly figure   status: open
+Stage: build (1.2.1, chunk 70's calibration)
+What happened: TASKS.md and DECISIONS 267 have the coordinator write "the weekly % before and after every chunk" from
+the meter (`get_session`). Read before chunk 70 (2026-10-30 17:27 UTC), `rate_limit_info` held only the window in force
+(`rateLimitType: five_hour`, `status: allowed`, `resetsAt` 19:20 UTC) and `context_usage`; no weekly percentage and no
+cost. The weekly % has to come from Adam's own usage page, or from a `seven_day` window only when it is the one in
+force.
+Possible change: BUILD.md's Bootstrap and the cost loop name where the weekly % is read (Adam's usage page, noted by
+him at the chunk lines), or drop the per-chunk weekly % and keep the cost-weighted totals, which agents can report.
+Verdict:
