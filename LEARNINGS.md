@@ -211,3 +211,24 @@ was wrong.
 Possible change: the coordinator's loop reads "merge → record the chunk's line against the estimate → only then the
 next start"; the coordinator prompt names the 30% check as the step after chunk 70's merge.
 Verdict:
+
+## L22 Nothing told Adam when the build needed him while he was away   status: open
+Stage: build (1.2.1; from the spec chat, added 2026-10-30)
+What happened: decision cards, to-dos and limit stops reached Adam only as text in the session, which he sees only
+when he opens it. The re-seed to-do (L17) and the 5-hour stop (L20) both waited for him to look.
+Possible change: the coordinator sends a push notification for every decision card and to-do (its first line), every
+limit stop ("limit until HH:MM") and the end of the build ("build finished"), none for ordinary merges; BUILD.md's
+coordinator prompt says so. Done from 2026-10-30 in 1.2.1 (Adam's instruction; `PushNotification`, which skips a
+notification while Adam is at the terminal).
+Verdict:
+
+## L23 The gap pre-read was done by the session that wrote TASKS.md   status: open
+Stage: tasks (1.2.1; from the spec chat, added 2026-10-30)
+What happened: 1.2.1's gap pre-read (the sweep of SPEC.md, the facts to verify) was done by the same session that
+wrote TASKS.md, so it checked its own plan with its own reading. In 1.2 the best-value check was an independent agent's
+pre-read of the next chunks (the `docs/preread-*` runs), which found what the plan's author had read past. Before chunk
+72, Adam asked for one independent read-only pre-read of 72, 73, 75 and 80 (a fresh agent on the reviewer-data
+definition, no writes), its findings recorded in DECISIONS.md and only a blocking question made a card.
+Possible change: BUILD.md's TASKS step ends with an independent read-only pre-read by a fresh agent against SPEC, the
+prototype and the code, before the build starts; for an app with risky DATA chunks, one more before them.
+Verdict:

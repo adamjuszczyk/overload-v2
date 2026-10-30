@@ -1257,6 +1257,13 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 **Answer:** (Adam, 2026-10-30) (a).
 **Evidence:** TASKS.md, "Estimate".
 
+
+## 268 048's maintenance trigger on production's Northstar `ns_*` and Atlas `atlas_*` tables: keep it or drop it there
+Chunk: 70   Date: 2026-10-30
+Recommendation: keep: both apps are abandoned, nothing reads or writes their rows, and the trigger acts only during a maintenance window Adam opens; such tables can't fail the deploy (chunk 70's review, executed with a stand-in `ns_probe` table under three owners).
+Answer: keep (Adam, 2026-10-30: "Atlas is not a live app, so keep 048's trigger on the ns_* and atlas_* tables").
+Evidence: HISTORY.md "2026-10-30 chunk 70"; `scripts/schema-compare-exclude.txt`; DECISIONS 264. Before the release (to-do): one read-only list of production's public tables with a `user_id` column, so the release expects 40 triggers plus those.
+
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
 - Answer: (Adam, 2026-10-16) "(a) changed: a picker switched to a segment the set doesn't have carries the set's own value over: NUMBER n → RANGE n–(n+2); RANGE a–b → NUMBER a. The boards' examples are used only when the set has no target at all. (b) and (c) accepted." So (a) changes, built in d31b (#162, `bc2de7c`); its AMRAP case and "the set's own value" are 180; (b) and (c) stand. No SPEC rule says what a picker's segment switch starts from, so (a) has no SPEC line (as 128's starting target). Full text in HISTORY.md.
