@@ -211,3 +211,13 @@ was wrong.
 Possible change: the coordinator's loop reads "merge → record the chunk's line against the estimate → only then the
 next start"; the coordinator prompt names the 30% check as the step after chunk 70's merge.
 Verdict:
+
+## L22 Nothing told Adam when the build needed him while he was away   status: open
+Stage: build (1.2.1; from the spec chat, added 2026-10-30)
+What happened: decision cards, to-dos and limit stops reached Adam only as text in the session, which he sees only
+when he opens it. The re-seed to-do (L17) and the 5-hour stop (L20) both waited for him to look.
+Possible change: the coordinator sends a push notification for every decision card and to-do (its first line), every
+limit stop ("limit until HH:MM") and the end of the build ("build finished"), none for ordinary merges; BUILD.md's
+coordinator prompt says so. Done from 2026-10-30 in 1.2.1 (Adam's instruction; `PushNotification`, which skips a
+notification while Adam is at the terminal).
+Verdict:
