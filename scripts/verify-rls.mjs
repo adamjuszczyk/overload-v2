@@ -94,8 +94,11 @@ const TABLES = [
 // api/ uses. The chunk whose code first calls `.from()` on one of them moves
 // its name into TABLES (the same test fails until it does) and deletes it here
 // (verify-rls-ahead.test.mjs fails until it does).
-// Empty since chunk 56: its REVIEW read and write moved `v2_week_review_decisions`, the last one, into TABLES.
-export const TABLES_AHEAD_OF_THE_APP = [];
+// Empty between chunk 56 (its REVIEW read and write moved `v2_week_review_decisions`, the last one, into TABLES)
+// and chunk 70 (1.2.1, migration 048): `v2_app_status`, the release state, which chunk 72's first `.from()` moves
+// into TABLES. It is public by design (below): anyone, anon included, reads its one row, and nobody writes it
+// through the API.
+export const TABLES_AHEAD_OF_THE_APP = ['v2_app_status'];
 
 // Global curated catalogs (migration 019): RLS is `for select using (true)` on
 // purpose, there is no user_id, and they are readable by everyone. Zero rows is
@@ -103,7 +106,10 @@ export const TABLES_AHEAD_OF_THE_APP = [];
 // intentionally readable by everyone, anon included, because they hold shared
 // content). They are still probed both ways, and any error other than
 // permission-denied still fails.
-const PUBLIC_BY_DESIGN = new Set(['v2_exercise_libraries', 'v2_exercise_library_items']);
+// Migration 048's `v2_app_status` (chunk 70) is the third: one row, `for select using (true)`, no user_id, read by
+// the anon role before sign-in on purpose (the maintenance and update screens); its write refusal is proven on the
+// replay and by chunk 70's staging check (a PATCH answers 42501), not by this read-only script.
+const PUBLIC_BY_DESIGN = new Set(['v2_exercise_libraries', 'v2_exercise_library_items', 'v2_app_status']);
 
 // Tables/views in TABLES with no user_id column. The ownership check below needs
 // one to compare against, so for these the signed-in probe keeps the old any-row
@@ -119,8 +125,11 @@ const PUBLIC_BY_DESIGN = new Set(['v2_exercise_libraries', 'v2_exercise_library_
 //       c.table_name = t.table_name and c.column_name = 'user_id') as has_user_id
 //       from information_schema.tables t where table_schema = 'public'"
 // On 2026-10-09: every other name in TABLES has a user_id column; only these two
-// do not. Re-run this check before adding or removing a name here.
-const NO_USER_ID_COLUMN = new Set(['v2_exercise_libraries', 'v2_exercise_library_items']);
+// do not. Re-run this check before adding or removing a name here. Since chunk 70
+// (migration 048) the ahead list's `v2_app_status` has none either: without it
+// here, the signed-in probe's ownership count asks for a user_id column and the
+// table answers 42703, a FAIL.
+const NO_USER_ID_COLUMN = new Set(['v2_exercise_libraries', 'v2_exercise_library_items', 'v2_app_status']);
 
 const REQUIRED = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY', 'RLS_TEST_EMAIL', 'RLS_TEST_PASSWORD'];
 

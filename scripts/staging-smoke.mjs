@@ -49,11 +49,23 @@
 //                  settings row isn't part of "empty".
 //      and none of another account's rows is visible to any of the four
 //      (staging-other, and each of the others, own rows these must not see).
+//      Since 1.2.1 (migration 048, chunk 70) the test account's seed also has
+//      the release state and five Coach rows, each shown by a count that is 0
+//      without it: v2_app_status reads one row signed out, and as the test
+//      account reads maintenance off, min_version 1.2.1 and the test account
+//      (and not staging-stable) exempt; on the finished STG Full Body run, a
+//      Coach note and a session analysis on one of its sessions, a program
+//      analysis of the run, a weekly analysis naming only its sessions, and
+//      the control, a weekly analysis naming one of its sessions and one of
+//      the active run's (the full delete counts and removes the first four and
+//      leaves the control). A signed-in PATCH of the status row is refused by
+//      privilege, 42501 (the seed puts the migration's grants back after its own).
 //   4. pg-safeupdate behaves as in production: a DELETE with no WHERE, sent
 //      as the signed-in test account, is rejected (Postgres 21000). It is
-//      aimed at v2_coach_notes, where the seed puts no rows, so even a wrongly
-//      accepted delete removes nothing; the check reads the count before and
-//      after.
+//      aimed at v2_coach_weight_entries, where the seed puts no rows, so even
+//      a wrongly accepted delete removes nothing; the check reads the count
+//      before and after. (It was v2_coach_notes until chunk 70's seed gave the
+//      test account a note.)
 //
 // The seed's shapes are a snapshot of what it builds: once someone works in
 // the staging app (finishing the stable run, starting another, logging sets)
@@ -284,6 +296,55 @@ async function main() {
     for (const [name, filter] of diffs) await seedCheck(test, `week 2 Upper A: ${name}`, `v2_set_logs?select=id&${filter}`, (n) => n >= 1);
   }
 
+  // 3a2. 1.2.1 (migration 048; seed.sql, "Coach rows on the finished run" and "Maintenance"): the release state, and the Coach rows the
+  // full delete counts. Counts only are printed.
+  // v2_app_status is read by anyone, before sign-in too: the anon key alone, no session.
+  const anonStatus = await fetch(`${url}/rest/v1/v2_app_status?select=id`, { headers: { apikey: anon, Authorization: `Bearer ${anon}` } });
+  const anonStatusRows = await anonStatus.json().catch(() => null);
+  check('seed: v2_app_status: one row, read signed out', anonStatus.ok && Array.isArray(anonStatusRows) && anonStatusRows.length === 1,
+    `HTTP ${anonStatus.status}, ${Array.isArray(anonStatusRows) ? anonStatusRows.length : '?'} row(s)`);
+  const status = await test.rows('v2_app_status?select=maintenance,min_version,exempt_user_ids');
+  const exempt = Array.isArray(status?.[0]?.exempt_user_ids) ? status[0].exempt_user_ids : null;
+  check('seed: v2_app_status reads maintenance off, min_version 1.2.1, the test account the one account exempt',
+    status !== null && status.length === 1 && status[0].maintenance === false && status[0].min_version === '1.2.1'
+      && exempt !== null && exempt.length === 1 && exempt[0] === test.uid,
+    status === null ? 'read failed' : `${status.length} row(s), maintenance ${status[0]?.maintenance}, min_version ${status[0]?.min_version}, ${exempt?.length ?? '?'} exempt, the test account ${exempt?.includes(test.uid) ? 'among them' : 'not among them'}`);
+  // Nobody writes it through the API, and a write is refused by privilege (42501) as on production: the seed's blanket grants must not give the API
+  // roles ALL on it again (RLS alone would stop the write too, but silently, with zero rows and a 204). The body is what the row already holds.
+  const patch = await fetch(`${url}/rest/v1/v2_app_status?id=eq.true`, { method: 'PATCH', headers: { ...test.auth, Prefer: 'return=minimal' }, body: JSON.stringify({ maintenance: false }) });
+  const patchBody = await patch.json().catch(() => ({}));
+  check('seed: v2_app_status: a signed-in PATCH is refused by privilege (42501), as on production', !patch.ok && patchBody.code === '42501', `HTTP ${patch.status} ${patchBody.code ?? ''}`);
+  if (others.stable) {
+    check('seed: v2_app_status: staging-stable is not exempt (the screen shows on it under a flip)', exempt !== null && !exempt.includes(others.stable.uid),
+      exempt === null ? 'read failed' : `${exempt.length} exempt, staging-stable ${exempt.includes(others.stable.uid) ? 'among them' : 'not among them'}`);
+  }
+  // The finished STG Full Body run, its sessions, and the active run's sessions (read as the test account: its own).
+  const finishedRuns = await test.rows('v2_mesocycles?select=id&name=eq.STG%20Full%20Body%20run&status=eq.completed');
+  const activeRuns = await test.rows('v2_mesocycles?select=id&status=eq.active');
+  const finishedRun = finishedRuns?.[0]?.id ?? null;
+  const activeRun = activeRuns?.length === 1 ? activeRuns[0].id : null;
+  check('seed: Coach: the finished STG Full Body run and the active run are found', finishedRun !== null && activeRun !== null,
+    `${finishedRuns?.length ?? '?'} finished, ${activeRuns?.length ?? '?'} active`);
+  if (finishedRun && activeRun) {
+    const runSessions = (await test.rows(`v2_sessions?select=id&mesocycle_id=eq.${finishedRun}`))?.map((r) => r.id) ?? [];
+    const activeSessions = new Set((await test.rows(`v2_sessions?select=id&mesocycle_id=eq.${activeRun}`))?.map((r) => r.id) ?? []);
+    check('seed: Coach: the finished run has sessions to hang its rows on', runSessions.length > 0 && activeSessions.size > 0, `${runSessions.length} of the finished run, ${activeSessions.size} of the active run`);
+    const inRun = `session_id=in.(${runSessions.join(',')})`;
+    if (runSessions.length > 0) {
+      await seedCheck(test, 'Coach: a note on a session of the finished run', `v2_coach_notes?select=id&${inRun}`, (n) => n >= 1);
+      await seedCheck(test, 'Coach: a session analysis on a session of the finished run', `v2_coach_session_analyses?select=id&${inRun}`, (n) => n >= 1);
+    }
+    await seedCheck(test, 'Coach: a program analysis of the finished run', `v2_coach_meso_analyses?select=id&mesocycle_id=eq.${finishedRun}`, (n) => n >= 1);
+    // A weekly analysis has no link to a session: its snapshot names them (weekAnalysisInput.ts: sessions[].id).
+    const weekly = await test.rows('v2_coach_week_analyses?select=input_snapshot');
+    const named = (w) => (Array.isArray(w.input_snapshot?.sessions) ? w.input_snapshot.sessions.map((x) => x?.id) : []);
+    const ofRun = new Set(runSessions);
+    const onlyRun = weekly?.filter((w) => named(w).length > 0 && named(w).every((id) => ofRun.has(id))).length ?? null;
+    const mixed = weekly?.filter((w) => named(w).some((id) => ofRun.has(id)) && named(w).some((id) => activeSessions.has(id))).length ?? null;
+    check('seed: Coach: a weekly analysis naming only the finished run\'s sessions', onlyRun !== null && onlyRun >= 1, onlyRun === null ? 'read failed' : `${onlyRun}`);
+    check('seed: Coach: the control weekly analysis names a session of the finished run and one of the active run', mixed !== null && mixed >= 1, mixed === null ? 'read failed' : `${mixed}`);
+  }
+
   // 3b. staging-stable: its own STG Full Body, an active stable run
   const st = others.stable;
   if (st) {
@@ -328,12 +389,12 @@ async function main() {
   }
 
   // 4. pg-safeupdate
-  const before = await test.count('v2_coach_notes?select=id');
-  const del = await fetch(`${url}/rest/v1/v2_coach_notes`, { method: 'DELETE', headers: test.auth });
+  const before = await test.count('v2_coach_weight_entries?select=id');
+  const del = await fetch(`${url}/rest/v1/v2_coach_weight_entries`, { method: 'DELETE', headers: test.auth });
   const delBody = await del.json().catch(() => ({}));
-  const after = await test.count('v2_coach_notes?select=id');
+  const after = await test.count('v2_coach_weight_entries?select=id');
   check('DELETE without WHERE is rejected (pg-safeupdate)', !del.ok && delBody.code === '21000',
-    `HTTP ${del.status} ${delBody.code ?? ''}; v2_coach_notes rows before ${before}, after ${after}`);
+    `HTTP ${del.status} ${delBody.code ?? ''}; v2_coach_weight_entries rows before ${before}, after ${after}`);
 }
 
 // Only when run as a script: staging-smoke.test.mjs imports the empty account's checks.
