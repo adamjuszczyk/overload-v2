@@ -51,6 +51,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const TABLES = [
   'exercises',
+  'v2_app_status',
   'v2_coach_curation_runs',
   'v2_coach_memory_entries',
   'v2_coach_meso_analyses',
@@ -94,11 +95,11 @@ const TABLES = [
 // api/ uses. The chunk whose code first calls `.from()` on one of them moves
 // its name into TABLES (the same test fails until it does) and deletes it here
 // (verify-rls-ahead.test.mjs fails until it does).
-// Empty between chunk 56 (its REVIEW read and write moved `v2_week_review_decisions`, the last one, into TABLES)
-// and chunk 70 (1.2.1, migration 048): `v2_app_status`, the release state, which chunk 72's first `.from()` moves
-// into TABLES. It is public by design (below): anyone, anon included, reads its one row, and nobody writes it
-// through the API.
-export const TABLES_AHEAD_OF_THE_APP = ['v2_app_status'];
+// Empty since chunk 56 (its REVIEW read and write moved `v2_week_review_decisions`, the last one, into TABLES), but for
+// the stretch between chunk 70 (1.2.1, migration 048) and chunk 72: `v2_app_status`, the release state, sat here until
+// chunk 72's first `.from()` (`appStatusService.ts`) moved it into TABLES. It is public by design (below): anyone, anon
+// included, reads its one row, and nobody writes it through the API.
+export const TABLES_AHEAD_OF_THE_APP = [];
 
 // Global curated catalogs (migration 019): RLS is `for select using (true)` on
 // purpose, there is no user_id, and they are readable by everyone. Zero rows is

@@ -6,6 +6,8 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore, type SyncFailure } from './offlineStore'
 import type { SyncQueueItem } from '../../lib/db'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from '../gym/sessionCompletion'
+import { APP_STATUS_KEY, isMaintenanceRefusal } from '../../lib/maintenanceRefusal'
+import { useAppStatus } from '../release/useAppStatus'
 
 export function useSyncQueueInit() {
   const addPending = useOfflineStore((s) => s.addPending)
@@ -49,6 +51,21 @@ export function useSyncQueueRunner() {
     }
     prevOnline.current = isOnline
   }, [isOnline])
+
+  // Chunk 72 (SPEC.md 1.2.1, Screens → Maintenance [10]: a write the database refused for maintenance "stays in the queue ... It is sent when
+  // maintenance is off"). A pass ends at the first such refusal (`flushOnce`), so the writes it held are sent by the pass that follows the
+  // status turning from on to off. `lastKnown` is the last flag the phone read: an offline stretch (no status) is not "off" and sends nothing, and
+  // a flag that is on again after being off is not a change to flush on.
+  const { data: status } = useAppStatus()
+  const maintenance = status === undefined ? null : status.maintenance
+  const lastKnown = useRef<boolean | null>(null)
+  useEffect(() => {
+    if (maintenance === null) return
+    if (lastKnown.current === true && maintenance === false) {
+      flushSyncQueue().catch((err) => console.error('[sync] flush failed', err))
+    }
+    lastKnown.current = maintenance
+  }, [maintenance])
 }
 
 // B3: a finish queued offline guessed its status and completed_at from the
@@ -329,10 +346,20 @@ async function flushOnce() {
       if (payload?.id) removePending(payload.id)
     } catch (err) {
       let failure = err
+      // Chunk 72 (SPEC.md 1.2.1, Screens → Maintenance [10]; DECISIONS 271): a write the database refuses for maintenance (`OL001`, read from the
+      // code) is neither a failed attempt nor a reason to try the next one. Every later write would be refused the same way, so the pass ends here and
+      // the item stays exactly as it is: no `attempts` (so it never reaches `gaveUp`, never reads as a failure in `failuresOf`, never shows the
+      // "couldn't sync" notice), and `sendStarted` as it was set before the request (the server never took the row, but a delete queued behind it
+      // is then sent after it, as for any write the server may have taken). The status is read again at once, so the screen does not wait for the hour;
+      // the pass that follows its turning off sends the queue in order (`useSyncQueueRunner`).
       try {
         if (await recoverFromRemovedPlannedSet(item, err)) continue
       } catch (again) {
-        failure = again
+        failure = again // the request the recovery sends again can be refused for maintenance too (below)
+      }
+      if (isMaintenanceRefusal(failure)) {
+        queryClient.invalidateQueries({ queryKey: APP_STATUS_KEY })
+        break
       }
       if (own) held.add(own)
       const attempts = (item.attempts ?? 0) + 1

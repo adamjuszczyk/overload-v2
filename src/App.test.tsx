@@ -90,9 +90,15 @@ vi.mock('./components/Nav', () => ({ default: () => <div>NAV</div> }))
 // config). Merely importing App.tsx evaluates this statement regardless of
 // what AppRoutes renders — ESM top-level imports always run on module load.
 vi.mock('./features/pwa/PwaUpdateNotice', () => ({ default: () => null }))
+// Chunk 72 — the release gate (maintenance) reads `v2_app_status` through TanStack and Supabase. It is not routing, and App.maintenance.test.tsx mounts
+// the real one in this same shell; here it is stood in for as no gate, so every route below is proven with the app as it is when nothing is on.
+vi.mock('./features/release/useAppStatus', () => ({ useGate: () => null }))
 // Chunk 71 — the sheet after an update reads the app's version (a build-time define vitest doesn't run) and this phone's mark; it is not
 // routing, and App.whatsNew.test.tsx mounts the real one in this same shell. Stood in for here like the pages.
 vi.mock('./features/settings/AfterUpdateSheet', () => ({ default: () => null }))
+
+// The define vitest doesn't run (vite.config.ts), before App.tsx's imports: the gates' modules reach the app's version (chunks 72 and 73).
+vi.stubGlobal('__APP_VERSION__', '1.2.1')
 
 const { AppRoutes } = await import('./App')
 
