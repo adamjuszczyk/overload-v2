@@ -1,19 +1,85 @@
 # Overload — Rules
 
-**Index** (read this, then the sections marked ALWAYS, then only the sections the reviewer brief names; sections are in file order)
+**Index** (read this, then the sections marked ALWAYS, then only the sections the builder or reviewer brief names; sections are in file order)
+- **ALWAYS** — Escalation (BUILD.md 2.1; the 1.2 criteria unchanged): when to stop and report.
+- **ALWAYS** — Reviewer rules (BUILD.md 2.1, step 4): roles, merges, failures, records.
+- **ALWAYS** — Verification by chunk type (BUILD.md 2.1): DATA and LIGHT.
+- **ALWAYS** — Usage (BUILD.md 2.1): reads, tests, turns, the usage line, resuming.
+- **ALWAYS** — Decision cards (BUILD.md 2.1): the format.
+- Standing rules: rules SPEC made standing (queued writes across a version change).
 - Checks that lied: checks that passed while wrong; re-seed checks.
-- Rules discovered during this build: three groups, below.
+- Rules discovered during this build: three groups.
   - Data and architecture: Query/Zustand, colours, Coach, flagged-migration merges.
   - Database / migrations: migration rules, fixtures, replay stack, staging config.
   - **ALWAYS** Verification and process: proofs, reviews, worktrees, PR/merge/docs mechanics.
-- **ALWAYS** — The 1.2 usage rules (2026-10-16): quiet test output, who reads what.
-- **ALWAYS** — Usage rules from 58b's breakdown (2026-10-22): narrow reads, affected tests, index, cost.
-- **ALWAYS** — Break proofs for the remaining chunks (2026-10-26): no mutation sweeps; one break per place that writes, or per call pattern.
-- **ALWAYS** — Turn count (2026-10-26): batch independent reads, edits and checks into as few turns as possible.
-- **ALWAYS** — The 1.2 cost rule (2026-10-20): which chunks get full review.
-- **ALWAYS** — The 1.2 tests-owed rule (2026-10-20): missing tests logged, not bounced.
+- The 1.2 usage rules (2026-10-16), 58b's breakdown (2026-10-22), break proofs (2026-10-26), turn count (2026-10-26): still in force; Usage above summarises them.
+- The 1.2 tests-owed rule (2026-10-20): still in force (Reviewer rules above say the same).
+- Moved to HISTORY.md on 2026-10-30, replaced by BUILD.md 2.1: the 1.2 cost rule ("2026-10-30 1.2.1 setup").
 
-*Read the index above, then the sections it marks ALWAYS and the sections your brief names (Adam, 2026-10-22; it replaces "read this file right after CONTEXT.md"). "Checks that lied" and "Rules discovered during this build" were moved here from CONTEXT.md unchanged on 2026-10-15 (Adam: "yes, split it"). Rules are never pruned from this file; a rule discovered during the build is added to it.*
+*Rules are never pruned from this file; a rule discovered during a build is added to it in the same session. "Checks that lied" and "Rules discovered during this build" were moved here from CONTEXT.md unchanged on 2026-10-15 (Adam: "yes, split it"). The five BUILD.md sections were written at the 1.2.1 setup (2026-10-30) from the brief's description of BUILD.md 2.1, whose text did not reach that session: where they and BUILD.md disagree, BUILD.md wins and they are corrected.*
+
+## Escalation (BUILD.md 2.1; the 1.2 criteria, moved from CONTEXT.md on 2026-10-30 unchanged)
+A stop is a decision card (below) with full reasoning, not a verdict and options.
+Stop and report to Adam (do not route around, do not ask "should I continue without it") when:
+1. **Live verification is required and browser tooling is unavailable.** 1.2: the reviewer's browser must load staging and sign in with the test account; probe it before starting the build (`requestAnimationFrame` probe or a real navigation — never assume from a prior session). Same weight as a failing test. Only exception: Adam, in-session, told plainly what won't be verified, overrides it for that step.
+2. **A query surfaces data that isn't Adam's.** That is a bug in the query: stop, don't investigate, don't record what it returned, narrow it, re-run.
+3. **A login is needed** (Supabase dashboard, the app, SQL Editor). Adam signs in himself; passwords, tokens and session JWTs are never entered, typed, printed or recorded. If a tool or classifier refuses to return a token, stop and ask Adam (he once chose to reconstruct the payload from documented data instead); don't hunt for a workaround, and don't assume last session's extraction technique still works. Use the dry-run technique below, which never touches a token.
+4. **A near-the-cap or anomalous measurement:** a Coach generation approaching the function cap (weekly: over ~35 s of 60 s; daily E1 was 14 s of 60 s; measure first, before anything else in that step), or an investigation turning up real corrupted data broader than known (2026-08-11: 11 of 23 sessions had implausible durations) — report, don't push over it.
+5. **A found problem meets a deploy gate.** A brief that says "stop and report rather than ship over a problem" is not cleared by fixing it yourself; ask in-session before deploying.
+6. **Anything irreversible or spending real money:** a real Anthropic generation that writes a permanent row (Adam chooses the session), a first reassignment against Adam's real exercise history, deleting or mutating real rows, any write to production for live testing (needs an explicit go-ahead first; the permission classifier may also block a delete — ask again rather than retry).
+7. (Retired 2026-10-04 with hand-applied migrations; the number is kept so references stay valid. Wording in HISTORY.md.)
+8. **`node scripts/check-migration.mjs` exits 1 or 2 at the release, or on a hotfix to master:** don't merge; Adam gets one blocking DECISIONS.md decision covering every flagged migration. During the 1.2 build a flag does **not** stop: merge into staging and log it under "For the release".
+9. **Two documents disagree** (cross-references, migration numbers, spec vs shipped label): read the section fresh, report the conflict, don't pick a side silently. Same for a decision the spec leaves open — flag it, don't assume it.
+10. **Data the check needs doesn't exist** (no second account, no real notes, no complete meso, no in-progress session): say so plainly. Never fabricate rows or substitute silently to force a run.
+11. **Northstar data is ever in reach.** Standing rule for all of Overload: never read or write it.
+12. (1.2: folded into 8 — a flag stops only at the release or a hotfix.)
+13. Any change beyond the chunk's stated scope in TASKS.md.
+14. Anything SPEC.md is ambiguous or silent about.
+15. **A failed Supabase deploy:** on the staging branch after a schema merge (blocking during the build), or on production at a release or hotfix.
+16. Any change to Coach code (`src/features/coach/*`, `api/coach/*`), or to the existing exports of `referenceLogic.ts` or `setGroupLogic.ts`.
+17. Any live check that writes **on production**. On staging, writes as the staging test account are pre-authorised.
+18. (1.2: retired — `verify-rls` has a standing go-ahead.)
+19. Any UI that can't be built from the app's existing components and design tokens. Builders never invent a new visual language.
+
+## Reviewer rules (BUILD.md 2.1, step 4)
+- A DATA chunk gets its own fresh reviewer (`.claude/agents/reviewer-data.md`, Opus 5.5, max): full review, every break re-run, the staging check, the merge, the record. LIGHT chunks are built two or three at a time, in batches that share no files and depend on nothing unmerged, then one reviewer for the batch (`.claude/agents/reviewer-light.md`, Sonnet 5.5, high) reviews them together, merges them in the batch's order and runs one smoke. The coordinator (Opus 5.5, max) starts every builder and reviewer itself (a subagent can't start a subagent here) and keeps CONTEXT.md and HISTORY.md. No day mode, no night mode, no per-chunk mode.
+- Never switch branches in the main checkout while a builder runs or resumes; a reviewer works in its own `git worktree`.
+- Verify against the real thing: a passing check proves only what it touched; if unreachable and passing give the same signal, the check is wrong. Never fix before understanding the cause. Don't read code to check what a script can check; if no script covers it, write one, or verify by hand and say that's what happened. Commit verification scripts to `scripts/` and run all of them at every chunk boundary, not just this chunk's.
+- A behaviour failure goes back to the builder with the exact failing case; the second behaviour failure of one chunk stops the build for Adam (a decision card). A missing proof (behaviour verified right, a test missing) is merged and logged as an owed test for the next chunk that touches the same file; never bounced.
+- Migrations: a migration goes live on staging (merged, its deploy read, the probe green) before the code that needs it; a `check-migration` flag is logged under DECISIONS "For the release", never stopped on during the build; the shared scripts (`check-migration`, `migration-rules`, `check-context-size`) are never changed during a build (a chunk that changes one reverts it before merging and says so).
+- Escalate with full reasoning, not a verdict and options. Never write an unconfirmed belief into CONTEXT.md as fact. A rule discovered is written into this file in the same session and never pruned.
+- At every merge: one line in CONTEXT.md "Where the build is", the long form in HISTORY.md, the answered cards and the flagged migrations in DECISIONS.md; CONTEXT.md stays under its ceiling and is rewritten only at merges. A fresh coordinator or reviewer session continues from CONTEXT.md instead of compacting a long one.
+- Screens are compared with the prototype once, before the release (BUILD.md step 5, "Before the release"), by the final reviewer; a chunk's review checks that the captures exist and that the tests prove the wiring.
+- Verification proportional to risk: break-prove every place that writes data; one break per call pattern for read-only display wiring; fingerprint the database only for a migration that touches existing rows.
+- Nothing in the build touches `master`; the release is BUILD.md step 5 (1.2.1 the 1.2 way: TASKS.md, "Release").
+
+## Verification by chunk type (BUILD.md 2.1)
+- **DATA** (writes data or migrates): every rule asserted at the call site or screen that uses it, with fixtures that tell the right data source from the wrong one (the status row vs a cached one, `deleted_at` vs `kind`, the queue's delete vs the server's row, the week in force vs the run copy's schedule); every place that writes break-proven once (change the asserted payload, watch the test fail, restore from a `cp` backup, never `git checkout --`); a migration proven on the replay as the signed-in role with pg-safeupdate loaded and by its effect on staging; a staging check as the staging accounts; the reviewer re-runs every break and adds one only where a writer has none.
+- **LIGHT** (writes nothing new, SPEC 1.2.1 Rules 7): one break per call pattern (a hook, a query shape, a rule's call site), the captures at 390 px (375 px inside a sheet, `check-sheet-overflow.mjs`), no per-chunk click-through; one smoke after the batch's merges. A LIGHT chunk that adds a request, a column or a queue item is a DATA question (a decision card).
+- **Both:** fixture dates derived from weekdays with the queue printed (Checks that lied #21); a test is proven by injecting the break it claims to catch; what a chunk's verification would not catch is written in TASKS.md and read by its reviewer; prototype data handling in a real file fails the review.
+
+## Usage (BUILD.md 2.1; the 1.2 usage rules below still hold)
+- Builders read narrowly (grep and line ranges, only files the chunk touches), run only the affected test files while building and the full suite once at the end; break proofs run against the specific test file; commands stay under five minutes; independent reads, edits and checks are batched into one turn (turn count is the biggest cost driver).
+- Reviewers read this file's index and ALWAYS sections plus the sections their brief names, and from CONTEXT.md only the sections the chunk touches plus "Where the build is".
+- Quiet reporters (`--reporter=dot`), failures and summaries only, never a full passing log in context; screenshots compared from the text dumps first, a PNG only where the text can't settle it.
+- Every chunk report carries its context figure and its cost-weighted total (re-reads 0.1, writes 2, output 5), and Adam notes the weekly % before and after a chunk (DECISIONS 267), so the next estimate converts without a proxy.
+- A builder or reviewer that hits its budget stops at a clean point and leaves its branch as it is; a usage-limit stop of the coordinator is resumed by its own scheduled task (CONTEXT.md, "Resuming after a limit"), never by Adam. Never resume a long-running agent; start a fresh one from a short summary.
+
+## Decision cards (BUILD.md 2.1)
+A decision card is how a builder or reviewer raises what it may not decide: something SPEC leaves open or contradicts, a prototype state that contradicts SPEC, a change beyond the chunk's scope, a shared-script change, anything that changes data or behaviour. It goes in the chunk report, and the coordinator puts it to Adam between chunks, in this shape:
+
+```
+**Card:** [one line: what must be decided]
+**Found:** [where: the file and SPEC's words, or the prototype's DEMO state]
+**Recommendation:** [one option, and why in one line]
+**Options:** (a) … (b) …
+**Blocks:** [the merge / nothing: the chunk continues on the recommendation]
+```
+
+A card that blocks the merge stops the chunk at a clean point; one that doesn't is built on the recommendation, and the report says so. Adam's answer becomes a DECISIONS.md entry (the next number; an old entry is never rewritten) and, when it changes behaviour or wording, a line in SPEC.md. DECISIONS.md is a record, not an inbox.
+
+## Standing rules
+- **Queued writes across a version change** (SPEC 1.2.1 Rules 5; standing since 2026-10-30): queued writes are sent by the version that's running. A release that changes the shape of anything the queue writes also converts the queued writes of the old shape. The old version never sends once the version check has refused it, and never before that check has answered (chunk 73).
 
 ## Checks that lied
 Each of these gave a false result. Treat the check as insufficient on its own.
@@ -478,13 +544,6 @@ Adam, 2026-10-26 (after 61's overrun): "Break proofs for all remaining chunks (6
 
 ### Turn count (Adam, 2026-10-26)
 Adam, 2026-10-26 (after the day report): "batch independent reads, edits and checks into as few turns as possible; turn count is now the biggest cost driver (59 and 61 made ~570 tool calls each)". With it: "DATA reviews stay at full strength; break proofs as set after 61." (the section above).
-
-## The 1.2 cost rule (Adam, 2026-10-20)
-Usage is the constraint now. From the next chunk on:
-- Chunks that write data or add a migration (46's redraw, the 188 chunk, 51c, 53, 54a, 56, 58a, 59, 61–63): unchanged — full review, break proofs, staging check. 59 adds a migration and runs alone (Adam, 2026-10-20); 51c is a data fix (UNDO in CHANGE THE PROGRAM, before 54a).
-- Everything else (54b, 55, 58b, 60, 64, 65, 66, 67, 68, 69, display follow-ups): reviewer at high effort, not max; no per-chunk staging click-through — the fixture screenshots and tests are the review, and the release checklist covers staging for these screens; break proofs only where the chunk writes data.
-- The release checklist is split (Adam, 2026-10-20): the final reviewer runs the rows that write data or migrate; the screen-only rows go on Adam's list for his review pass on staging. The reviewer records each row as RUN with PASS or FAIL, or as "ADAM'S LIST".
-- Remaining D31 display choices: accept as built and list them; I'll change any in the review pass after the release checklist, not one follow-up at a time.
 
 ## The 1.2 tests-owed rule (Adam, 2026-10-20)
 "Missing-proof failures (behaviour verified right, a test missing) no longer go back to a builder. The reviewer merges, and logs each missing test in one list in DECISIONS.md ("tests owed"). One tests-only builder run before the release checklist adds them all, the way 176 does. Behaviour failures still go back to the builder as before."
