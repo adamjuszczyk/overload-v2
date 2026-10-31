@@ -13,9 +13,17 @@
 - **The counts file**: `scripts/live-counts.sql`, already on master (27 tables, your rows only). For 048 it is the record, not a gate.
 - **`v1.2.0`**: the tag and the GitHub Release "Overload 1.2" exist (published 2026-10-28). Nothing is left over from 1.2.
 
-**Your order:** 0 → 1 → 2 → 4a and 5a (they only open PRs) → **3, the window opens** → 4b to 4f → 5c, **the window closes when Vercel reads Ready** → 6 → 7 → 8.
+**Your order:** the date check → 0 → 1 → 2 → 4a and 5a (they only open PRs) → **3, the window opens** → 4b to 4f → 5c, **the window closes when Vercel reads Ready** → 6 → 7 → 8.
 
 **Never paste a key, password or token into a message, a file in the repo, or anywhere but this cmd window. Never run `db dump --dry-run`: it prints the database password.**
+
+---
+
+## First: the release date
+
+**Releasing on a different day than the date in WHAT'S NEW? Tell the coordinator the day first.**
+
+WHAT'S NEW and the once-sheet show 1.2.1's date: **1 Nov 2026** (`2026-11-01`, set 2026-10-31 while the release day was open). If you release on another day, say so before anything else: the coordinator changes the one date line in `src/data/releaseNotes.ts` and in `docs/release-1.2.1-notes.md` on `staging`, re-takes only the pictures that show the date, and merges that before 5's release merge. Releasing on 1 Nov: nothing to do.
 
 ---
 
