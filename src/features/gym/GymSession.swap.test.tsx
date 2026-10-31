@@ -623,7 +623,7 @@ describe('a swap row the screen can\'t draw as a record is drawn as before 1.2 d
 })
 
 describe('Exercise history is the card\'s last-time sheet', () => {
-  it('"Exercise history" in the ⋯ closes the options and opens the same sheet the history icon does', async () => {
+  it('"Exercise history" in the ⋯ closes the options and opens the card\'s last-time sheet, the one its LAST line opens (the history icon beside the ⋯ is gone: chunk 78)', async () => {
     const { container } = render(jsx())
     fireEvent.click(optionsOf(cards(container)[0]))
     fireEvent.click(screen.getByText('Exercise history'))

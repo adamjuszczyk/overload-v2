@@ -238,18 +238,79 @@ describe('a logged warmup (rows mode) can be unlogged too: its weight and reps c
   })
 })
 
+// Chunk 78 (SPEC 1.2.1 [15], DECISIONS 233 (a); SPEC Rules 7: "an untick unlogs instead of deleting"): in the tick list the untick is chunk 63's unlog, no confirm, and not
+// the delete it was (a log delete after an inline CANCEL / DELETE, with no draft). WRITES: what it sends is `unlogEffects`' and nothing of 61's delete (no `deleted` change row,
+// no renumber, no W9); a re-tick is an exact undo.
+describe('the tick list\'s untick is an unlog (chunk 78; SPEC [15]; DECISIONS 233 (a))', () => {
+  const plan = () => [plannedSet(1, { isWarmup: true }), plannedSet(2, { isWarmup: true }), plannedSet(3)]
+  const logs = () => [headLogOf(1, { isWarmup: true, weight: 20, reps: 12 }), headLogOf(2, { isWarmup: true, weight: 40, reps: 8 })]
+  const untick = (c: HTMLElement, key: string) => within(rowOf(c, key)).getByLabelText('Untick warmup')
+
+  it('sends the unlog and nothing of the delete: the draft is on the phone before the log goes, one log delete, no change row, no renumber, no W9, no rest timer (break: the untick asks for a delete)', async () => {
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, warmupDisplay: 'tick' })
+    const world = newDraftWorld()
+    const r = recorder()
+    const draftsWhenDeleted: number[] = []
+    const onDeleteSet = vi.fn(async (id: string) => {
+      draftsWhenDeleted.push(world.drafts.size)
+      r.deleted.push(id)
+      r.calls.push(`delete ${id}`)
+    })
+    const startRest = vi.spyOn(useRestTimerStore.getState(), 'startRest')
+    const stop = vi.spyOn(useRestTimerStore.getState(), 'stop')
+    const { container } = renderCard({ plannedSets: plan(), logs: logs(), store: fakeDraftStore(world), props: { onDeleteSet, onLog: r.onLog, onUpdateSet: r.onUpdateSet, writers: r.writers } })
+    await settle()
+    expect(rowStates(container)).toEqual(['logged', 'logged', 'current'])
+    await press(untick(container, 'set:set-2'))
+    // the unlog: the numbers are kept first (the draft is on the phone when the log goes), then the one log delete
+    expect(r.deleted).toEqual(['log-2'])
+    expect(draftsWhenDeleted).toEqual([1])
+    expect([...world.drafts.values()].map((d) => [d.id, d.values])).toEqual([['session-1|p:set-2', { weight: 40, reps: 8, rir: null, formRating: null, enteredUnit: null }]])
+    // and none of the delete (61): no `deleted` change row, no renumber of the warmup before or the sets after, nothing patched, no W9, no inline confirm
+    for (const writer of ['writeChanges', 'patchNumbers', 'clearStageKind', 'patchLog', 'queueChanges'] as const) expect(r.writers[writer]).not.toHaveBeenCalled()
+    expect(r.calls).toEqual(['delete log-2'])
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(within(rowOf(container, 'set:set-2')).queryByText('DELETE')).toBeNull()
+    // an unlog never starts or stops the rest timer and writes no log
+    expect(startRest).not.toHaveBeenCalled()
+    expect(stop).not.toHaveBeenCalled()
+    expect(r.onLog).not.toHaveBeenCalled()
+    expect(r.onUpdateSet).not.toHaveBeenCalled()
+    startRest.mockRestore()
+    stop.mockRestore()
+  })
+
+  it('what the screen draws once the log is gone: the same warmup, open again at its own place, with the others as they were; ticking it again logs the numbers it had and clears the draft (an exact undo)', async () => {
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, warmupDisplay: 'tick' })
+    const world = newDraftWorld()
+    const r = recorder()
+    const { container, setLogs } = renderCard({ plannedSets: plan(), logs: logs(), store: fakeDraftStore(world), props: { onDeleteSet: r.onDeleteSet, onLog: r.onLog, writers: r.writers } })
+    await settle()
+    await press(untick(container, 'set:set-2'))
+    setLogs(logs().slice(0, 1)) // the session\'s answer: the log is gone
+    await settle()
+    expect(rowLabels(container)).toEqual(['W', 'W', '01'])
+    expect(rowStates(container)).toEqual(['logged', 'unlogged', 'current'])
+    expect(rowOf(container, 'set:set-2').textContent).toContain('WARMUP · TAP WHEN DONE')
+    await press(rowOf(container, 'set:set-2'))
+    expect(r.onLog).toHaveBeenCalledTimes(1)
+    expect(r.requests[0]).toMatchObject({ weekPlanSetId: 'set-2', setNumber: 2, isWarmup: true, weight: 40, reps: 8 })
+    expect(world.drafts.size).toBe(0)
+  })
+})
+
 describe('UNLOG is disabled while a later drop of the set is logged, and says so; a drop can be unlogged under the same rule (DECISIONS 147 (b))', () => {
   const plan = () => [plannedSet(1), plannedSet(2, { stageKind: 'dropset' }), plannedDrop(2, 1), plannedDrop(2, 2)]
   const logs = () => [headLogOf(1), headLogOf(2, { stageKind: 'dropset' }), dropLog(2, 1, { weight: 50, reps: 10 }), dropLog(2, 2, { weight: 40, reps: 12, rir: 1 })]
 
-  it('the head\'s UNLOG is disabled with "Log its drops first" and does nothing; the first drop\'s too; the last drop\'s works and keeps its draft under the set\'s key and its number (break: UNLOG enabled)', async () => {
+  it('the head\'s UNLOG is disabled with "Unlog its drops first" (chunk 78; DECISIONS 232 (a)) and does nothing; the first drop\'s too; the last drop\'s works and keeps its draft under the set\'s key and its number (break: UNLOG enabled)', async () => {
     const world = newDraftWorld()
     const r = recorder()
     const { container, setLogs } = renderCard({ plannedSets: plan(), logs: logs(), store: fakeDraftStore(world), props: { onDeleteSet: r.onDeleteSet, writers: r.writers } })
     await settle()
     const head = unlogButtonOf(container, 'set:set-2')
     expect(head.disabled).toBe(true)
-    expect(within(rowOf(container, 'set:set-2')).getByRole('status').textContent).toBe('Log its drops first')
+    expect(within(rowOf(container, 'set:set-2')).getByRole('status').textContent).toBe('Unlog its drops first')
     await press(head)
     expect(r.deleted).toEqual([])
     fireEvent.click(within(rowOf(container, 'set:set-2')).getByText('CANCEL'))

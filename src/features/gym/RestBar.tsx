@@ -4,6 +4,9 @@
 // jump button, "↓ SET 03" or "↑ SET 03", which scrolls to the current set while it is out of view. With the rest timer off, or no rest
 // running, only the jump button shows; with neither, nothing does. The target is the rest chain's (restTimerStore.targetSeconds,
 // chunk 16) or Settings'.
+// Chunk 78 (SPEC 1.2.1 [6]): `complete` — once every working set and stage is logged or skipped, the bar says WORKOUT COMPLETE and offers FINISH
+// in place of the timer and the jump button. The rest keeps being timed underneath (the store and this bar's clock are untouched, so an added
+// set or exercise brings the timer back showing the rest since the last set, and the next log records it); the screen decides when it is passed.
 import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp } from 'lucide-react'
 import { useRestTimerStore } from './restTimerStore'
@@ -13,11 +16,13 @@ import { formatClock } from './workoutRowView'
 interface RestBarProps {
   /** The current set is out of view: which way it is (null while it is on screen, or there is none), its name and the jump itself. */
   jump: { direction: 'up' | 'down' | null; label: string | null; onJump: () => void }
+  /** The workout is done (chunk 78): WORKOUT COMPLETE and a FINISH button that opens the finish screen. Null or left out, the bar is the timer and the jump. */
+  complete?: { onFinish: () => void } | null
 }
 
 const MONO = 'var(--font-mono)'
 
-export default function RestBar({ jump }: RestBarProps) {
+export default function RestBar({ jump, complete = null }: RestBarProps) {
   const startedAt = useRestTimerStore((s) => s.startedAt)
   const isVisible = useRestTimerStore((s) => s.isVisible)
   const hide = useRestTimerStore((s) => s.hide)
@@ -56,6 +61,27 @@ export default function RestBar({ jump }: RestBarProps) {
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
   }, [startedAt, buzzOnRestComplete, target])
+
+  if (complete !== null) {
+    return (
+      <div data-rest-bar data-workout-complete className="sticky bottom-0" style={{ zIndex: 20, backgroundColor: 'var(--base)', borderTop: '1px solid var(--accent)', paddingBottom: 2 }}>
+        <div className="flex items-center gap-3 px-4" style={{ minHeight: 52 }}>
+          <span className="text-xs font-bold tracking-widest" style={{ color: 'var(--accent)', fontFamily: MONO }}>
+            WORKOUT COMPLETE
+          </span>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={complete.onFinish}
+            className="rounded-lg text-xs font-black tracking-widest"
+            style={{ minHeight: 44, padding: '0 16px', backgroundColor: 'var(--accent)', color: 'var(--on-accent)', fontFamily: MONO }}
+          >
+            FINISH
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const resting = restTimerEnabled && startedAt !== null
   const jumping = jump.direction !== null && jump.label !== null

@@ -9,7 +9,7 @@
 // Chunk 62 (boards W7a, W7, W2b): the SET TYPE row of the ⋯ and of the edit panel opens the type picker, which this row mounts outside its own frames as it does
 // the cues sheet (`WorkoutSetTypeSheet`), and the old ADD STAGE and "mark as dropset" buttons after a logged head are gone: a drop is a type the set is given.
 import { Fragment, useRef, useState } from 'react'
-import type { SessionSetChangeType, SetLog } from '../../types'
+import type { SessionSetChangeType, SetLog, WeightUnit } from '../../types'
 import { cuesSummary } from '../../components/pickers/pickerLogic'
 import { errorReason } from '../../components/exercisePickerLogic'
 import { useSettingsStore } from '../settings/settingsStore'
@@ -30,6 +30,17 @@ import { SetRowLocked, SetRowSkipped } from './SetRowUpcoming'
 import { lastLineText, stageChipText, stageLock } from './workoutRowView'
 
 const MONO = 'var(--font-mono)'
+
+/**
+ * The row's LAST line, second half (SPEC 1.2.1 [21], DECISIONS 218 (a)): "MON 32.5 × 8 @ 1", the same set from the most recent earlier session this week, in
+ * the exercise's unit as the LAST numbers are. '' with none, and when that session's set has no numbers (it was skipped): the line then has nothing to add, as
+ * LAST has nothing when last week's was skipped.
+ */
+function alsoLineText(also: { day: string; log: SetLog } | null, unit: WeightUnit): string {
+  if (also === null) return ''
+  const numbers = lastLineText(also.log, unit)
+  return numbers === '' ? '' : `${also.day} ${numbers}`
+}
 
 // A LOG nobody awaits (the row's own): a refusal is shown by the mutation's own rollback; chunk 63 only makes it a logged error instead of an unhandled rejection, since a LOG that
 // fails now also puts a set's draft back (`useExerciseCardState`'s `withDraft`).
@@ -188,9 +199,6 @@ function RowBody({ state, row, current, supersetContext, guard, menu }: WorkoutR
         draft={state.draftOf(row)}
         onLog={(params) => guard(() => void state.logWarmup(row, params).catch(logFailed))}
         onUpdate={(changes) => log && state.onUpdateSet(log.id, changes)}
-        onDelete={() => {
-          if (log) state.onDeleteSet(log.id).catch((err) => console.error('Failed to delete warmup', err))
-        }}
         onAskDelete={menu.askDelete}
         menu={menu}
       />
@@ -227,6 +235,7 @@ function RowBody({ state, row, current, supersetContext, guard, menu }: WorkoutR
       planned={planned}
       resolvedUnit={unit}
       lastLine={lastLineText(state.lastFor(row), unit)}
+      alsoLine={alsoLineText(state.alsoFor(row), unit)}
       lastLoading={row.kind === 'working' && state.lastLoading}
       lastFailed={isCurrent && row.kind === 'working' && state.lastFailed}
       onRetryLast={state.retryLast}

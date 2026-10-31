@@ -73,5 +73,5 @@ export function deleteConfirm(row: NamedRow & Pick<ResolvedRow, 'type'>, numbers
   }
 }
 
-/** Chunk 63 (TASKS 63: 'disabled with "Log its drops first"'; SPEC 18c: "UNLOG is disabled and says so"): the words under the edit panel's UNLOG while a later drop of the set is logged. D31: TASKS' words, as written. */
-export const UNLOG_BLOCKED_NOTE = 'Log its drops first'
+/** Chunk 63 (SPEC 18c: "UNLOG is disabled and says so"): the words under the edit panel's UNLOG while a later drop of the set is logged. Chunk 78 (SPEC 1.2.1 [14], DECISIONS 232 (a)): "Unlog its drops first", where chunk 63 built TASKS' "Log its drops first" for drops that are already logged. */
+export const UNLOG_BLOCKED_NOTE = 'Unlog its drops first'

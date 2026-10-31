@@ -130,3 +130,74 @@ describe('the bar\'s states (board W4)', () => {
     expect(container.innerHTML).toBe('')
   })
 })
+
+// Chunk 78 (SPEC 1.2.1 [6]): "Once every working set and stage is logged or skipped, the rest bar shows WORKOUT COMPLETE and a FINISH button (which opens the finish
+// screen) instead of the rest timer and the jump button. The rest keeps being timed underneath. An added set or exercise brings the bar back, showing the rest since the
+// last set." The bar is told by the screen (`complete`); when the screen is right is GymSession.workoutComplete.test.tsx.
+describe('WORKOUT COMPLETE (chunk 78; SPEC 1.2.1 [6])', () => {
+  const styleOf = (el: Element) => el.getAttribute('style') ?? ''
+
+  it('says WORKOUT COMPLETE with a FINISH button in place of the timer and the jump button, and FINISH calls the screen\'s finish once', () => {
+    useSettingsStore.setState({ targetRestSeconds: 120 })
+    useRestTimerStore.getState().start()
+    const onFinish = vi.fn()
+    const onJump = vi.fn()
+    const { container } = render(<RestBar jump={{ direction: 'down', label: 'SET 03', onJump }} complete={{ onFinish }} />)
+    act(() => void vi.advanceTimersByTime(72_000))
+    expect(container.textContent).toBe('WORKOUT COMPLETEFINISH')
+    // neither the timer nor its chevron nor the jump button
+    expect(screen.queryByLabelText('Hide rest timer')).toBeNull()
+    expect(screen.queryByLabelText('Show rest timer')).toBeNull()
+    expect(screen.queryByLabelText('Jump to SET 03')).toBeNull()
+    expect(container.textContent).not.toContain('REST')
+    expect(container.querySelectorAll('[data-rest-bar]')).toHaveLength(1) // still the one bar
+    fireEvent.click(screen.getByText('FINISH'))
+    expect(onFinish).toHaveBeenCalledTimes(1)
+    expect(onJump).not.toHaveBeenCalled()
+  })
+
+  it('draws the bar with the rest timer off and with nothing resting too: the workout being done is not a rest', () => {
+    useSettingsStore.setState({ restTimerEnabled: false })
+    const view = render(<RestBar jump={noJump} complete={{ onFinish: () => {} }} />)
+    expect(view.container.textContent).toBe('WORKOUT COMPLETEFINISH')
+    view.unmount()
+    useSettingsStore.setState({ restTimerEnabled: true })
+    const idle = render(<RestBar jump={noJump} complete={{ onFinish: () => {} }} />) // no rest started at all
+    expect(idle.container.textContent).toBe('WORKOUT COMPLETEFINISH')
+  })
+
+  it('FINISH is text on the accent, drawn in --on-accent (the standing rule for text on the accent)', () => {
+    render(<RestBar jump={noJump} complete={{ onFinish: () => {} }} />)
+    const finish = screen.getByText('FINISH')
+    expect(styleOf(finish)).toContain('background-color: var(--accent)')
+    expect(styleOf(finish)).toContain('color: var(--on-accent)')
+  })
+
+  it('the rest keeps being timed underneath: the timer is back at once, showing the rest since the last set, when the screen stops saying it is complete (an added set)', () => {
+    useSettingsStore.setState({ targetRestSeconds: 120 })
+    useRestTimerStore.getState().start()
+    const { container, rerender } = render(<RestBar jump={noJump} complete={{ onFinish: () => {} }} />)
+    act(() => void vi.advanceTimersByTime(45_000))
+    expect(container.textContent).not.toContain('0:45') // nothing of the timer is drawn while the workout is complete
+    rerender(<RestBar jump={{ direction: 'down', label: 'SET 04', onJump: () => {} }} complete={null} />) // + ADD SET: a current set again
+    // no tick has passed since the rerender: the 45 s were counted while the bar said the workout was complete
+    expect(container.textContent).toContain('REST0:45')
+    expect(container.textContent).toContain('/ 2:00')
+    expect(screen.getByLabelText('Jump to SET 04')).toBeTruthy()
+    expect(container.textContent).not.toContain('WORKOUT COMPLETE')
+    expect(useRestTimerStore.getState().startedAt).toBe(new Date('2026-01-05T10:00:00.000Z').getTime()) // the store itself was never touched
+  })
+
+  it('FINISH does not stop or restart the rest timer, and a null or missing `complete` is the usual bar', () => {
+    useRestTimerStore.getState().start()
+    const onFinish = vi.fn()
+    const { container, rerender } = render(<RestBar jump={noJump} complete={{ onFinish }} />)
+    fireEvent.click(screen.getByText('FINISH'))
+    expect(useRestTimerStore.getState().startedAt).not.toBeNull()
+    rerender(<RestBar jump={noJump} complete={null} />)
+    expect(container.textContent).toContain('REST')
+    rerender(<RestBar jump={noJump} />)
+    expect(container.textContent).toContain('REST')
+    expect(container.textContent).not.toContain('FINISH')
+  })
+})

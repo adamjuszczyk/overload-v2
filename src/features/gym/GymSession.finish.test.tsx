@@ -4,9 +4,11 @@
 // scrolls to the first of them. BACK TO SESSION closes it where it was. A reopened session finishes through W19"). The screen runs over the real rows (`useWorkoutRows`),
 // the real scroll hook and the real `FinishScreen`: what is asserted is what the person would see and where the scroller ends up. The screen's own words, tiles, chips and
 // payloads are `FinishScreen.test.tsx`'s; what COMPLETE writes is `FinishScreen.write.test.tsx`'s.
+// Chunk 78 (SPEC 1.2.1 [6]) adds the pinned bar's other way in: once every working set and stage is logged or skipped the rest bar says WORKOUT COMPLETE and its FINISH opens
+// the same screen (the last describe).
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
-import { render, cleanup, fireEvent, act, screen } from '@testing-library/react'
+import { render, cleanup, fireEvent, act, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'
 import type { Session, SessionSetChangeRecord, SetLog, WeekPlan } from '../../types'
@@ -14,6 +16,7 @@ import type { ExerciseSwap } from './sessionService'
 import type { AddedSet } from './workoutRules'
 
 const complete = vi.hoisted(() => ({ mutateAsync: vi.fn(), isPending: false, isError: false, error: null as unknown }))
+const logSet = vi.hoisted(() => ({ mutateAsync: vi.fn() })) // what LOG asks the server to write (chunk 78: the rest the next log records)
 const phone = vi.hoisted(() => ({ world: { drafts: new Map(), lists: null, log: [] } as import('./draftStore.testutil').DraftWorld }))
 
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }))
@@ -35,7 +38,7 @@ vi.mock('./sessionDrafts', async (importOriginal) => {
 })
 vi.mock('./useSession', () => ({
   useActiveSession: () => ({ data: session }),
-  useLogSet: () => ({ mutateAsync: vi.fn().mockResolvedValue({}) }),
+  useLogSet: () => ({ mutateAsync: logSet.mutateAsync }),
   useUpdateSetLog: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
   useDeleteSetLog: () => ({ mutateAsync: vi.fn() }),
   useCompleteSession: () => ({ mutateAsync: complete.mutateAsync, isPending: complete.isPending, isError: complete.isError, error: complete.error }),
@@ -46,7 +49,8 @@ vi.mock('./useSession', () => ({
 
 const { default: GymSession } = await import('./GymSession')
 
-import { EZ_DONE, LAT_1_2, LAT_ALL, NORMAL, deletedChange, log, skipped, swapRow, weekPlan, workoutDay } from './finishWorld.testutil'
+import { EZ_DONE, LAT_1_2, LAT_ALL, NORMAL, PE_EZ, SETS, deletedChange, log, skipped, swapRow, weekPlan, workoutDay } from './finishWorld.testutil'
+import { useRestTimerStore } from './restTimerStore'
 
 let session: Session
 let swaps: ExerciseSwap[] = []
@@ -81,6 +85,7 @@ const warningText = (c: HTMLElement) => c.querySelector('[data-finish-warning] s
 const rect = (top: number) => ({ top, bottom: top + 40, left: 0, right: 0, width: 0, height: 40, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
 
 beforeEach(() => {
+  logSet.mutateAsync.mockReset().mockResolvedValue({})
   complete.mutateAsync.mockReset().mockResolvedValue(undefined)
   complete.isPending = false
   complete.isError = false
@@ -277,5 +282,161 @@ describe('COMPLETE at the workout screen', () => {
     expect(complete.mutateAsync).toHaveBeenCalledTimes(1)
     expect(complete.mutateAsync).toHaveBeenCalledWith({ id: 'session-1', note: 'Felt strong.', energyRating: null, pumpRating: null })
     expect(container.querySelectorAll('[data-row-key]').length).toBe(0)
+  })
+})
+
+// ─── Chunk 78: WORKOUT COMPLETE on the pinned bar (SPEC 1.2.1 [6]; DECISIONS 259) ─────────────────────────────────────────────────────────────────────────────────────────────
+// "Once every working set and stage is logged or skipped, the rest bar shows WORKOUT COMPLETE and a FINISH button (which opens the finish screen) instead of the rest timer and
+// the jump button. Open warmups don't count. Added sets do. A workout with no working set or stage at all keeps the usual bar (Adam, 2026-10-30, TASKS question 10). The rest
+// keeps being timed underneath. An added set or exercise brings the bar back, showing the rest since the last set, and the next log records it. FINISH SESSION at the foot of the
+// list stays." The screen runs over the real rows and the real bar; the world is Pull 1 on Tuesday of week 2 (EZ Bar Curl: a warmup, 01, 02; Lat Pulldown 01 to 04).
+describe('WORKOUT COMPLETE on the rest bar (SPEC 1.2.1 [6])', () => {
+  const REST_START = new Date('2026-01-06T10:00:00Z').getTime()
+  const bar = (c: HTMLElement) => c.querySelector('[data-rest-bar]') as HTMLElement | null
+  const isComplete = (c: HTMLElement) => bar(c)?.hasAttribute('data-workout-complete') === true
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-01-06T10:01:15Z'))
+    // the last set was logged 75 s ago, and the rest chain's target is 2:00
+    useRestTimerStore.setState({ startedAt: REST_START, isVisible: true, anchorId: null, targetSeconds: 120 })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useRestTimerStore.getState().stop()
+  })
+
+  it('every working set logged (the warmup too): WORKOUT COMPLETE and FINISH replace the timer, whose clock is not drawn; FINISH SESSION at the foot stays', async () => {
+    const { container } = mount({ logs: [...EZ_DONE, ...LAT_ALL] })
+    await settle()
+    expect(isComplete(container)).toBe(true)
+    expect(bar(container)!.textContent).toBe('WORKOUT COMPLETEFINISH')
+    expect(container.textContent).not.toContain('1:15')
+    expect(screen.getByText('FINISH SESSION')).toBeTruthy()
+  })
+
+  it('an open warmup does not count: the rest are logged, the warmup is not, and the bar still says the workout is complete', async () => {
+    const { container } = mount({ logs: [EZ_DONE[1], EZ_DONE[2], ...LAT_ALL] })
+    await settle()
+    expect(container.querySelector('[data-row-key="set:ez-w1"]')!.getAttribute('data-row-state')).toBe('unlogged') // the warmup is open
+    expect(isComplete(container)).toBe(true)
+  })
+
+  it('an open working set keeps the timer: Lat Pulldown 03 and 04 are open and the bar is "REST 1:15 / 2:00" with the jump to the set', async () => {
+    const { container } = mount({ logs: [...EZ_DONE, ...LAT_1_2] })
+    await settle()
+    expect(isComplete(container)).toBe(false)
+    expect(bar(container)!.textContent).toContain('REST')
+    expect(bar(container)!.textContent).toContain('1:15')
+    expect(bar(container)!.textContent).toContain('/ 2:00')
+    expect(bar(container)!.textContent).not.toContain('FINISH')
+  })
+
+  it('skipped sets are settled: 03 and 04 skipped and the rest logged is complete', async () => {
+    const { container } = mount({ logs: [...EZ_DONE, ...LAT_1_2, skipped(log('l-lat3', 'lat-3', 3, 'ex-lat')), skipped(log('l-lat4', 'lat-4', 4, 'ex-lat'))] })
+    await settle()
+    expect(isComplete(container)).toBe(true)
+  })
+
+  it('a stage counts too: a logged dropset head whose drop is still open is not complete; with the drop logged it is', async () => {
+    const dropSets = [
+      ...SETS.filter((set) => set.id !== 'lat-3' && set.id !== 'lat-4'),
+      { ...SETS.find((set) => set.id === 'lat-3')!, stageKind: 'dropset' as const },
+      { ...SETS.find((set) => set.id === 'lat-4')!, id: 'lat-3-d1', setNumber: 3, isDropset: true, parentWeekPlanSetId: 'lat-3', stageIndex: 1 },
+    ]
+    const plan3 = weekPlan({ sets: dropSets })
+    const head = log('l-lat3', 'lat-3', 3, 'ex-lat', { stageKind: 'dropset' })
+    const drop = log('l-lat3d', 'lat-3-d1', 3, 'ex-lat', { isDropset: true, parentSetId: 'l-lat3', stageIndex: 1 })
+    const open = mount({ logs: [...EZ_DONE, ...LAT_1_2, head], plan: plan3 })
+    await settle()
+    expect(isComplete(open.container)).toBe(false)
+    expect(open.container.querySelector('[data-current-set]')!.getAttribute('data-row-key')).toBe('set:lat-3:stage:1')
+    cleanup()
+    const done = mount({ logs: [...EZ_DONE, ...LAT_1_2, head, drop], plan: plan3 })
+    await settle()
+    expect(isComplete(done.container)).toBe(true)
+  })
+
+  it('a workout with no working set at all keeps the usual bar (DECISIONS 259): no sets planned, or only a warmup', async () => {
+    const none = mount({ logs: [], plan: weekPlan({ sets: [] }) })
+    await settle()
+    expect(none.container.querySelectorAll('[data-row-key]')).toHaveLength(0) // the fixture is the one it says: nothing to log, no current set
+    expect(isComplete(none.container)).toBe(false)
+    expect(bar(none.container)!.textContent).toContain('REST') // the usual bar: the timer that is running
+    expect(none.container.textContent).not.toContain('WORKOUT COMPLETE')
+    cleanup()
+    useRestTimerStore.getState().stop() // and with no rest running, no bar at all, as before
+    const idle = mount({ logs: [], plan: weekPlan({ sets: [] }) })
+    await settle()
+    expect(bar(idle.container)).toBeNull()
+    cleanup()
+    const warmupOnly = mount({ logs: [], plan: weekPlan({ sets: [SETS[0]], exercises: [PE_EZ] }) })
+    await settle()
+    expect(warmupOnly.container.querySelector('[data-row-key="set:ez-w1"]')).not.toBeNull()
+    expect(isComplete(warmupOnly.container)).toBe(false)
+    expect(warmupOnly.container.textContent).not.toContain('WORKOUT COMPLETE')
+  })
+
+  it('a planned set deleted in the workout is not an open one: 04 deleted and the rest logged is complete, with 04 open and 03 deleted it is not', async () => {
+    const del = mount({ logs: [...EZ_DONE, ...LAT_1_2, log('l-lat3', 'lat-3', 3, 'ex-lat')], changes: [deletedChange('lat-4')] })
+    await settle()
+    expect(isComplete(del.container)).toBe(true)
+    cleanup()
+    const open = mount({ logs: [...EZ_DONE, ...LAT_1_2], changes: [deletedChange('lat-3')] }) // 04 is still open
+    await settle()
+    expect(isComplete(open.container)).toBe(false)
+  })
+
+  it('FINISH opens the finish screen, the one FINISH SESSION opens, completing nothing by itself; BACK TO SESSION returns to the bar', async () => {
+    const { container } = mount({ logs: [...EZ_DONE, ...LAT_ALL] })
+    await settle()
+    fireEvent.click(within(bar(container)!).getByText('FINISH'))
+    expect(container.querySelectorAll('[data-row-key]')).toHaveLength(0) // the workout is swapped for the screen
+    expect(container.querySelector('[data-finish]')!.getAttribute('data-finish')).toBe('new')
+    expect(container.querySelector('h1')!.textContent).toBe('FINISH PULL 1')
+    expect(complete.mutateAsync).not.toHaveBeenCalled() // opening the screen completes nothing
+    fireEvent.click(screen.getByRole('button', { name: 'BACK TO SESSION' }))
+    await settle()
+    expect(isComplete(container)).toBe(true)
+  })
+
+  it('+ ADD SET brings the bar back: the timer with the rest since the last set, and the next LOG records that rest', async () => {
+    const { container } = mount({ logs: [...EZ_DONE, ...LAT_ALL] })
+    await settle()
+    expect(isComplete(container)).toBe(true)
+    // the clock moves on while the bar says the workout is complete
+    act(() => void vi.setSystemTime(new Date('2026-01-06T10:02:00Z')))
+    fireEvent.click(screen.getAllByText('ADD SET')[1]) // Lat Pulldown's card (EZ Bar Curl is the first)
+    await settle()
+    expect(isComplete(container)).toBe(false)
+    expect(bar(container)!.textContent).toContain('REST')
+    expect(bar(container)!.textContent).toContain('2:00') // 10:00:00 to 10:02:00: the rest since the last set, from the store that was never stopped
+    expect(bar(container)!.textContent).not.toContain('WORKOUT COMPLETE')
+    // the added set is the current one; typing its numbers and LOG records the rest since that last set
+    const current = container.querySelector('[data-current-set]') as HTMLElement
+    fireEvent.change(within(current).getByLabelText('Weight'), { target: { value: '57.5' } })
+    fireEvent.change(within(current).getByLabelText('Reps'), { target: { value: '8' } })
+    await act(async () => {
+      fireEvent.click(within(current).getByText('LOG'))
+      await Promise.resolve()
+    })
+    expect(logSet.mutateAsync).toHaveBeenCalledTimes(1)
+    expect(logSet.mutateAsync.mock.calls[0][0]).toMatchObject({ weight: 57.5, reps: 8, restSeconds: 120 })
+  })
+
+  it('a set added before a reload is not among the rows until the phone\'s list is read: until then the bar does not say the workout is complete', async () => {
+    const lists = { 'xe-lat': [{ localId: 'added-1', logId: null, type: NORMAL, place: 1 }] } as unknown as Record<string, AddedSet[]>
+    const { container } = mount({ logs: [...EZ_DONE, ...LAT_ALL], lists })
+    // the first draw: the rows the server gave; the phone's list arrives a tick later
+    expect(isComplete(container)).toBe(false)
+    await settle()
+    expect(container.querySelector('[data-row-key^="added:"]')).not.toBeNull() // the added set is drawn now, open
+    expect(isComplete(container)).toBe(false)
+    expect(bar(container)!.textContent).toContain('REST')
+    cleanup()
+    // the control: with no added set on the phone the same logs are complete once the list has been read, and not a tick before
+    const plain = mount({ logs: [...EZ_DONE, ...LAT_ALL] })
+    expect(isComplete(plain.container)).toBe(false)
+    await settle()
+    expect(isComplete(plain.container)).toBe(true)
   })
 })

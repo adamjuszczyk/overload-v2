@@ -61,7 +61,7 @@ describe('the panel the pen opens (board W2b)', () => {
     const staged = renderCard({ plannedSets: [plannedSet(1, { stageKind: 'dropset' }), plannedDrop(1, 1)], logs: [head, drop] })
     const panel = open(staged.container, 'set:set-1')
     expect(button(panel, 'UNLOG').disabled).toBe(true)
-    expect(within(panel).getByRole('status').textContent).toBe('Log its drops first')
+    expect(within(panel).getByRole('status').textContent).toBe('Unlog its drops first') // chunk 78: DECISIONS 232 (a); the drops are logged already, the way on is to unlog them
     captureRender('w2b-unlog-off', staged.container) // after the assertions
   })
 

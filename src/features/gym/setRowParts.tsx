@@ -76,9 +76,10 @@ export function SyncMark({ logId }: { logId: string }) {
 /**
  * "LAST 52.5 × 10 @ 1" under an open row (board W1): last time's numbers, never a value in the boxes (DECISIONS 162). The line follows
  * the exercise's reference: "LOADING LAST TIME…" while it loads (board W3b), and when it could not be read "COULDN'T LOAD LAST WEEK"
- * with a RETRY that asks the reference again (board W2).
+ * with a RETRY that asks the reference again (board W2). Chunk 78 (SPEC 1.2.1 [21], DECISIONS 218 (a)): `also` is the same set earlier this week,
+ * "MON 32.5 × 8 @ 1", drawn after LAST in the same line (board W1: "LAST 30 × 8 @ 1   MON 32.5 × 8 @ 1"); '' for none.
  */
-export function LastLine({ text, loading = false, failed = false, onRetry }: { text: string; loading?: boolean; failed?: boolean; onRetry?: () => void }) {
+export function LastLine({ text, also = '', loading = false, failed = false, onRetry }: { text: string; also?: string; loading?: boolean; failed?: boolean; onRetry?: () => void }) {
   if (failed) {
     return (
       <div className="flex items-center justify-between" style={{ minHeight: 40, padding: '0 4px', fontFamily: MONO, fontWeight: 600, fontSize: 10, letterSpacing: '0.15em' }}>
@@ -100,10 +101,22 @@ export function LastLine({ text, loading = false, failed = false, onRetry }: { t
       </p>
     )
   }
-  if (text === '') return null
+  if (text === '' && also === '') return null
   return (
     <p className="text-xs" style={{ paddingLeft: 34, color: 'var(--text-muted)', fontFamily: MONO, fontSize: 10 }}>
-      <span style={{ fontWeight: 700 }}>LAST</span> {text}
+      {text !== '' && (
+        <>
+          <span style={{ fontWeight: 700 }}>LAST</span> {text}
+        </>
+      )}
+      {also !== '' && (
+        <>
+          {text !== '' && ' '}
+          <span data-also-line style={{ marginLeft: text !== '' ? 12 : 0 }}>
+            {also}
+          </span>
+        </>
+      )}
     </p>
   )
 }

@@ -598,8 +598,15 @@ export default function GymSession({ sessionId, workoutDay, weekPlan, weekNumber
         </button>
       </div>
 
-      {/* The rest timer and the jump to the current set, pinned at the bottom of the screen (chunk 58a; boards W1, W4). */}
-      <RestBar jump={{ direction: scrollToCurrentSetDirection, label: workout.current ? jumpLabelText(workout.current) : null, onJump: scrollToCurrentSet }} />
+      {/* The rest timer and the jump to the current set, pinned at the bottom of the screen (chunk 58a; boards W1, W4). Once every working set and stage
+          is logged or skipped it says WORKOUT COMPLETE and offers FINISH instead (chunk 78; SPEC 1.2.1 [6]): no current set, at least one working set or
+          stage on the screen (an empty workout keeps the usual bar: DECISIONS 259), open warmups not counted (the current set never is one) and an added set
+          counted (it is a working set, open, so the current set comes back and the timer with it). Not before the phone's own list of added sets has been read:
+          a set added before a reload is not among the rows until then, and the bar would say the workout is done. */}
+      <RestBar
+        jump={{ direction: scrollToCurrentSetDirection, label: workout.current ? jumpLabelText(workout.current) : null, onJump: scrollToCurrentSet }}
+        complete={workout.hydrated && workout.current === null && workout.rows.some((row) => row.kind !== 'warmup') ? { onFinish: openFinish } : null}
+      />
 
       {showSidebarSheet && <WorkoutSidebarSheet sessionId={sessionId} onClose={() => setShowSidebarSheet(false)} />}
 
