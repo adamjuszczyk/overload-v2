@@ -24,18 +24,15 @@ WK
 WK
 10
 STRUCTURE CHANGED THAT WEEK
-WEEK 3
-Changed from week 2
-~
-Incline Dumbbell Press: 3 → 4 sets
-PUSH 1 · PUSH 2
-WEEK 3 · STRUCTURE
+WEEK 1
+Started from the program
+WEEK 1 · STRUCTURE
 MONDAY
 Push 1
-1 CHANGE
+NO CHANGES
 01
 Incline Dumbbell Press
-4 SETS
+3 SETS
 TUESDAY
 Pull 1
 NO CHANGES
@@ -53,10 +50,10 @@ Straight-Arm Pulldown
 2 SETS
 THURSDAY
 Push 2
-1 CHANGE
+NO CHANGES
 01
 Incline Dumbbell Press
-4 SETS
+3 SETS
 SATURDAY
 Legs
 NO CHANGES
