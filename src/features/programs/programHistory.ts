@@ -393,12 +393,5 @@ export function finishedHeaderLine(run: Pick<Mesocycle, 'startDate' | 'endDate'>
   return parts.join(' · ')
 }
 
-/** PR15's title. */
-export const DELETE_FINISHED_TITLE = 'Delete this finished program?'
-
-/** PR15's body: "Cut PPL, Jul 5 – Sep 12. Its weekly plan is deleted. Its sessions stay in History, and the saved program isn't touched. This can't be undone." */
-export function deleteFinishedBody(run: Pick<Mesocycle, 'name' | 'startDate' | 'endDate'>): string {
-  const start = format(parseISO(run.startDate), 'MMM d')
-  const dates = run.endDate ? `${start} – ${format(parseISO(run.endDate), 'MMM d')}` : start
-  return `${run.name}, ${dates}. Its weekly plan is deleted. Its sessions stay in History, and the saved program isn't touched. This can't be undone.`
-}
+// PR15's title and body (1.2) went in chunk 75: the delete is a full delete now, and its confirmation (`FullDeleteConfirm`, `fullDeleteText.ts`) counts
+// what goes instead of saying the sessions stay.

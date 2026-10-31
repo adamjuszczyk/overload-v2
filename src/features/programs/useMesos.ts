@@ -2,7 +2,10 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { queryClient } from '../../lib/queryClient'
 import { useAuth } from '../auth/useAuth'
-import { fetchMesos, completeMeso, deleteMeso } from './mesoService'
+import type { FinishedRunCounts } from '../../types'
+import { fetchMesos, completeMeso, deleteFinishedRun, fetchFinishedRunCounts, fetchFinishedRunSessionIds } from './mesoService'
+import { finishedRunInvalidations, finishedRunRemovals } from './finishedRunCaches'
+import { dropQueuedWritesOfDeletedRun } from './finishedRunQueue'
 import { startRun } from './runService'
 
 const MESOS_KEY = ['v2_mesos']
@@ -58,31 +61,57 @@ export function useCompleteMeso() {
   })
 }
 
-// Chunk 66: DELETE THIS FINISHED PROGRAM (PR15) is its second caller (History's meso filter is the first), and it navigates to PROGRAMS the
-// moment the delete resolves. So, like START and FINISH (chunk 65): `networkMode: 'always'` (CONTEXT.md, Offline: every write mutation is;
-// deleting is online-only, so offline it fails with the real reason, SPEC Errors (15), instead of pausing for ever behind DELETING…), and the
-// invalidations are returned, so the mutation stays pending until the run list has been read again and PROGRAMS doesn't open on the list as
-// it was, with the deleted run still under FINISHED. A refetch that fails doesn't fail a delete that happened.
-export function useDeleteMeso() {
+// Chunk 75 (1.2.1 item 8b; SPEC Screens → Finished program: full delete): what the confirmation counts before it lets DELETE go. One query for both
+// reads, so DELETE is on only when the counts AND the program's session ids (what the phone's queue clean-up needs, and can no longer read once the
+// delete has taken the sessions) have both answered; either failing keeps it off, with the reason. `enabled` is true only while the confirmation is
+// open and the phone is online (SPEC: offline, "The counts aren't read"). Never retried and never kept: a count read a minute ago, or one a failed
+// read left behind, is not what a delete that cannot be undone may name (`retry: false`, `staleTime: 0`, `gcTime: 0`: closing the confirmation
+// drops the answer, and opening it again counts again).
+export const FINISHED_RUN_COUNTS_KEY = 'v2_finishedRunCounts'
+
+export interface FinishedRunRead {
+  counts: FinishedRunCounts
+  sessionIds: string[]
+}
+
+export function useFinishedRunCounts(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: [FINISHED_RUN_COUNTS_KEY, id],
+    queryFn: async (): Promise<FinishedRunRead> => {
+      const [counts, sessionIds] = await Promise.all([fetchFinishedRunCounts(id), fetchFinishedRunSessionIds(id)])
+      return { counts, sessionIds }
+    },
+    enabled: enabled && !!id,
+    // Like every read this confirmation depends on, it runs when it is asked for and says so when it fails, rather than waiting on TanStack's
+    // own idea of the connection (the confirmation decides `enabled` from the phone's, and says "offline" itself).
+    networkMode: 'always',
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
+  })
+}
+
+// Chunk 66 and chunk 75: DELETE THIS FINISHED PROGRAM (PR15) and History's program-filter delete both come here (`FullDeleteConfirm`), and the finished
+// page navigates to PROGRAMS the moment the delete resolves. So, like START and FINISH (chunk 65): `networkMode: 'always'` (CONTEXT.md, Offline:
+// every write mutation is; deleting is online-only, so offline it fails with the real reason, SPEC Errors (15), instead of pausing for ever behind
+// DELETING…), and the invalidations are returned, so the mutation stays pending until the lists have been read again and PROGRAMS doesn't open on
+// the list as it was, with the deleted program still under FINISHED. A refetch that fails doesn't fail a delete that happened.
+//
+// The request is `v2_delete_finished_run` and nothing else. Once it has gone through (never before: a delete that fails drops nothing) the phone's
+// queue is cleaned inside `mutationFn`, as History's session delete does (queue-fix 230): `dropQueuedWritesOfDeletedRun` takes the queued writes
+// that name each of the program's sessions (the ids read with the counts, and the ones only the queue knows) and the notes queued on them. It never
+// throws, so a clean-up the phone's database refuses is logged and doesn't turn a delete that happened into a failed one. Then the caches
+// (`finishedRunCaches.ts`: History's session delete and the finish together, and Coach's lists).
+export function useDeleteFinishedRun() {
   return useMutation({
     networkMode: 'always',
-    mutationFn: (id: string) => deleteMeso(id),
-    onSuccess: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: MESOS_KEY }),
-        queryClient.invalidateQueries({ queryKey: ['v2_history'] }),
-        // v2_sessions.mesocycle_id is `on delete set null`, not cascade — a
-        // deleted meso's sessions survive, just orphaned, so any exercise's
-        // already-cached e1rmSessions can keep tagging them with the
-        // now-deleted meso's id until this invalidates. Same gap class (and
-        // same fix) useDeleteSession/useCompleteSession already apply for the
-        // identical reason — found by adversarial review, generically more
-        // relevant now that ExerciseHistoryView.tsx reads v2_exerciseProgress
-        // as its primary data source, not a secondary one.
-        queryClient.invalidateQueries({ queryKey: ['v2_exerciseProgress'] }),
-        queryClient.invalidateQueries({ queryKey: ['v2_mesoProgress'] }),
-        queryClient.invalidateQueries({ queryKey: ['v2_positionMatchedHeadline'] }),
-        queryClient.invalidateQueries({ queryKey: ['v2_positionMatchTable'] }),
-      ]),
+    mutationFn: async ({ id, sessionIds }: { id: string; sessionIds: readonly string[] }) => {
+      await deleteFinishedRun(id)
+      return dropQueuedWritesOfDeletedRun(id, sessionIds)
+    },
+    onSuccess: (dealtWith) => {
+      for (const queryKey of finishedRunRemovals(dealtWith)) queryClient.removeQueries({ queryKey })
+      return Promise.all(finishedRunInvalidations().map((queryKey) => queryClient.invalidateQueries({ queryKey })))
+    },
   })
 }

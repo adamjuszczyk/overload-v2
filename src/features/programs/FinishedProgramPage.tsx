@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ChevronRight } from 'lucide-react'
-import ConfirmDialog from '../../components/ConfirmDialog'
 import { errorReason } from '../../components/exercisePickerLogic'
 import { hairline } from '../../components/pickers/pickerControls'
 import { usePriorityContext } from '../coach/usePriorityContext'
@@ -10,9 +9,10 @@ import { useProgramPriorities } from '../plan/useProgramPriorities'
 import { useRunSchedule } from '../plan/useRunSchedule'
 import { useAllWeekPlans } from '../plan/useWeekPlan'
 import { scheduleForWeek } from './runSchedule'
-import { useDeleteMeso, useMesos } from './useMesos'
+import FullDeleteConfirm from './FullDeleteConfirm'
+import { useMesos } from './useMesos'
 import { usePrograms, useWorkoutDays } from './usePrograms'
-import { DELETE_FINISHED_TITLE, buildProgramHistory, deleteFinishedBody, finishedHeaderLine, openingWeek } from './programHistory'
+import { buildProgramHistory, finishedHeaderLine, openingWeek } from './programHistory'
 import type { HistoryChange, HistoryRow, HistoryWeek, HistoryWorkout } from './programHistory'
 import { finishedPrioritiesPath, legacyPrioritiesPath, markLine } from './programsTabLogic'
 
@@ -20,7 +20,8 @@ import { finishedPrioritiesPath, legacyPrioritiesPath, markLine } from './progra
 // program's priorities stay editable; G50), Defaults 11, Language "Program everywhere" (C12); boards PR14 and PR15), at `/program/finished/:id`,
 // opened from a FINISHED row of the PROGRAMS tab: the program's name, its dates, weeks and deloads, a PRIORITIES row, a tile for each week it
 // planned (a dot on a week whose structure changed), what changed in the open week, that week's structure workout by workout, and DELETE THIS
-// FINISHED PROGRAM (asks first: PR15).
+// FINISHED PROGRAM (asks first: PR15; since chunk 75 it is a full delete, and the confirmation is `FullDeleteConfirm`'s: it counts what goes, and
+// the program's weeks, sessions, logs and Coach rows go with it).
 //
 // The weeks are read as Plan reads a running program's (`useAllWeekPlans`: each planned session with its exercises, in the week's own order, and
 // its sets), and `programHistory.ts` decides what they say. What it reads of the run: the run itself (`useMesos`), its own copy (`usePrograms`,
@@ -37,7 +38,7 @@ import { finishedPrioritiesPath, legacyPrioritiesPath, markLine } from './progra
 // week), else the first; a deload part and the legend are left out when there is no deload and no dot (an unset feature shows nothing); the
 // PRIORITIES row's second line is only for a run whose marks are in the new table (the old page shows its own), and the row is only its label
 // when nothing is marked; a run that isn't found, isn't finished or planned no week says so; a read that failed says so with the real reason (SPEC
-// Errors (15)); a failed delete says "Couldn't delete [name]." with the reason, in the confirm, and the program stays.
+// Errors (15)); a failed delete says "Couldn't delete [name]." with the reason, in the confirm, and the program stays (`FullDeleteConfirm`).
 
 const MONO_CAPTION: CSSProperties = { fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.2em', color: 'var(--text-muted)' }
 const CARD: CSSProperties = { background: 'var(--surface)', borderRadius: 12, ...hairline('var(--border)') }
@@ -206,26 +207,9 @@ export default function FinishedProgramPage() {
   const prioritiesFailed = priorityTarget === null && (marksRead.isError === true || legacyRead.isError === true)
 
   // ─── DELETE ───
-  const deleteMeso = useDeleteMeso()
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [deleteError, setDeleteError] = useState<{ reason: unknown } | null>(null)
-  // A second tap on DELETE in the same instant arrives before React has drawn the pending state: a ref says a delete is already out.
-  const deleting = useRef(false)
-
-  async function remove() {
-    if (!run || deleting.current) return
-    deleting.current = true
-    setDeleteError(null)
-    try {
-      await deleteMeso.mutateAsync(run.id)
-      // The program is gone and so is this page: PROGRAMS, in its place in the history.
-      navigate('/program', { replace: true })
-    } catch (reason) {
-      setDeleteError({ reason })
-    } finally {
-      deleting.current = false
-    }
-  }
+  // The program whose full-delete confirmation is open (chunk 75), held whole: the program list is read again before the delete resolves and no
+  // longer holds it, which must not take the confirmation away from under its own DELETING….
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null)
 
   function content() {
     if (failedRead) return <Message title="COULDN'T LOAD THIS PROGRAM" tone="error">{errorReason(failedRead.error, offline)}</Message>
@@ -284,10 +268,7 @@ export default function FinishedProgramPage() {
         )}
         <button
           type="button"
-          onClick={() => {
-            setDeleteError(null)
-            setConfirmDelete(true)
-          }}
+          onClick={() => setDeleting({ id: run.id, name: run.name })}
           style={{ ...CARD, borderRadius: 10, height: 48, boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 11, letterSpacing: '0.2em', color: 'var(--error)', cursor: 'pointer' }}
         >
           DELETE THIS FINISHED PROGRAM
@@ -325,28 +306,9 @@ export default function FinishedProgramPage() {
         {content()}
       </div>
 
-      {confirmDelete && run && (
-        <ConfirmDialog
-          title={DELETE_FINISHED_TITLE}
-          body={
-            <>
-              <span style={{ overflowWrap: 'anywhere' }}>{deleteFinishedBody(run)}</span>
-              {deleteError && (
-                <span role="alert" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 12 }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.1em', color: 'var(--error)', overflowWrap: 'anywhere' }}>{`Couldn't delete ${run.name}.`}</span>
-                  <span style={{ fontSize: 13, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{errorReason(deleteError.reason, offline)}</span>
-                </span>
-              )}
-            </>
-          }
-          confirmLabel="DELETE"
-          pendingLabel="DELETING…"
-          danger
-          isPending={deleteMeso.isPending}
-          onConfirm={remove}
-          onCancel={() => setConfirmDelete(false)}
-        />
-      )}
+      {/* Chunk 75: one confirmation that counts what goes (the same one History's program-filter delete opens). Gone, the program leaves PROGRAMS' list
+          and this page with it: PROGRAMS, in its place in the history. */}
+      {deleting && <FullDeleteConfirm run={deleting} onCancel={() => setDeleting(null)} onDeleted={() => navigate('/program', { replace: true })} />}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { format } from 'date-fns'
 import { supabase } from '../../lib/supabase'
-import type { Mesocycle, MesocycleStatus, ProgramKind, WeeklySchedule } from '../../types'
+import type { FinishedRunCounts, Mesocycle, MesocycleStatus, ProgramKind, WeeklySchedule } from '../../types'
 
 type DbMesoProgram = { id: string; name: string }
 
@@ -70,11 +70,74 @@ export async function completeMeso(id: string): Promise<void> {
   if (error) throw error
 }
 
-export async function deleteMeso(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('v2_mesocycles')
-    .delete()
-    .eq('id', id)
-    .eq('status', 'completed')
+// ─── The full delete of a finished program (chunk 75; 1.2.1 item 8b; migration 048) ───────────────────────────────────────────────────────────────
+// Both functions are `security invoker` and refuse by error code, which PostgREST hands back in `error.code` (read there, never from the message or
+// the HTTP status: `P0002` not found / not the caller's answers 500, `OL003` not finished and `OL001` maintenance answer 400). Deleting needs a
+// connection and is never queued (SPEC Rules 2): nothing here touches the sync queue.
+
+type DbFinishedRunCounts = {
+  weeks?: unknown
+  sessions?: unknown
+  logged_sets?: unknown
+  coach_analyses?: unknown
+  coach_notes?: unknown
+}
+
+// A count the text will print is a whole number or nothing: a row with a column missing (or a function that came back changed) must never
+// read as "undefined sessions" in front of a DELETE that cannot be undone.
+function countOf(value: unknown, column: string): number {
+  const n = typeof value === 'string' ? Number(value) : value
+  if (typeof n !== 'number' || !Number.isInteger(n) || n < 0) throw new Error(`the count of ${column} is missing from the answer`)
+  return n
+}
+
+/**
+ * What a full delete of this finished program would remove: `rpc('v2_finished_run_counts', { p_mesocycle_id })`, one row (a `returns table`
+ * function answers an array of rows). Read-only; the same refusals as the delete (`P0002`, `OL003`) reach the caller as the error.
+ */
+export async function fetchFinishedRunCounts(id: string): Promise<FinishedRunCounts> {
+  const { data, error } = await supabase.rpc('v2_finished_run_counts', { p_mesocycle_id: id })
+  if (error) throw error
+  const row = (Array.isArray(data) ? data[0] : data) as DbFinishedRunCounts | null | undefined
+  if (!row) throw new Error('no counts came back for this program')
+  return {
+    weeks: countOf(row.weeks, 'weeks'),
+    sessions: countOf(row.sessions, 'sessions'),
+    loggedSets: countOf(row.logged_sets, 'logged sets'),
+    coachAnalyses: countOf(row.coach_analyses, 'Coach analyses'),
+    coachNotes: countOf(row.coach_notes, 'Coach notes'),
+  }
+}
+
+// The ids of the program's sessions, read with the counts and before the delete, because the delete takes the sessions: the phone drops the queued
+// writes that name each of them once the request has gone through (`useDeleteFinishedRun`). Paged (ordered, `.range()` until a short page) under
+// PostgREST's row cap, as every history read is (Checks that lied #31): a program's sessions are bounded in practice, but a cap met silently would
+// leave the later sessions' queued writes refused for ever.
+const SESSION_ID_PAGE = 500
+
+export async function fetchFinishedRunSessionIds(id: string): Promise<string[]> {
+  const ids: string[] = []
+  for (let from = 0; ; from += SESSION_ID_PAGE) {
+    const { data, error } = await supabase
+      .from('v2_sessions')
+      .select('id')
+      .eq('mesocycle_id', id)
+      .order('id')
+      .range(from, from + SESSION_ID_PAGE - 1)
+    if (error) throw error
+    const rows = (data ?? []) as Array<{ id: string }>
+    for (const row of rows) ids.push(row.id)
+    if (rows.length < SESSION_ID_PAGE) break
+  }
+  return ids
+}
+
+/**
+ * DELETE a finished program whole: `rpc('v2_delete_finished_run', { p_mesocycle_id })` and nothing else (DECISIONS 249 rows 1-15 and 22). One
+ * transaction in the database; it is refused unless the program is the caller's own and finished, and the refusal is the database's, rethrown
+ * as it came so the confirmation can say the real reason.
+ */
+export async function deleteFinishedRun(id: string): Promise<void> {
+  const { error } = await supabase.rpc('v2_delete_finished_run', { p_mesocycle_id: id })
   if (error) throw error
 }
