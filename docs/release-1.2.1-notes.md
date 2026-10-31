@@ -1,6 +1,6 @@
 # Overload 1.2.1 — update notes
 
-*Draft for Adam's edit, 2026-10-31 (TASKS.md "Release", step 1; DECISIONS 265, 275). "What's new" is the 1.2.1 entry of `src/data/releaseNotes.ts`, word for word (`releaseNotes.test.ts` compares the two, so an edit is made in both); the rest of this file stays out of the app. The release date is Adam's: the entry carries `2026-11-02` with a `DATE` comment. This lists each SPEC.md [1.2.1] item against what was built on `staging`:*
+*Draft for Adam's edit, 2026-10-31 (TASKS.md "Release", step 1; DECISIONS 265, 275). "What's new" is the 1.2.1 entry of `src/data/releaseNotes.ts`, word for word (`releaseNotes.test.ts` compares the two, so an edit is made in both); the rest of this file stays out of the app. The release date is Adam's: the entry carries `2026-11-01` with a `DATE` comment. This lists each SPEC.md [1.2.1] item against what was built on `staging`:*
 - *The build: chunks 70–80 (migration 048) and the tests-owed run (#275), all merged into `staging`, 2026-10-30 to 2026-10-31.*
 - *The checks: the final review on the deployed staging app (`0ea19a9`), release checklist rows RC-1 to RC-24: all PASS or proven by a chunk's review. RC-4's real flip is Adam's, and the P rows are his on production after the release.*
 - *How to release: TASKS.md "Release". 1.2.1 releases the 1.2 way (a no-training window from the backup until the Vercel deploy is Ready, and the old RELOAD banner for 1.2 phones); the first release that uses maintenance mode and required updates is 1.2.2's.*
@@ -8,32 +8,29 @@
 ## What's new
 
 - **Programs.**
-  - Delete a saved program from YOUR PROGRAMS, beside OPEN and START. A program you are running can't be deleted: its DELETE is greyed out (FINISH IT FIRST). Its finished programs stay in History.
-  - Deleting a finished program now removes it in full: its sessions and logged sets, and the Coach analyses and notes that belong to it. The confirmation counts what goes first, and its results leave History, Progress and every stat.
+  - Delete a saved program from YOUR PROGRAMS. The one you're running can't be deleted until you finish it. Its finished programs stay in History.
+  - Deleting a finished program now removes everything in it: sessions, sets and its Coach notes. You see what goes before you confirm.
   - Both deletes need a connection and can't be undone.
-  - A finished program opens on week 1 and shows no superset labels on its exercises.
-  - A finished program's PRIORITIES are read-only: its marks, an older program's included.
+  - A finished program opens on week 1, and its PRIORITIES are read-only.
 - **The workout.**
-  - PREVIEW SESSION looks like the workout: the same exercise headers with the LAST line, each set as an upcoming row (targets, W for warmups, ↳ for drops, cues), supersets as the workout draws them, and START SESSION pinned at the foot. The old targets panel is gone.
-  - The history icon beside ⋯ is gone: the LAST line and ⋯ → HISTORY open the same sheet.
-  - Once every working set and stage is logged or skipped, the rest bar says WORKOUT COMPLETE with a FINISH button. An added set brings the timer back.
-  - A working set's LAST line also shows the same set from earlier this week ("MON 32.5 × 8 @ 1").
-  - An open warmup is drawn like any open row, with its own ⋯: SET TYPE and DELETE SET.
-  - A logged warmup has no ✕: the pen's panel has UNLOG and DELETE, and unticking one unlogs it.
-  - UNLOG's note says "Unlog its drops first".
+  - PREVIEW SESSION now looks like the workout itself.
+  - Once every set is logged or skipped, the rest bar says WORKOUT COMPLETE with a FINISH button.
+  - The LAST line also shows the same set from earlier this week.
+  - Warmup rows work like any other row: ⋯ on an open one, the pen on a logged one.
+  - The history icon is gone: tap the LAST line, or ⋯ → HISTORY.
 - **Planner.**
-  - A superset has its own row in the planner's exercise step, with ↑ ↓ that move the whole superset. A member's ↑ ↓ move it only inside the superset.
-  - TEMPO opens a picker, in the planner and in CHANGE THE PROGRAM: four boxes (DOWN · BOTTOM · UP · TOP), each 0–20 or X for as fast as you can. No more typing dashes.
-  - In CHANGE THE PROGRAM, SUPERSET is offered on a superset's last member too, so a split superset can be joined again before SAVE.
+  - Supersets move as one with ↑ ↓.
+  - TEMPO has a picker: four boxes, 0–20 or X. No more typing dashes.
+  - In CHANGE THE PROGRAM, a split superset can be joined again.
 - **The app.**
-  - WHAT'S NEW replaces ABOUT in Settings: every release with its date and notes, newest first. A new version's notes open once, the first time you open it.
-  - A maintenance screen (BACK SOON) while Overload is updated. Changes you made offline are kept and sent afterwards.
-  - Old versions ask to update before they can be used (UPDATE TO CONTINUE), and unsent changes are kept and sent after the update. The RELOAD banner is gone.
+  - WHAT'S NEW in Settings lists every release. A new version's notes open once.
+  - A BACK SOON screen while Overload is updated. Offline changes are kept and sent after.
+  - Old versions ask you to update before you continue. Unsent changes are kept.
 - **Fixed.**
-  - An UNLOG, a deleted set or a renumber made offline now reads as done at once, even when its first send failed. In 1.2 it read as undone until the next sync; nothing was lost.
-  - A planned set deleted offline stays gone at once, and a LOG can't land on it.
-  - A finished program's week strip no longer disappears when a week's cards are taller than the screen.
-  - "N days a week" on the CURRENT PROGRAM card counts this week's weekdays, not ones that start next week.
+  - Unlogging, deleting or renumbering a set offline shows as done right away.
+  - A planned set deleted offline stays gone.
+  - A finished program's week strip no longer disappears on long weeks.
+  - "N days a week" on CURRENT PROGRAM counts this week's days.
 
 ## Rule by rule (SPEC [1.2.1])
 

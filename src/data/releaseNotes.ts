@@ -18,58 +18,55 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
-  // 1.2.1: drafted from what was built (SPEC.md 1.2.1, "Screens" and "Rules"; HISTORY.md, the 1.2.1 sections), for Adam to edit
-  // (DECISIONS 265, 275). The "What's new" section of docs/release-1.2.1-notes.md is this entry word for word (releaseNotes.test.ts
-  // reads that file and compares), so an edit here is made in both.
+  // 1.2.1: Adam's own text (2026-10-31; DECISIONS 265, 275), in place of the lines drafted from what was built. The "What's new"
+  // section of docs/release-1.2.1-notes.md is this entry word for word (releaseNotes.test.ts reads that file and compares), so an edit
+  // is made in both.
   {
     version: '1.2.1',
-    date: '2026-11-02', // DATE: Adam sets the release date
+    date: '2026-11-01', // DATE: Adam may move it; one line here and the docs file (run sheet, step 0)
     groups: [
       {
         title: 'Programs',
         items: [
-          "Delete a saved program from YOUR PROGRAMS, beside OPEN and START. A program you are running can't be deleted: its DELETE is greyed out (FINISH IT FIRST). Its finished programs stay in History.",
-          'Deleting a finished program now removes it in full: its sessions and logged sets, and the Coach analyses and notes that belong to it. The confirmation counts what goes first, and its results leave History, Progress and every stat.',
+          "Delete a saved program from YOUR PROGRAMS. The one you're running can't be deleted until you finish it. Its finished programs stay in History.",
+          'Deleting a finished program now removes everything in it: sessions, sets and its Coach notes. You see what goes before you confirm.',
           "Both deletes need a connection and can't be undone.",
-          'A finished program opens on week 1 and shows no superset labels on its exercises.',
-          "A finished program's PRIORITIES are read-only: its marks, an older program's included.",
+          'A finished program opens on week 1, and its PRIORITIES are read-only.',
         ],
       },
       {
         title: 'The workout',
         items: [
-          'PREVIEW SESSION looks like the workout: the same exercise headers with the LAST line, each set as an upcoming row (targets, W for warmups, ↳ for drops, cues), supersets as the workout draws them, and START SESSION pinned at the foot. The old targets panel is gone.',
-          'The history icon beside ⋯ is gone: the LAST line and ⋯ → HISTORY open the same sheet.',
-          'Once every working set and stage is logged or skipped, the rest bar says WORKOUT COMPLETE with a FINISH button. An added set brings the timer back.',
-          'A working set\'s LAST line also shows the same set from earlier this week ("MON 32.5 × 8 @ 1").',
-          'An open warmup is drawn like any open row, with its own ⋯: SET TYPE and DELETE SET.',
-          "A logged warmup has no ✕: the pen's panel has UNLOG and DELETE, and unticking one unlogs it.",
-          'UNLOG\'s note says "Unlog its drops first".',
+          'PREVIEW SESSION now looks like the workout itself.',
+          'Once every set is logged or skipped, the rest bar says WORKOUT COMPLETE with a FINISH button.',
+          'The LAST line also shows the same set from earlier this week.',
+          'Warmup rows work like any other row: ⋯ on an open one, the pen on a logged one.',
+          'The history icon is gone: tap the LAST line, or ⋯ → HISTORY.',
         ],
       },
       {
         title: 'Planner',
         items: [
-          "A superset has its own row in the planner's exercise step, with ↑ ↓ that move the whole superset. A member's ↑ ↓ move it only inside the superset.",
-          'TEMPO opens a picker, in the planner and in CHANGE THE PROGRAM: four boxes (DOWN · BOTTOM · UP · TOP), each 0–20 or X for as fast as you can. No more typing dashes.',
-          "In CHANGE THE PROGRAM, SUPERSET is offered on a superset's last member too, so a split superset can be joined again before SAVE.",
+          'Supersets move as one with ↑ ↓.',
+          'TEMPO has a picker: four boxes, 0–20 or X. No more typing dashes.',
+          'In CHANGE THE PROGRAM, a split superset can be joined again.',
         ],
       },
       {
         title: 'The app',
         items: [
-          "WHAT'S NEW replaces ABOUT in Settings: every release with its date and notes, newest first. A new version's notes open once, the first time you open it.",
-          'A maintenance screen (BACK SOON) while Overload is updated. Changes you made offline are kept and sent afterwards.',
-          'Old versions ask to update before they can be used (UPDATE TO CONTINUE), and unsent changes are kept and sent after the update. The RELOAD banner is gone.',
+          "WHAT'S NEW in Settings lists every release. A new version's notes open once.",
+          'A BACK SOON screen while Overload is updated. Offline changes are kept and sent after.',
+          'Old versions ask you to update before you continue. Unsent changes are kept.',
         ],
       },
       {
         title: 'Fixed',
         items: [
-          'An UNLOG, a deleted set or a renumber made offline now reads as done at once, even when its first send failed. In 1.2 it read as undone until the next sync; nothing was lost.',
-          "A planned set deleted offline stays gone at once, and a LOG can't land on it.",
-          "A finished program's week strip no longer disappears when a week's cards are taller than the screen.",
-          '"N days a week" on the CURRENT PROGRAM card counts this week\'s weekdays, not ones that start next week.',
+          'Unlogging, deleting or renumbering a set offline shows as done right away.',
+          'A planned set deleted offline stays gone.',
+          "A finished program's week strip no longer disappears on long weeks.",
+          '"N days a week" on CURRENT PROGRAM counts this week\'s days.',
         ],
       },
     ],
