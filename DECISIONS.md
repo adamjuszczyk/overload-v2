@@ -197,6 +197,7 @@ To-dos:
 
 - **70** (#253): optional — a re-runnable `scripts/` proof of 048's functions (the builder's proof2 S1–S6 and its 31-break runner, now only in the build's scratchpad), like `apply-ops-proof.mjs` for 043, with stdout and stderr read apart and a comment-only control; so 74, 75 or a later migration can re-prove them.
 - **75** (#265): `finishedRun.queue.test.tsx`'s "a pass already running…" also asserts the run's queued notes the running pass still held are refused (23503), are not on the server and are not queued again (the review's scratch probe passes on the branch; not committed).
+- **73** (#266), in `src/features/release/useRequiredUpdate.test.tsx`: (1) the update check refused fails at once (fake timers, `registration.update` rejected, `advance(1)` → false, no reload; today's test passes B7g at the 20 s cap); (2) a worker that turns redundant fails at once (same shape; B7j); (3) one attempt at a time by count (two unawaited presses, `advance(0)`, `registration.update` called once; today's test hangs under B7h).
 
 ## Format for all new entries
 
