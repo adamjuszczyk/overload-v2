@@ -12,6 +12,7 @@ import { RELEASES } from './releaseNotes'
 // notes file line by line, and the shape of every entry: what Settings' WHAT'S NEW and the sheet after an update draw from.
 
 const NOTES_FILE = fileURLToPath(new URL('../../docs/release-1.2-notes.md', import.meta.url))
+const NOTES_FILE_121 = fileURLToPath(new URL('../../docs/release-1.2.1-notes.md', import.meta.url))
 
 interface NotesGroup {
   title: string
@@ -19,10 +20,10 @@ interface NotesGroup {
 }
 
 /** The notes file's "What's new" section: `- **Title.**` with its `  - line`s, or `- **Title.** one line`. */
-function whatsNewOf(markdown: string): NotesGroup[] {
+function whatsNewOf(markdown: string, name = 'docs/release-1.2-notes.md'): NotesGroup[] {
   const lines = markdown.split('\n')
   const start = lines.findIndex((line) => line.trim() === "## What's new")
-  if (start < 0) throw new Error('docs/release-1.2-notes.md has no "## What\'s new" section')
+  if (start < 0) throw new Error(`${name} has no "## What's new" section`)
   const next = lines.findIndex((line, i) => i > start && line.startsWith('## '))
   const groups: NotesGroup[] = []
   for (const line of lines.slice(start + 1, next < 0 ? undefined : next)) {
@@ -90,6 +91,19 @@ describe('1.2 entry against docs/release-1.2-notes.md', () => {
     }
     // and every other line of the notes file says none, so nothing else needed rewording
     for (const line of fileLines.filter((l) => !(l in REWORDED))) expect(BANNED.filter((word) => word.test(line)).map(String), line).toEqual([])
+  })
+})
+
+// 1.2.1: the data file is the source of truth (DECISIONS 265) and docs/release-1.2.1-notes.md, the longer form, carries the entry as its
+// "What's new" word for word. No line is reworded (it says none of the banned words), so the two are compared whole: an edit made to only
+// one of them fails here.
+describe('1.2.1 entry against docs/release-1.2.1-notes.md', () => {
+  it('is the notes file\'s "What\'s new", group by group and line by line', () => {
+    const release121 = RELEASES.find((release) => release.version === '1.2.1')
+    expect(release121).toBeDefined()
+    const file = whatsNewOf(readFileSync(NOTES_FILE_121, 'utf8'), 'docs/release-1.2.1-notes.md')
+    expect(file.length).toBeGreaterThan(0)
+    expect(release121!.groups).toEqual(file)
   })
 })
 

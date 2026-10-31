@@ -18,15 +18,60 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
-  // PLACEHOLDER (chunk 71): the lines and the date below are the prototype's sample text, so the screens can be built and checked
-  // before the release. TASKS.md, "Release", step 1: the whole entry is replaced with the real notes (and the real date) in a docs-and-data
-  // PR into `staging` before the release checklist. `grep -n PLACEHOLDER src/data/releaseNotes.ts` finds it.
+  // 1.2.1: drafted from what was built (SPEC.md 1.2.1, "Screens" and "Rules"; HISTORY.md, the 1.2.1 sections), for Adam to edit
+  // (DECISIONS 265, 275). The "What's new" section of docs/release-1.2.1-notes.md is this entry word for word (releaseNotes.test.ts
+  // reads that file and compares), so an edit here is made in both.
   {
     version: '1.2.1',
-    date: '2026-11-05',
+    date: '2026-11-02', // DATE: Adam sets the release date
     groups: [
-      { title: 'Programs', items: ['Delete a saved program from YOUR PROGRAMS.', 'Deleting a finished program now removes its sessions and logged sets too.'] },
-      { title: 'The app', items: ["What's new, here in Settings.", 'A maintenance screen while an update is applied.', 'Old versions ask to update before they can be used.'] },
+      {
+        title: 'Programs',
+        items: [
+          "Delete a saved program from YOUR PROGRAMS, beside OPEN and START. A program you are running can't be deleted: its DELETE is greyed out (FINISH IT FIRST). Its finished programs stay in History.",
+          'Deleting a finished program now removes it in full: its sessions and logged sets, and the Coach analyses and notes that belong to it. The confirmation counts what goes first, and its results leave History, Progress and every stat.',
+          "Both deletes need a connection and can't be undone.",
+          'A finished program opens on week 1 and shows no superset labels on its exercises.',
+          "A finished program's PRIORITIES are read-only: its marks, an older program's included.",
+        ],
+      },
+      {
+        title: 'The workout',
+        items: [
+          'PREVIEW SESSION looks like the workout: the same exercise headers with the LAST line, each set as an upcoming row (targets, W for warmups, ↳ for drops, cues), supersets as the workout draws them, and START SESSION pinned at the foot. The old targets panel is gone.',
+          'The history icon beside ⋯ is gone: the LAST line and ⋯ → HISTORY open the same sheet.',
+          'Once every working set and stage is logged or skipped, the rest bar says WORKOUT COMPLETE with a FINISH button. An added set brings the timer back.',
+          'A working set\'s LAST line also shows the same set from earlier this week ("MON 32.5 × 8 @ 1").',
+          'An open warmup is drawn like any open row, with its own ⋯: SET TYPE and DELETE SET.',
+          "A logged warmup has no ✕: the pen's panel has UNLOG and DELETE, and unticking one unlogs it.",
+          'UNLOG\'s note says "Unlog its drops first".',
+        ],
+      },
+      {
+        title: 'Planner',
+        items: [
+          "A superset has its own row in the planner's exercise step, with ↑ ↓ that move the whole superset. A member's ↑ ↓ move it only inside the superset.",
+          'TEMPO opens a picker, in the planner and in CHANGE THE PROGRAM: four boxes (DOWN · BOTTOM · UP · TOP), each 0–20 or X for as fast as you can. No more typing dashes.',
+          "In CHANGE THE PROGRAM, SUPERSET is offered on a superset's last member too, so a split superset can be joined again before SAVE.",
+        ],
+      },
+      {
+        title: 'The app',
+        items: [
+          "WHAT'S NEW replaces ABOUT in Settings: every release with its date and notes, newest first. A new version's notes open once, the first time you open it.",
+          'A maintenance screen (BACK SOON) while Overload is updated. Changes you made offline are kept and sent afterwards.',
+          'Old versions ask to update before they can be used (UPDATE TO CONTINUE), and unsent changes are kept and sent after the update. The RELOAD banner is gone.',
+        ],
+      },
+      {
+        title: 'Fixed',
+        items: [
+          'An UNLOG, a deleted set or a renumber made offline now reads as done at once, even when its first send failed. In 1.2 it read as undone until the next sync; nothing was lost.',
+          "A planned set deleted offline stays gone at once, and a LOG can't land on it.",
+          "A finished program's week strip no longer disappears when a week's cards are taller than the screen.",
+          '"N days a week" on the CURRENT PROGRAM card counts this week\'s weekdays, not ones that start next week.',
+        ],
+      },
     ],
   },
   // 1.2: the "What's new" section of docs/release-1.2-notes.md, line for line (releaseNotes.test.ts reads that file and compares). Two
