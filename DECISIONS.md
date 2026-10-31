@@ -196,6 +196,7 @@ To-dos:
 - **queue-fix 230** (#230), M12 and M13 (a recovered log, and each write the session cleanup drops, loses its pending-sync marker): done, #232 (`useSyncQueue.deletes.test.tsx`).
 
 - **70** (#253): optional — a re-runnable `scripts/` proof of 048's functions (the builder's proof2 S1–S6 and its 31-break runner, now only in the build's scratchpad), like `apply-ops-proof.mjs` for 043, with stdout and stderr read apart and a comment-only control; so 74, 75 or a later migration can re-prove them.
+- **75** (#265): `finishedRun.queue.test.tsx`'s "a pass already running…" also asserts the run's queued notes the running pass still held are refused (23503), are not on the server and are not queued again (the review's scratch probe passes on the branch; not committed).
 
 ## Format for all new entries
 
@@ -1294,6 +1295,13 @@ Chunk: 72, 73, 75, 80   Date: 2026-10-30
 Recommendation: the coordinator puts each chunk's findings (72-1/2/5/6, 73-1 to 73-7, 75-1 to 75-8, 80-2 to 80-5) into its builder's and reviewer's brief as readings and scope additions; only 80-1 is a card (269).
 Answer: Adam asked for the pre-read and this handling (2026-10-30: "only a question that blocks a chunk becomes a decision card").
 Evidence: HISTORY.md "2026-10-30 independent gap pre-read of chunks 72, 73, 75 and 80".
+
+
+## 274 The prototype no longer builds: chunk 75 removed `useDeleteMeso`, which the prototype's FinishedProgramPage override imports (dead code)
+Chunk: 75   Date: 2026-10-31
+Recommendation: (a) delete the dead lines in `prototype/src/overrides/FinishedProgramPage.tsx` (one import name, one call, the unused `remove()` block; 21 lines; the review's patch makes the prototype build and pass 9/9, no DEMO state changes); (b) leave it broken until the release. Recommend (a), applied with the tests-owed run before the release's screen comparison. Non-blocking: batch 2's builders view the prototype from a pre-75 checkout (`c846229`).
+Answer: open — release batch.
+Evidence: HISTORY.md "2026-10-31 chunk 75"; the patch is in the coordinator's scratchpad (`prototype-fix.patch`), restated in HISTORY.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.

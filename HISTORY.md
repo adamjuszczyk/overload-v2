@@ -30382,3 +30382,60 @@ Chunk 74 — delete a saved program [8a] (DATA · M), built beside chunk 72's re
 - **Staging (before the merge; the branch rebased on `66c552a`, served by `route.fulfill`, service workers blocked, staging's database):** test account 10/10 (the running program's source DELETE off with FINISH IT FIRST, once; a press writes nothing; `OL002` via the API, the row unchanged); staging-empty 38/38 (two programs made, the confirm's texts, offline DELETE off with an empty `sync_queue`, DELETING… with one `POST rpc/v2_delete_saved_program → 204`, both lists re-read before closing, A gone and B kept in YOUR PROGRAMS and both START sheets, A's row read with `deleted_at` set, `/program/<A>` refused); clean-up by hard delete as the account; smoke 62/62.
 - **Card (release batch):** `v2_start_run` (028) checks only `kind = 'saved'`, so a START sheet older than its 5-minute stale time (another phone deleted the program) or a race starts a run from a deleted program; the run works, the program stays hidden. Recommend leave for 1.2.1 (SPEC: the five existing functions are not changed); a later migration in the next-version notes. Observation: the Library's exercise-delete confirm still names a deleted program among those using the exercise (display only; not in SPEC's picker list).
 - **Display choices:** offline only the sentence, DELETE keeps its label dimmed; a row's DELETE `--text-muted`, the running row's `--text-dim` with an 8 px caption; the confirm closes after both lists are re-read; the failure inside the confirm as PR6's; the planner's refusal has no second line.
+
+## 2026-10-31 chunk 75
+Chunk 75 — full delete of a finished program [8b] (DATA · L), built beside chunk 73. Builder (Sonnet) 23:09–00:04 UTC, `build/chunk-75` `c85180a`, PR #265 (break table in a PR comment); reviewer (Opus) 00:08–00:39, merge-ready; squash-merged by the coordinator as `a27e4f6` (before 73, which rebases on it). Briefed with the gap pre-read's 75 items and DECISIONS 272.
+- **Built:** `mesoService.ts` (`fetchFinishedRunCounts` validated, `fetchFinishedRunSessionIds` ordered and paged 500, `deleteFinishedRun` = the RPC; `deleteMeso` gone); `useMesos.ts` (`useFinishedRunCounts` counts + ids in one query, `networkMode: 'always'`, `retry: false`, `staleTime`/`gcTime` 0; `useDeleteFinishedRun` drops the queue inside `mutationFn` after the RPC, a failed drop logged; `useDeleteMeso` gone); `FullDeleteConfirm.tsx`, `fullDeleteText.ts`, `finishedRunCaches.ts`, `finishedRunQueue.ts` (queue-only sessions read through `src/lib/db.ts`; queued notes on the run's sessions dropped before the sessions' writes); both entry points; History's inline confirm replaced by the dialog, its filter reset after a delete; `programHistory.ts` loses the old texts; 4 new test files (incl. `finishedRunCaches.static.test.ts` reading Coach's literals) + 7 updated; 8 fixtures, `finished-program-pr15*` removed; captures `finished-program-delete{,-no-coach-rows,-offline,-with-notes,-counting,-failed}`, `history-sessions-delete`. 118 breaks + 8 controls; `vitest --changed` 80 files / 1598. Context ≈ 350k, ≈ 55 min.
+- **Review:** all 118 breaks and 8 controls re-run plus R1–R4 of its own (swaps read left out of the removals; sessions from the server's ids only; notes for the server's ids only; notes matched by a side field): 122 caught, 9 controls pass; every script; `vitest --changed` 80 / 1598; overflow at 375 px in 9 confirm copies; embeds 30/30 live.
+- **Staging (before the merge; staging-flavoured build, `route.fulfill`, service workers blocked):** on staging-empty a saved program and two runs started (`v2_start_run` 200, `v2_plan_week` 200), one set logged in each, completed, finished (`1|1|1|0|0`); run one's confirm offline (no counts request), online "Counting what goes…" then "Deletes its 1 week: 1 session and 1 logged set. …"; Coach rows by API (note, session analysis, weekly analysis naming only its session, a control) → "…, plus 2 Coach analyses and 1 Coach note."; queued offline (sends held with 503): a note on run one's session, a queue-only session of run one with a note, run two's note, a general note; DELETE → one write (`rpc/v2_delete_finished_run` 204), `/program`; the queue kept only run two's note and the general note, which then sent; by API the run, sessions, log, weeks, copy and three Coach rows gone, the control kept. Run two via History's filter: the notes-only text, one write, History reset to ALL PROGRAMS. Test account: the seed's STG Full Body confirm "Deletes its 3 weeks: 9 sessions and 66 logged sets, plus 3 Coach analyses and 1 Coach note." — CANCEL only. Clean-up by hard delete; smoke 62/62.
+- **Cards:** 272 accepted as built (a pass already running sent a dropped note after the delete: refused 23503, not re-queued, not on the server; only a send inside the function's own transaction window could leave it unlinked); a failed count read → "Couldn't count what goes." + reason, DELETE off, no auto-retry: accepted; the Dexie mirror not cleared: accepted (its one reader matches the current workout day only). **New, DECISIONS 274:** the prototype no longer builds (its FinishedProgramPage override imports the removed `useDeleteMeso`; dead code; 3 of 9 smoke tests fail); the review's fix, not applied:
+```
+diff --git a/prototype/src/overrides/FinishedProgramPage.tsx b/prototype/src/overrides/FinishedProgramPage.tsx
+index 1c0b937..316ea0a 100644
+--- a/prototype/src/overrides/FinishedProgramPage.tsx
++++ b/prototype/src/overrides/FinishedProgramPage.tsx
+@@ -10,7 +10,7 @@ import { useProgramPriorities } from '@app/features/plan/useProgramPriorities'
+ import { useRunSchedule } from '@app/features/plan/useRunSchedule'
+ import { useAllWeekPlans } from '@app/features/plan/useWeekPlan'
+ import { scheduleForWeek } from '@app/features/programs/runSchedule'
+-import { useDeleteMeso, useMesos } from '@app/features/programs/useMesos'
++import { useMesos } from '@app/features/programs/useMesos'
+ import { usePrograms, useWorkoutDays } from '@app/features/programs/usePrograms'
+ import { useDemo } from '../demo/demoStore'
+ import { useQuery } from '@tanstack/react-query'
+@@ -211,7 +211,6 @@ export default function FinishedProgramPage() {
+   const prioritiesFailed = priorityTarget === null && (marksRead.isError === true || legacyRead.isError === true)
+ 
+   // ─── DELETE ───
+-  const deleteMeso = useDeleteMeso()
+   const [confirmDelete, setConfirmDelete] = useState(false)
+   const demoOnline = useDemo((d) => d.online)
+   const counting = useDemo((d) => d.counting)
+@@ -219,24 +218,6 @@ export default function FinishedProgramPage() {
+   useEffect(() => {
+     if (openDelete === 'finished' && run) { useDemo.getState().set({ openDelete: null }); setConfirmDelete(true) }
+   }, [openDelete, run])
+-  const [deleteError, setDeleteError] = useState<{ reason: unknown } | null>(null)
+-  // A second tap on DELETE in the same instant arrives before React has drawn the pending state: a ref says a delete is already out.
+-  const deleting = useRef(false)
+-
+-  async function remove() {
+-    if (!run || deleting.current) return
+-    deleting.current = true
+-    setDeleteError(null)
+-    try {
+-      await deleteMeso.mutateAsync(run.id)
+-      // The program is gone and so is this page: PROGRAMS, in its place in the history.
+-      navigate('/program', { replace: true })
+-    } catch (reason) {
+-      setDeleteError({ reason })
+-    } finally {
+-      deleting.current = false
+-    }
+-  }
+ 
+   function content() {
+     if (failedRead) return <Message title="COULDN'T LOAD THIS PROGRAM" tone="error">{errorReason(failedRead.error, offline)}</Message>
+```
+- **Observations:** a lost reply after the server committed shows "Couldn't delete" and drops nothing (as History's session delete); on staging-empty a second run started the same day a first run's session was completed opened Today as "TODAY — DONE" with its workout NOT STARTED (not chunk 75's; not investigated).
+- **Display choices:** the failed-count caption without TRY AGAIN; DELETING…; History's delete as a modal; "0 weeks"; the notes-only sentence; "Counting what goes…" again after a reconnect; long names wrap.
