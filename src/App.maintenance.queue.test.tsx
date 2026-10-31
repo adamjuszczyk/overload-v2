@@ -71,7 +71,7 @@ vi.mock('./features/settings/ReleaseNotesPage', () => ({ default: () => <div>REL
 vi.mock('./features/settings/AfterUpdateSheet', () => ({ default: () => null }))
 vi.mock('./features/coach/CoachPage', () => ({ default: () => <div>COACH PAGE</div> }))
 vi.mock('./components/Nav', () => ({ default: () => <div>NAV</div> }))
-vi.mock('./features/pwa/PwaUpdateNotice', () => ({ default: () => null }))
+vi.mock('./features/pwa/useServiceWorker', () => ({ useServiceWorker: () => {}, serviceWorkerRecord: () => ({ registration: undefined, newWorkerActive: false }) }))
 vi.stubGlobal('__APP_VERSION__', '1.2.1')
 
 const { AppRoutes } = await import('./App')

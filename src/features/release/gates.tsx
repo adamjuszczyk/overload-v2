@@ -4,7 +4,8 @@ import { useQueuedWriteCount } from './useQueuedWriteCount'
 // Chunk 72 (SPEC.md 1.2.1, Screens → Maintenance [10]; the prototype's "Maintenance": Screen, Offline changes waiting, Your account). The release
 // state's screens, lifted from `prototype/src/screens/gates.tsx` for look, layout and wording only: what the prototype reads from its demo store (how
 // many writes the phone holds) is `useQueuedWriteCount` here, and whether a screen or the strip shows at all is `App.tsx`'s, from `useGate`. Tokens
-// only. `UpdateRequiredScreen` is chunk 73's and uses `GateScreen` as this chunk's screen does.
+// only. `UpdateRequiredScreen` is chunk 73's ("Update to continue": Ready, Unsent changes, Updating, Couldn't update) and uses `GateScreen` as the
+// maintenance screen does.
 //
 // This file loads no sign-in page: `App.tsx` decides what a signed-out visitor sees, so the sign-in page is not one of the files these rebuilt
 // screens load (`textOnAccent.static.test.ts`).
@@ -95,8 +96,8 @@ export function MaintenanceScreen({ onSignIn }: { onSignIn?: () => void }) {
 
 /**
  * An exempt account while maintenance is on: the app works as usual, with this strip on top so maintenance isn't left on by mistake. Styled as the
- * RELOAD banner it stands in for (`PwaUpdateNotice`), but in the shell's own column, above the screen, so it takes its height from it instead of
- * covering the top of every screen for as long as maintenance lasts.
+ * RELOAD banner it stands in for (the old `PwaUpdateNotice`, removed in chunk 73), but in the shell's own column, above the screen, so it takes its
+ * height from it instead of covering the top of every screen for as long as maintenance lasts.
  */
 export function MaintenanceStrip() {
   return (
@@ -116,5 +117,55 @@ export function MaintenanceStrip() {
         MAINTENANCE ON · ONLY YOUR ACCOUNT CAN USE THE APP
       </span>
     </div>
+  )
+}
+
+/** The step UPDATE is at: waiting to be pressed, working (the button is held), or not done (the error line, and the button reads TRY AGAIN). */
+export type UpdateScreenState = 'ready' | 'updating' | 'failed'
+
+/**
+ * This version is older than the oldest one allowed (`min_version`). The whole app, navigation included, is replaced by this screen whatever the person
+ * was doing, a workout included (SPEC.md 1.2.1, Update to continue [11]). `appVersion` and `minVersion` are the two versions the sentence names; UPDATE
+ * gets the new version and reloads (`useRequiredUpdate`). With unsent changes it says they are kept: the queue survives the reload and the new version
+ * sends it.
+ */
+export function UpdateRequiredScreen({
+  appVersion,
+  minVersion,
+  state,
+  onUpdate,
+}: {
+  appVersion: string
+  minVersion: string
+  state: UpdateScreenState
+  onUpdate: () => void
+}) {
+  const updating = state === 'updating'
+  return (
+    <GateScreen
+      eyebrow="UPDATE"
+      title="UPDATE TO CONTINUE"
+      action={
+        <button
+          type="button"
+          onClick={onUpdate}
+          disabled={updating}
+          className="w-full rounded-xl text-xs font-bold"
+          style={{ minHeight: 52, background: 'var(--accent)', color: 'var(--on-accent)', ...mono, letterSpacing: '0.1em', opacity: updating ? 0.6 : 1 }}
+        >
+          {updating ? 'UPDATING…' : state === 'failed' ? 'TRY AGAIN' : 'UPDATE'}
+        </button>
+      }
+    >
+      <p style={{ margin: 0 }}>
+        This is {appVersion}. Overload needs {minVersion} or newer.
+      </p>
+      <QueuedLine>Unsent changes are kept and sent after the update.</QueuedLine>
+      {state === 'failed' && (
+        <p role="alert" style={{ margin: 0, color: 'var(--error)' }}>
+          Couldn't update. Check your connection and try again.
+        </p>
+      )}
+    </GateScreen>
   )
 }

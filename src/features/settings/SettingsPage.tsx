@@ -465,7 +465,7 @@ export default function SettingsPage() {
             build stays, in small text under the list: which build is actually
             running, for support/debugging — and, not incidentally, the
             concrete artifact that let the PWA update-detection fix (see
-            usePwaUpdate.ts) be live-verified against two real,
+            useServiceWorker.ts) be live-verified against two real,
             distinguishable production deploys instead of two byte-identical
             ones (comments alone don't survive minification — confirmed
             empirically before adding this). */}

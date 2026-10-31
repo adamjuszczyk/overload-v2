@@ -7,10 +7,12 @@
 // unique indexes, the `set_log_id` foreign key and its cascade, and the drops-first foreign key of `v2_set_logs`. The rules themselves, one by one and with the writes around
 // them, are in `useSyncQueue.order.test.ts`; what is asserted here is that each reproduction now ends clean, and that the writes of the same session around it still go.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { renderHook, act } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import type { Session, SetLog } from '../../types'
+import { versionCheckAnswers } from '../release/versionGate.testutil'
 import { addedLog, card, dropLog, headLog, orderOf, pending, rowKeyed, staged, viewOf } from '../gym/workoutRules.testutil'
 
 interface QueueItem {
@@ -179,6 +181,7 @@ beforeEach(() => {
   world.failing = new Map()
   world.queueDeleteFails = 0
   queryClient.clear()
+  versionCheckAnswers() // the version check has answered: this version may send the queue (chunk 73)
   useOfflineStore.setState({ syncFailures: [], failedIds: new Set(), pendingIds: new Set() })
   errorLog = vi.spyOn(console, 'error').mockImplementation(() => {}) // the queue logs each failed attempt
 })

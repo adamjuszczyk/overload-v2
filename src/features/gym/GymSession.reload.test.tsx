@@ -3,6 +3,7 @@
 // unlogged one come back after a reload, and the number corrections (58a) wait until they have, so a stored number is never "corrected" to a picture that lacks a set only
 // this phone's list names. The same harness as `GymSession.numberCorrections.test.tsx`; the phone's copy is `draftStore.testutil.ts`, one tick away.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, act, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ExerciseSwap } from './sessionService'

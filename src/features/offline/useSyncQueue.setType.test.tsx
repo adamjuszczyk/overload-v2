@@ -6,10 +6,12 @@
 // the replay is the real `flushSyncQueue`, against a fake that models the tables' own refusals: 042's checks and indexes, the `set_log_id` foreign key of a `pending_stages`
 // row, the drops-first foreign key of `v2_set_logs` and 035's `v2_set_logs_check`.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { renderHook, act } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import type { Session, SetLog } from '../../types'
+import { versionCheckAnswers } from '../release/versionGate.testutil'
 import { card, dropLog, headLog, orderOf, pending, rowKeyed, staged, viewOf } from '../gym/workoutRules.testutil'
 
 interface QueueItem {
@@ -203,6 +205,7 @@ beforeEach(() => {
   world.deviceLogDeletes = []
   world.normalHeadWithDrop = []
   queryClient.clear()
+  versionCheckAnswers() // the version check has answered: this version may send the queue (chunk 73)
 })
 
 describe('Warmup on an open planned set with a logged set after it, offline (168 (a))', () => {

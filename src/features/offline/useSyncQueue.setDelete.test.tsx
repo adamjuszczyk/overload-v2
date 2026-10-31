@@ -7,10 +7,12 @@
 // head's cascade on `v2_set_logs`. As RULES says of a queue's ordering ("proven with the earlier write failing in the pass that would send the later one"),
 // the order is also run with an earlier write failing.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { renderHook, act } from '@testing-library/react'
 import { QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import type { Session, SetLog } from '../../types'
+import { versionCheckAnswers } from '../release/versionGate.testutil'
 import { addedLog, brief, card, dropLog, headLog, held, orderOf, pending, rowKeyed, viewOf } from '../gym/workoutRules.testutil'
 
 interface QueueItem {
@@ -195,6 +197,7 @@ beforeEach(() => {
   world.deviceLogDeletes = []
   world.normalHeadWithDrop = []
   queryClient.clear()
+  versionCheckAnswers() // the version check has answered: this version may send the queue (chunk 73)
 })
 
 describe('DELETE of a logged set with a logged drop, offline (G47)', () => {

@@ -175,15 +175,46 @@ function asDbSetLog(row: Record<string, unknown>): DbSetLog {
   return read as unknown as DbSetLog
 }
 
-// DECISIONS 239. The set logs this phone still has to send for the session (`queuedSetLogsFor`: the sync queue's rows, in the shape the table takes) are part of what the
-// workout draws, whatever the server answered: the server has never seen them, so its read of the session leaves them out. A log the server already holds is not added a
-// second time (a reply lost on a locked phone leaves the upsert queued beside the row; the server's copy has the exercise joined). The logs stay in `loggedAt` order,
-// as `toSession` leaves them.
-export function withQueuedSetLogs(session: Session, queued: ReadonlyArray<Record<string, unknown>>): Session {
-  const held = new Set((session.setLogs ?? []).map((log) => log.id))
-  const missing = queued.filter((row) => !held.has(row.id as string)).map((row) => toSetLog(asDbSetLog(row)))
-  if (missing.length === 0) return session
-  return { ...session, setLogs: [...(session.setLogs ?? []), ...missing].sort((a, b) => a.loggedAt.localeCompare(b.loggedAt)) }
+// A queued patch of a log, in the one of the two shapes the flush sends (`useSyncQueue.ts`, `patchOf`). Defined here, with the read that applies it, because `tsconfig.api.json` includes this file
+// and not the queue's browser-only modules (an import of them, even of a type, makes the api program check `document` and `window`).
+export interface QueuedLogPatch {
+  id: string
+  changes: { set_number: number } | { stage_kind: null }
+}
+
+// What this phone still has to send for one session, as the workout's read of the session must draw it (DECISIONS 239, 243, 269; SPEC.md 1.2.1, Rules 6).
+export interface QueuedSessionWrites {
+  /** The set logs the server has not seen, as the queue will send them: each log's last queued upsert with the patches queued after it applied, in queue order. */
+  logs: Array<Record<string, unknown>>
+  /** The logs with a delete queued (an UNLOG, a DELETE): the user has deleted them, whatever the server still holds. */
+  deletedLogIds: string[]
+  /** Every queued patch of a log that is not deleted, in queue order: the server's copy of the log has not got them yet. */
+  patches: QueuedLogPatch[]
+  /** The session's change rows queued as upserts (`v2_session_set_changes`), in queue order, as the queue will send them (`changeRow`). */
+  changeRows: Array<Record<string, unknown>>
+}
+
+// DECISIONS 239, 243. What this phone still has to send for the session (`queuedSetLogsFor`) is part of what the workout draws, whatever the server answered; the server's
+// read of the session leaves it out. (1) The logs the phone has queued and the server has never seen are added; a log the server already holds is not added a second time (a
+// reply lost on a locked phone leaves the upsert queued beside the row; the server's copy has the exercise joined). (2) A server log with a delete queued (an UNLOG, a DELETE)
+// is left out: the user has deleted it, and an UNLOG that re-logs the set queues a new log beside it. (3) A queued renumber (`set_number`) or loss of a stage kind
+// (`stage_kind: null`) is applied to the server's copy, in queue order. The logs stay in `loggedAt` order, as `toSession` leaves them.
+export function withQueuedSetLogs(session: Session, queued: QueuedSessionWrites): Session {
+  const own = session.setLogs ?? []
+  const deleted = new Set(queued.deletedLogIds)
+  const patches = new Map<string, QueuedLogPatch['changes'][]>()
+  for (const patch of queued.patches) patches.set(patch.id, [...(patches.get(patch.id) ?? []), patch.changes])
+  const held = new Set(own.map((log) => log.id))
+  const missing = queued.logs.filter((row) => !held.has(row.id as string)).map((row) => toSetLog(asDbSetLog(row)))
+  const kept = own.filter((log) => !deleted.has(log.id)).map((log) => withQueuedPatches(log, patches.get(log.id)))
+  if (missing.length === 0 && kept.length === own.length && kept.every((log, at) => log === own[at])) return session
+  return { ...session, setLogs: [...kept, ...missing].sort((a, b) => a.loggedAt.localeCompare(b.loggedAt)) }
+}
+
+function withQueuedPatches(log: SetLog, changes: QueuedLogPatch['changes'][] | undefined): SetLog {
+  let out = log
+  for (const change of changes ?? []) out = 'set_number' in change ? { ...out, setNumber: change.set_number } : { ...out, stageKind: null }
+  return out
 }
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────

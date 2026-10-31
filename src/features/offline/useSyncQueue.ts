@@ -6,8 +6,10 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore, type SyncFailure } from './offlineStore'
 import type { SyncQueueItem } from '../../lib/db'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from '../gym/sessionCompletion'
+import type { QueuedLogPatch, QueuedSessionWrites } from '../gym/sessionService'
 import { APP_STATUS_KEY, isMaintenanceRefusal } from '../../lib/maintenanceRefusal'
-import { useAppStatus } from '../release/useAppStatus'
+import { GATE_POLL_MS, useAppStatus } from '../release/useAppStatus'
+import { readVersionGate, useVersionGate, type VersionGate } from '../release/versionGate'
 
 export function useSyncQueueInit() {
   const addPending = useOfflineStore((s) => s.addPending)
@@ -47,7 +49,12 @@ export function useSyncQueueRunner() {
 
   useEffect(() => {
     if (isOnline && !prevOnline.current) {
+      // Chunk 73: this pass is held by `flushSyncQueue` itself until the version check has answered (below). A phone that comes back online
+      // holds an answer from before it left, which the gate does not trust (versionGate.ts), and TanStack does not read again on a reconnect
+      // it never saw as one (an app opened offline has not been told it was offline): so the read is asked for here too. A read already
+      // on its way is joined, never cancelled and sent twice.
       flushSyncQueue().catch((err) => console.error('[sync] flush failed', err))
+      if (readVersionGate() !== 'ok') void queryClient.refetchQueries({ queryKey: APP_STATUS_KEY }, { cancelRefetch: false })
     }
     prevOnline.current = isOnline
   }, [isOnline])
@@ -66,6 +73,34 @@ export function useSyncQueueRunner() {
     }
     lastKnown.current = maintenance
   }, [maintenance])
+
+  // Chunk 73 (SPEC.md 1.2.1, Screens → Update to continue [11]; Rule 5; the gap pre-read's 73-1 to 73-3). `flushSyncQueue` sends nothing until the
+  // version check has answered and says this version may run (versionGate.ts), so the passes started meanwhile were held, and none is started later by
+  // itself: the pass that follows the gate turning to 'ok' is this one. Not on the first look (a gate that is already 'ok' when the runner mounts has
+  // had its pass above), and not for 'blocked' (that is a screen, and nothing is sent).
+  const gate = useVersionGate()
+  const lastGate = useRef<VersionGate | null>(null)
+  useEffect(() => {
+    if (gate === 'ok' && lastGate.current !== null && lastGate.current !== 'ok') {
+      flushSyncQueue().catch((err) => console.error('[sync] flush failed', err))
+    }
+    lastGate.current = gate
+  }, [gate])
+
+  // While the gate has no answer, the phone is online and it holds writes, the status is read every minute (73-3): a read that failed, or an answer
+  // the gate does not trust yet, would otherwise hold the queue until the next hourly read. Joins a read already on its way.
+  useEffect(() => {
+    if (!isOnline || gate !== 'unknown') return
+    const timer = setInterval(() => {
+      void Promise.resolve()
+        .then(() => db.sync_queue.count())
+        .then((held) => {
+          if (held > 0) return queryClient.refetchQueries({ queryKey: APP_STATUS_KEY }, { cancelRefetch: false })
+        })
+        .catch(() => {})
+    }, GATE_POLL_MS)
+    return () => clearInterval(timer)
+  }, [isOnline, gate])
 }
 
 // B3: a finish queued offline guessed its status and completed_at from the
@@ -205,6 +240,17 @@ function neverSent(item: SyncQueueItem): boolean {
   return item.operation === 'upsert' && !item.sendStarted && !item.attempts
 }
 
+// The one rule for "the next pass cancels these writes" (DECISIONS 238 (1); chunk 80), read by the pass itself (`dropNeverSentPairs`) and by the Library's preflight
+// (`queuedSetsNamingExercise`): a preflight that read it any other way would count a pair the pass cancels, or leave out one the pass sends. `own` is the queued writes to ONE
+// record, in queue (createdAt) order. A pair is cancelled when the record has a delete, something is queued before its first delete, and every write before that delete is a
+// never-sent upsert; it is those writes and the delete, in queue order. A write that may be on the server (an upsert that was started or failed) or that is not an upsert (a
+// renumber, a stage-kind patch) keeps the delete: they are sent first, and the delete after them.
+export function neverSentPair(own: readonly SyncQueueItem[]): SyncQueueItem[] | null {
+  const at = own.findIndex((item) => item.operation === 'delete')
+  if (at < 1) return null
+  return own.slice(0, at).every(neverSent) ? own.slice(0, at + 1) : null
+}
+
 // G47: a set logged and then deleted before the phone ever reached the server.
 // The server has never seen the row, so neither the upsert nor the delete is
 // sent: both leave the queue here, before the pass sends anything (passes run
@@ -227,13 +273,12 @@ async function dropNeverSentPairs(items: SyncQueueItem[]): Promise<SyncQueueItem
   // The logs whose pair is cancelled: the server will never hold them.
   const gone = new Set<string>()
   for (const list of byRecord.values()) {
-    const at = list.findIndex((item) => item.operation === 'delete')
-    if (at < 1) continue
-    const before = list.slice(0, at)
-    if (!before.every(neverSent)) continue
-    for (const item of [...before, list[at]]) cancelled.add(item.id!)
-    const deleted = payloadOf(list[at]).id
-    if (list[at].table === 'v2_set_logs' && deleted) gone.add(deleted)
+    const pair = neverSentPair(list)
+    if (pair === null) continue
+    for (const item of pair) cancelled.add(item.id!)
+    const last = pair[pair.length - 1]
+    const deleted = payloadOf(last).id
+    if (last.table === 'v2_set_logs' && deleted) gone.add(deleted)
   }
   if (cancelled.size === 0) return items
   // The rows that name one of those logs, whatever their own markers say (a row can't have reached a server that never held its log) and wherever they sit in
@@ -312,6 +357,9 @@ async function flushOnce() {
   // Record keys with an earlier write still unsent in this pass.
   const held = new Set<string>()
   for (const item of items) {
+    // Chunk 73: a pass that began under an 'ok' stops sending the moment the check says otherwise (an answer that this version is older than
+    // `min_version` lands mid-pass, or the phone is back online and its answer is not trusted yet). What it has not sent stays queued as it is.
+    if (readVersionGate() !== 'ok') break
     const payload = item.payload as { id?: string }
     const own = recordKey(item)
     if (removedByCleanup.has(item.id!)) continue
@@ -382,6 +430,8 @@ async function flushOnce() {
 // set of attempts, and the queue is sent again, in order. It was sent
 // MAX_SYNC_ATTEMPTS times, so it stays "sent" (`sendStarted`) when `attempts`
 // starts again from zero: a delete queued behind it must not cancel against it.
+// Chunk 73: while the version check holds the queue the pass that follows is held (flushSyncQueue), but the fresh set of attempts stays given: it is what
+// the person asked for, it sends nothing, and the pass after the check turns to 'ok' sends the writes.
 export async function retrySyncFailures(): Promise<void> {
   const items = await db.sync_queue.toArray()
   for (const item of items) {
@@ -401,6 +451,12 @@ let inFlight: Promise<void> | null = null
 let passRequested = false
 
 export function flushSyncQueue(): Promise<void> {
+  // Chunk 73 (SPEC.md 1.2.1, Rule 5; RULES.md, Standing rules: "Queued writes across a version change"; the gap pre-read's 73-1): the queue is sent
+  // by the version that is running, and an old version never sends it once the version check has refused it, nor before that check has answered.
+  // Every way into a pass comes through here (the runner, a retry, the finish, the number corrections, the change rows), so the check is made here,
+  // from the status in the query cache at this moment (versionGate.ts). A held call returns at once, resolved and with nothing sent: a finish that
+  // awaits it finds the session's writes still queued and queues its own behind them. The runner flushes when the check turns to 'ok'.
+  if (readVersionGate() !== 'ok') return Promise.resolve()
   if (inFlight) {
     passRequested = true
     return inFlight
@@ -410,7 +466,7 @@ export function flushSyncQueue(): Promise<void> {
       do {
         passRequested = false
         await flushOnce()
-      } while (passRequested)
+      } while (passRequested && readVersionGate() === 'ok')
     } finally {
       inFlight = null
     }
@@ -568,16 +624,23 @@ export async function dropQueuedWritesNamingSession(sessionId: string): Promise<
 
 // DECISIONS 230 (the Library's delete of an exercise): how many logs this phone still has to send for the exercise. The Library counts the server's logs to choose between deleting an
 // exercise for good (none) and keeping it as lost (any); a log still waiting here is a log of it, and a delete that went ahead would leave it refused `23503` for ever
-// (`v2_set_logs.exercise_id` has no delete action). A log queued together with its own delete never reaches the server and is not counted.
+// (`v2_set_logs.exercise_id` has no delete action). Only a pair the next pass cancels is left out (DECISIONS 238 (1); chunk 80): a log whose every write before its delete is a
+// never-sent upsert never reaches the server (`neverSentPair`, the pass's own rule). A log tried once, or renumbered, and then deleted offline is sent first and is counted.
 export async function queuedSetsNamingExercise(exerciseId: string): Promise<number> {
-  const items = await db.sync_queue.toArray()
-  const deleted = new Set(items.filter((item) => item.table === 'v2_set_logs' && item.operation === 'delete').map((item) => payloadOf(item).id))
-  const logs = new Set<string>()
-  for (const item of items) {
-    const p = payloadOf(item)
-    if (item.table === 'v2_set_logs' && item.operation === 'upsert' && p.exercise_id === exerciseId && p.id && !deleted.has(p.id)) logs.add(p.id)
+  const byLog = new Map<string, SyncQueueItem[]>()
+  for (const item of await db.sync_queue.orderBy('createdAt').toArray()) {
+    const key = item.table === 'v2_set_logs' ? recordKey(item) : null
+    if (key === null) continue
+    const own = byLog.get(key)
+    if (own) own.push(item)
+    else byLog.set(key, [item])
   }
-  return logs.size
+  let count = 0
+  for (const own of byLog.values()) {
+    if (neverSentPair(own) !== null) continue
+    if (own.some((item) => item.operation === 'upsert' && payloadOf(item).exercise_id === exerciseId)) count += 1
+  }
+  return count
 }
 
 async function lastQueuedWriteIsPatch(logId: string, setNumber: number): Promise<boolean> {
@@ -588,14 +651,20 @@ async function lastQueuedWriteIsPatch(logId: string, setNumber: number): Promise
   return last !== undefined && last.operation === 'patch' && (last.payload as { set_number?: unknown }).set_number === setNumber
 }
 
-// DECISIONS 239. The set logs of one session that this phone still has to send, as the workout's read of the session must draw them. `flushOnce` ends by reading the
+// DECISIONS 239. The writes of one session that this phone still has to send, as the workout's read of the session must draw them. `flushOnce` ends by reading the
 // session again (`invalidateQueries(['v2_session'])`) and `fetchSession` reads the server alone: a log whose send failed in the pass, or has not been tried yet when the
 // reconnect makes TanStack read the session, is on this phone and nowhere on the server, so the read drew its set open again (and LOG on it wrote a second log, on staging).
-// Returns the rows as the queue will send them, in queue order: each log's last queued upsert with the patches queued after it applied (`{ id, set_number }`,
+// `logs` are the rows as the queue will send them, in queue order: each log's last queued upsert with the patches queued after it applied (`{ id, set_number }`,
 // `{ id, stage_kind: null }`), and none for a log with a delete queued (a log and its own delete are cancelled together by the next pass, `dropNeverSentPairs`; until then
 // the user has deleted it). Only rows of this session, and only rows the screen can draw: an item of any other shape is left out, never thrown on (a damaged item must not
-// stop the workout from loading). It reads the queue and changes nothing in it, so a read drops, holds and sends nothing.
-export async function queuedSetLogsFor(sessionId: string): Promise<Array<Record<string, unknown>>> {
+// stop the workout from loading).
+//
+// DECISIONS 243 (chunk 80). The mirror case, for a log the server HOLDS: an UNLOG or DELETE offline is a queued delete, a renumber (or a head losing its stage kind) a queued
+// patch, and a read that went through after a failed pass would draw the log as it was. So the queue's deletes and patches are returned beside its upserts, and
+// DECISIONS 269 (a): so are the session's queued change rows, whose deletion records keep a planned set deleted offline hidden (`withQueuedDeletions`). A delete and a patch
+// name their log by id alone (ids are used once; the `sessionId` beside them is for the finish's wait), an upsert and a change row name the session in their payload.
+// It reads the queue and changes nothing in it, so a read drops, holds and sends nothing.
+export async function queuedSetLogsFor(sessionId: string): Promise<QueuedSessionWrites> {
   const items = await db.sync_queue.orderBy('createdAt').toArray()
   const deleted = new Set<string>()
   for (const item of items) {
@@ -603,22 +672,30 @@ export async function queuedSetLogsFor(sessionId: string): Promise<Array<Record<
     if (item.table === 'v2_set_logs' && item.operation === 'delete' && typeof id === 'string') deleted.add(id)
   }
   const rows = new Map<string, Record<string, unknown>>()
+  const patches: QueuedLogPatch[] = []
+  const changeRows: Array<Record<string, unknown>> = []
   for (const item of items) {
     const id = payloadOf(item).id
+    if (item.table === SESSION_SET_CHANGES_TABLE) {
+      if (item.operation === 'upsert' && typeof id === 'string' && payloadOf(item).session_id === sessionId) changeRows.push({ ...(item.payload as Record<string, unknown>) })
+      continue
+    }
     if (item.table !== 'v2_set_logs' || typeof id !== 'string' || deleted.has(id)) continue
     if (item.operation === 'upsert') {
       if (isQueuedLogRow(item.payload, sessionId)) rows.set(id, { ...(item.payload as Record<string, unknown>) })
     } else if (item.operation === 'patch') {
-      const row = rows.get(id)
-      if (!row) continue
+      let changes: QueuedLogPatch['changes']
       try {
-        Object.assign(row, patchOf(item.payload).changes)
+        changes = patchOf(item.payload).changes
       } catch {
-        // A patch of a shape the flush would refuse: the flush says so. The read leaves the row as its upsert has it.
+        continue // A patch of a shape the flush would refuse: the flush says so. The read leaves the log as it has it.
       }
+      patches.push({ id, changes })
+      const row = rows.get(id)
+      if (row) Object.assign(row, changes)
     }
   }
-  return [...rows.values()]
+  return { logs: [...rows.values()], deletedLogIds: [...deleted], patches, changeRows }
 }
 
 // What a log needs to be drawn and ordered: a queued upsert without these is not a log of the session.

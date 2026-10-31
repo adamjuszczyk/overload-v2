@@ -11,11 +11,13 @@
 // pass"): another finished program's session with a queued log and finish, a session of ITS that exists only in the queue, a note on its session, a
 // note on no session, and the running program's log. Only the program being deleted loses anything.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { renderHook, act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { QueueServer } from '../offline/queueServer.testutil'
 import { fakePostgrest } from './fakePostgrest.testutil'
+import { versionCheckAnswers } from '../release/versionGate.testutil'
 
 interface QueueItem {
   id: number
@@ -150,6 +152,7 @@ beforeEach(() => {
   world.toArrayFails = 0
   server.reset()
   queryClient.clear()
+  versionCheckAnswers() // the version check has answered: this version may send the queue (chunk 73)
   useOfflineStore.setState({ syncFailures: [], failedIds: new Set(), pendingIds: new Set() })
   errorLog = vi.spyOn(console, 'error').mockImplementation(() => {}) // the queue logs each failed attempt
 })

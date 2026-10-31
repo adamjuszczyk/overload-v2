@@ -9,6 +9,7 @@
 // SAME underlying data, under the two scheduleType values GymSession can
 // now be given.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ProgramExercise, WeekPlan, WorkoutDay, Session } from '../../types'

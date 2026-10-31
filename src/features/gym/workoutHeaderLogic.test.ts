@@ -1,5 +1,6 @@
 // Chunk 58b — the header's two lines (boards W4, W6): the eyebrow's variants and "N OF M SETS".
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { format, parseISO } from 'date-fns'
 import { headerEyebrow, setsLabel, setsProgress } from './workoutHeaderLogic'
 import { countCompletedSets } from './countCompletedSets'
