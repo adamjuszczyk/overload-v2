@@ -287,6 +287,20 @@ describe('73-1: every caller of flushSyncQueue is held while the check has not a
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['v2_session'] })
   })
 
+  it('a held retry still gives the writes that stopped retrying a fresh set of attempts (it is what the person asked for), sends nothing, and the pass after the check turns ok sends them', async () => {
+    failedRetry()
+    versionCheckAnswers(STATUS_REQUIRES_1_2_2)
+    await retrySyncFailures()
+    expect(server.requests).toEqual([])
+    expect(queue()).toHaveLength(1)
+    expect(queue()[0]).toMatchObject({ attempts: 0, gaveUp: false, sendStarted: true })
+
+    versionCheckAnswers(STATUS_ALLOWS_1_2_1)
+    await flushSyncQueue()
+    expect(requestsOf()).toEqual(['upsert v2_set_logs:l1'])
+    expect(queue()).toEqual([])
+  })
+
   it('the finish, check ok: the log is sent, then the session is completed on the server (the path the held finish does not take)', async () => {
     upsertLog('l1')
     versionCheckAnswers(STATUS_ALLOWS_1_2_1)

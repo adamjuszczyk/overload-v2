@@ -419,6 +419,8 @@ async function flushOnce() {
 // set of attempts, and the queue is sent again, in order. It was sent
 // MAX_SYNC_ATTEMPTS times, so it stays "sent" (`sendStarted`) when `attempts`
 // starts again from zero: a delete queued behind it must not cancel against it.
+// Chunk 73: while the version check holds the queue the pass that follows is held (flushSyncQueue), but the fresh set of attempts stays given: it is what
+// the person asked for, it sends nothing, and the pass after the check turns to 'ok' sends the writes.
 export async function retrySyncFailures(): Promise<void> {
   const items = await db.sync_queue.toArray()
   for (const item of items) {
