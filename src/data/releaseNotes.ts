@@ -18,15 +18,57 @@ export interface Release {
 }
 
 export const RELEASES: Release[] = [
-  // PLACEHOLDER (chunk 71): the lines and the date below are the prototype's sample text, so the screens can be built and checked
-  // before the release. TASKS.md, "Release", step 1: the whole entry is replaced with the real notes (and the real date) in a docs-and-data
-  // PR into `staging` before the release checklist. `grep -n PLACEHOLDER src/data/releaseNotes.ts` finds it.
+  // 1.2.1: Adam's own text (2026-10-31; DECISIONS 265, 275), in place of the lines drafted from what was built. The "What's new"
+  // section of docs/release-1.2.1-notes.md is this entry word for word (releaseNotes.test.ts reads that file and compares), so an edit
+  // is made in both.
   {
     version: '1.2.1',
-    date: '2026-11-05',
+    date: '2026-11-01', // DATE: Adam may move it; one line here and the docs file (run sheet, step 0)
     groups: [
-      { title: 'Programs', items: ['Delete a saved program from YOUR PROGRAMS.', 'Deleting a finished program now removes its sessions and logged sets too.'] },
-      { title: 'The app', items: ["What's new, here in Settings.", 'A maintenance screen while an update is applied.', 'Old versions ask to update before they can be used.'] },
+      {
+        title: 'Programs',
+        items: [
+          "Delete a saved program from YOUR PROGRAMS. The one you're running can't be deleted until you finish it. Its finished programs stay in History.",
+          'Deleting a finished program now removes everything in it: sessions, sets and its Coach notes. You see what goes before you confirm.',
+          "Both deletes need a connection and can't be undone.",
+          'A finished program opens on week 1, and its PRIORITIES are read-only.',
+        ],
+      },
+      {
+        title: 'The workout',
+        items: [
+          'PREVIEW SESSION now looks like the workout itself.',
+          'Once every set is logged or skipped, the rest bar says WORKOUT COMPLETE with a FINISH button.',
+          'The LAST line also shows the same set from earlier this week.',
+          'Warmup rows work like any other row: ⋯ on an open one, the pen on a logged one.',
+          'The history icon is gone: tap the LAST line, or ⋯ → HISTORY.',
+        ],
+      },
+      {
+        title: 'Planner',
+        items: [
+          'Supersets move as one with ↑ ↓.',
+          'TEMPO has a picker: four boxes, 0–20 or X. No more typing dashes.',
+          'In CHANGE THE PROGRAM, a split superset can be joined again.',
+        ],
+      },
+      {
+        title: 'The app',
+        items: [
+          "WHAT'S NEW in Settings lists every release. A new version's notes open once.",
+          'A BACK SOON screen while Overload is updated. Offline changes are kept and sent after.',
+          'Old versions ask you to update before you continue. Unsent changes are kept.',
+        ],
+      },
+      {
+        title: 'Fixed',
+        items: [
+          'Unlogging, deleting or renumbering a set offline shows as done right away.',
+          'A planned set deleted offline stays gone.',
+          "A finished program's week strip no longer disappears on long weeks.",
+          '"N days a week" on CURRENT PROGRAM counts this week\'s days.',
+        ],
+      },
     ],
   },
   // 1.2: the "What's new" section of docs/release-1.2-notes.md, line for line (releaseNotes.test.ts reads that file and compares). Two

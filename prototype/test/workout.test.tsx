@@ -29,7 +29,8 @@ test('preview: new design', () => {
   pick('Week not planned yet')
   expect(document.body.textContent).toContain('NO SETS PLANNED')
   pick('1.2 today (for comparison)')
-  expect(document.body.textContent).toContain('TARGET RIR')
+  // Since chunk 77 this state draws the app's real, rebuilt preview (the old targets panel and its "TARGET RIR" rows are gone from the app).
+  expect(document.body.textContent).toContain('· PREVIEW')
 })
 
 test('planner: a member moves inside its superset; the header moves the superset', () => {

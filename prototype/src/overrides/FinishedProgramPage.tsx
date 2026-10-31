@@ -10,7 +10,7 @@ import { useProgramPriorities } from '@app/features/plan/useProgramPriorities'
 import { useRunSchedule } from '@app/features/plan/useRunSchedule'
 import { useAllWeekPlans } from '@app/features/plan/useWeekPlan'
 import { scheduleForWeek } from '@app/features/programs/runSchedule'
-import { useDeleteMeso, useMesos } from '@app/features/programs/useMesos'
+import { useMesos } from '@app/features/programs/useMesos'
 import { usePrograms, useWorkoutDays } from '@app/features/programs/usePrograms'
 import { useDemo } from '../demo/demoStore'
 import { useQuery } from '@tanstack/react-query'
@@ -211,7 +211,6 @@ export default function FinishedProgramPage() {
   const prioritiesFailed = priorityTarget === null && (marksRead.isError === true || legacyRead.isError === true)
 
   // ─── DELETE ───
-  const deleteMeso = useDeleteMeso()
   const [confirmDelete, setConfirmDelete] = useState(false)
   const demoOnline = useDemo((d) => d.online)
   const counting = useDemo((d) => d.counting)
@@ -219,24 +218,6 @@ export default function FinishedProgramPage() {
   useEffect(() => {
     if (openDelete === 'finished' && run) { useDemo.getState().set({ openDelete: null }); setConfirmDelete(true) }
   }, [openDelete, run])
-  const [deleteError, setDeleteError] = useState<{ reason: unknown } | null>(null)
-  // A second tap on DELETE in the same instant arrives before React has drawn the pending state: a ref says a delete is already out.
-  const deleting = useRef(false)
-
-  async function remove() {
-    if (!run || deleting.current) return
-    deleting.current = true
-    setDeleteError(null)
-    try {
-      await deleteMeso.mutateAsync(run.id)
-      // The program is gone and so is this page: PROGRAMS, in its place in the history.
-      navigate('/program', { replace: true })
-    } catch (reason) {
-      setDeleteError({ reason })
-    } finally {
-      deleting.current = false
-    }
-  }
 
   function content() {
     if (failedRead) return <Message title="COULDN'T LOAD THIS PROGRAM" tone="error">{errorReason(failedRead.error, offline)}</Message>
