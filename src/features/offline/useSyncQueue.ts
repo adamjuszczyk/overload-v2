@@ -6,6 +6,7 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore, type SyncFailure } from './offlineStore'
 import type { SyncQueueItem } from '../../lib/db'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from '../gym/sessionCompletion'
+import type { QueuedLogPatch, QueuedSessionWrites } from '../gym/sessionService'
 import { APP_STATUS_KEY, isMaintenanceRefusal } from '../../lib/maintenanceRefusal'
 import { GATE_POLL_MS, useAppStatus } from '../release/useAppStatus'
 import { readVersionGate, useVersionGate, type VersionGate } from '../release/versionGate'
@@ -239,6 +240,17 @@ function neverSent(item: SyncQueueItem): boolean {
   return item.operation === 'upsert' && !item.sendStarted && !item.attempts
 }
 
+// The one rule for "the next pass cancels these writes" (DECISIONS 238 (1); chunk 80), read by the pass itself (`dropNeverSentPairs`) and by the Library's preflight
+// (`queuedSetsNamingExercise`): a preflight that read it any other way would count a pair the pass cancels, or leave out one the pass sends. `own` is the queued writes to ONE
+// record, in queue (createdAt) order. A pair is cancelled when the record has a delete, something is queued before its first delete, and every write before that delete is a
+// never-sent upsert; it is those writes and the delete, in queue order. A write that may be on the server (an upsert that was started or failed) or that is not an upsert (a
+// renumber, a stage-kind patch) keeps the delete: they are sent first, and the delete after them.
+export function neverSentPair(own: readonly SyncQueueItem[]): SyncQueueItem[] | null {
+  const at = own.findIndex((item) => item.operation === 'delete')
+  if (at < 1) return null
+  return own.slice(0, at).every(neverSent) ? own.slice(0, at + 1) : null
+}
+
 // G47: a set logged and then deleted before the phone ever reached the server.
 // The server has never seen the row, so neither the upsert nor the delete is
 // sent: both leave the queue here, before the pass sends anything (passes run
@@ -261,13 +273,12 @@ async function dropNeverSentPairs(items: SyncQueueItem[]): Promise<SyncQueueItem
   // The logs whose pair is cancelled: the server will never hold them.
   const gone = new Set<string>()
   for (const list of byRecord.values()) {
-    const at = list.findIndex((item) => item.operation === 'delete')
-    if (at < 1) continue
-    const before = list.slice(0, at)
-    if (!before.every(neverSent)) continue
-    for (const item of [...before, list[at]]) cancelled.add(item.id!)
-    const deleted = payloadOf(list[at]).id
-    if (list[at].table === 'v2_set_logs' && deleted) gone.add(deleted)
+    const pair = neverSentPair(list)
+    if (pair === null) continue
+    for (const item of pair) cancelled.add(item.id!)
+    const last = pair[pair.length - 1]
+    const deleted = payloadOf(last).id
+    if (last.table === 'v2_set_logs' && deleted) gone.add(deleted)
   }
   if (cancelled.size === 0) return items
   // The rows that name one of those logs, whatever their own markers say (a row can't have reached a server that never held its log) and wherever they sit in
@@ -613,16 +624,23 @@ export async function dropQueuedWritesNamingSession(sessionId: string): Promise<
 
 // DECISIONS 230 (the Library's delete of an exercise): how many logs this phone still has to send for the exercise. The Library counts the server's logs to choose between deleting an
 // exercise for good (none) and keeping it as lost (any); a log still waiting here is a log of it, and a delete that went ahead would leave it refused `23503` for ever
-// (`v2_set_logs.exercise_id` has no delete action). A log queued together with its own delete never reaches the server and is not counted.
+// (`v2_set_logs.exercise_id` has no delete action). Only a pair the next pass cancels is left out (DECISIONS 238 (1); chunk 80): a log whose every write before its delete is a
+// never-sent upsert never reaches the server (`neverSentPair`, the pass's own rule). A log tried once, or renumbered, and then deleted offline is sent first and is counted.
 export async function queuedSetsNamingExercise(exerciseId: string): Promise<number> {
-  const items = await db.sync_queue.toArray()
-  const deleted = new Set(items.filter((item) => item.table === 'v2_set_logs' && item.operation === 'delete').map((item) => payloadOf(item).id))
-  const logs = new Set<string>()
-  for (const item of items) {
-    const p = payloadOf(item)
-    if (item.table === 'v2_set_logs' && item.operation === 'upsert' && p.exercise_id === exerciseId && p.id && !deleted.has(p.id)) logs.add(p.id)
+  const byLog = new Map<string, SyncQueueItem[]>()
+  for (const item of await db.sync_queue.orderBy('createdAt').toArray()) {
+    const key = item.table === 'v2_set_logs' ? recordKey(item) : null
+    if (key === null) continue
+    const own = byLog.get(key)
+    if (own) own.push(item)
+    else byLog.set(key, [item])
   }
-  return logs.size
+  let count = 0
+  for (const own of byLog.values()) {
+    if (neverSentPair(own) !== null) continue
+    if (own.some((item) => item.operation === 'upsert' && payloadOf(item).exercise_id === exerciseId)) count += 1
+  }
+  return count
 }
 
 async function lastQueuedWriteIsPatch(logId: string, setNumber: number): Promise<boolean> {
@@ -633,14 +651,20 @@ async function lastQueuedWriteIsPatch(logId: string, setNumber: number): Promise
   return last !== undefined && last.operation === 'patch' && (last.payload as { set_number?: unknown }).set_number === setNumber
 }
 
-// DECISIONS 239. The set logs of one session that this phone still has to send, as the workout's read of the session must draw them. `flushOnce` ends by reading the
+// DECISIONS 239. The writes of one session that this phone still has to send, as the workout's read of the session must draw them. `flushOnce` ends by reading the
 // session again (`invalidateQueries(['v2_session'])`) and `fetchSession` reads the server alone: a log whose send failed in the pass, or has not been tried yet when the
 // reconnect makes TanStack read the session, is on this phone and nowhere on the server, so the read drew its set open again (and LOG on it wrote a second log, on staging).
-// Returns the rows as the queue will send them, in queue order: each log's last queued upsert with the patches queued after it applied (`{ id, set_number }`,
+// `logs` are the rows as the queue will send them, in queue order: each log's last queued upsert with the patches queued after it applied (`{ id, set_number }`,
 // `{ id, stage_kind: null }`), and none for a log with a delete queued (a log and its own delete are cancelled together by the next pass, `dropNeverSentPairs`; until then
 // the user has deleted it). Only rows of this session, and only rows the screen can draw: an item of any other shape is left out, never thrown on (a damaged item must not
-// stop the workout from loading). It reads the queue and changes nothing in it, so a read drops, holds and sends nothing.
-export async function queuedSetLogsFor(sessionId: string): Promise<Array<Record<string, unknown>>> {
+// stop the workout from loading).
+//
+// DECISIONS 243 (chunk 80). The mirror case, for a log the server HOLDS: an UNLOG or DELETE offline is a queued delete, a renumber (or a head losing its stage kind) a queued
+// patch, and a read that went through after a failed pass would draw the log as it was. So the queue's deletes and patches are returned beside its upserts, and
+// DECISIONS 269 (a): so are the session's queued change rows, whose deletion records keep a planned set deleted offline hidden (`withQueuedDeletions`). A delete and a patch
+// name their log by id alone (ids are used once; the `sessionId` beside them is for the finish's wait), an upsert and a change row name the session in their payload.
+// It reads the queue and changes nothing in it, so a read drops, holds and sends nothing.
+export async function queuedSetLogsFor(sessionId: string): Promise<QueuedSessionWrites> {
   const items = await db.sync_queue.orderBy('createdAt').toArray()
   const deleted = new Set<string>()
   for (const item of items) {
@@ -648,22 +672,30 @@ export async function queuedSetLogsFor(sessionId: string): Promise<Array<Record<
     if (item.table === 'v2_set_logs' && item.operation === 'delete' && typeof id === 'string') deleted.add(id)
   }
   const rows = new Map<string, Record<string, unknown>>()
+  const patches: QueuedLogPatch[] = []
+  const changeRows: Array<Record<string, unknown>> = []
   for (const item of items) {
     const id = payloadOf(item).id
+    if (item.table === SESSION_SET_CHANGES_TABLE) {
+      if (item.operation === 'upsert' && typeof id === 'string' && payloadOf(item).session_id === sessionId) changeRows.push({ ...(item.payload as Record<string, unknown>) })
+      continue
+    }
     if (item.table !== 'v2_set_logs' || typeof id !== 'string' || deleted.has(id)) continue
     if (item.operation === 'upsert') {
       if (isQueuedLogRow(item.payload, sessionId)) rows.set(id, { ...(item.payload as Record<string, unknown>) })
     } else if (item.operation === 'patch') {
-      const row = rows.get(id)
-      if (!row) continue
+      let changes: QueuedLogPatch['changes']
       try {
-        Object.assign(row, patchOf(item.payload).changes)
+        changes = patchOf(item.payload).changes
       } catch {
-        // A patch of a shape the flush would refuse: the flush says so. The read leaves the row as its upsert has it.
+        continue // A patch of a shape the flush would refuse: the flush says so. The read leaves the log as it has it.
       }
+      patches.push({ id, changes })
+      const row = rows.get(id)
+      if (row) Object.assign(row, changes)
     }
   }
-  return [...rows.values()]
+  return { logs: [...rows.values()], deletedLogIds: [...deleted], patches, changeRows }
 }
 
 // What a log needs to be drawn and ordered: a queued upsert without these is not a log of the session.
