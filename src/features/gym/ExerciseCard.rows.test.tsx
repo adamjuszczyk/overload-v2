@@ -607,9 +607,15 @@ describe('the LAST line reads the reference\'s primary session (58a review 1, fi
   const skippedSession = (sessionId: string, date: string) => referenceSessionOf(sessionId, date, sets(sessionId, [0, 0, 0], { isSkipped: true, weight: null, reps: null, rir: null }))
   const card = (referenceSessions: ReferenceSession[], props: Record<string, unknown> = {}) =>
     renderCard({ plannedSets: [1, 2, 3].map((n) => plannedSet(n)), props: { today: TODAY, referenceSessions, ...props } })
-  // The text of each row's LAST line, in the order the rows are drawn (null: the row draws none).
+  // The text of each row's LAST line, in the order the rows are drawn (null: the row draws none). Since chunk 78 the same <p> carries the earlier-this-week numbers
+  // ("MON 70 × 10 @ 1", in its own span: ExerciseCard.alsoLine.test.tsx), which are read apart, so what this reads is LAST's alone.
   const lastLines = (container: Element) =>
-    Array.from(container.querySelectorAll('[data-row-key]')).map((row) => Array.from(row.querySelectorAll('p')).map((p) => p.textContent ?? '').find((t) => t.startsWith('LAST')) ?? null)
+    Array.from(container.querySelectorAll('[data-row-key]')).map(
+      (row) =>
+        Array.from(row.querySelectorAll('p'))
+          .map((p) => Array.from(p.childNodes).filter((node) => !(node instanceof Element && node.hasAttribute('data-also-line'))).map((node) => node.textContent ?? '').join('').trim())
+          .find((t) => t.startsWith('LAST')) ?? null,
+    )
 
   it('row 01 shows last week\'s first working set, 02 its second, 03 its third: never always the first', () => {
     const { container } = card([session('lw', DAY.lastWeekWed, [60, 62.5, 65])])
@@ -627,7 +633,7 @@ describe('the LAST line reads the reference\'s primary session (58a review 1, fi
     expect(lastLines(container)).toEqual(['LAST 60 × 10 @ 1', 'LAST 62.5 × 10 @ 1', 'LAST 65 × 10 @ 1'])
   })
 
-  it('the exercise done earlier this week does not replace last week\'s numbers (the panel shows it apart, as EARLIER THIS WEEK)', () => {
+  it('the exercise done earlier this week does not replace last week\'s numbers (the panel shows it apart, as EARLIER THIS WEEK; the row adds it after LAST, apart: chunk 78)', () => {
     const { container } = card([session('early', DAY.thisWeekMon, [70, 72.5, 75]), session('lw', DAY.lastWeekWed, [50, 52.5, 55])])
     expect(lastLines(container)).toEqual(['LAST 50 × 10 @ 1', 'LAST 52.5 × 10 @ 1', 'LAST 55 × 10 @ 1'])
   })

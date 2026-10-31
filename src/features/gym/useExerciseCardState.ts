@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { format, parseISO } from 'date-fns'
 import type { ProgramExercise, WeekPlanSet, SetLog, WeightUnit, FormRating, Exercise, ProgramSet, SessionSetChange, SessionSetChangeType } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import type { ReferenceSession } from './sessionService'
@@ -7,6 +8,7 @@ import { useSettingsStore } from '../settings/settingsStore'
 import { useWeightDisplay } from '../../hooks/useWeightDisplay'
 import { headsOnly } from './setGroupLogic'
 import { lastTimeSession, lastTimeSetAt } from './lastTimeSet'
+import { resolveExerciseReferenceAcrossRuns } from './referenceByExercise'
 import { resolveRestTarget, type StageChainInput, type SupersetChainInput } from './restChain'
 import {
   applySetTypeChange,
@@ -264,6 +266,20 @@ export function useExerciseCardState({
   const logOf = (row: ResolvedRow): SetLog | null => (row.logId ? (logById.get(row.logId) ?? null) : null)
   /** Last time's set at the row's place, warmups out — only a working head has one (the LAST line). */
   const lastFor = (row: ResolvedRow): SetLog | null => (row.kind === 'working' ? lastTimeSetAt(lastSession, row.number) : null)
+  // Chunk 78 (SPEC 1.2.1 [21], DECISIONS 218 (a); TASKS "Sweep of SPEC.md": a silence, decided): the same set from "the most recent earlier session this week" — the
+  // reference's own EARLIER THIS WEEK sessions, which come newest first (the sessions the card's line and the sheet already read, deloads out, a sequence run none),
+  // the first with a log at the row's number, warmups out (`lastTimeSetAt`). A skipped set is a log: it ends the search, as a skipped set last week gives LAST nothing.
+  // No new read: loading or failed, the reference gives none.
+  const thisWeekSessions = referenceLoading || referenceIsError ? [] : resolveExerciseReferenceAcrossRuns(today, referenceScheduleType, referenceSessions).thisWeek
+  /** That set and the weekday it was done on ("MON"), for a working row; null with none. */
+  const alsoFor = (row: ResolvedRow): { day: string; log: SetLog } | null => {
+    if (row.kind !== 'working') return null
+    for (const { session } of thisWeekSessions) {
+      const log = lastTimeSetAt(session, row.number)
+      if (log !== null) return { day: format(parseISO(session.date), 'EEE').toUpperCase(), log }
+    }
+    return null
+  }
 
   // The log lock (SPEC [1.2] "Log lock (18a)", G54; chunk 60): what LOG on `row` does, by 46r's `lockDecision` over the session's current set
   // (`workout.current`, the first unlogged working set or drop over every card) and Settings' "Log sets in order". 'log' writes at once (the
@@ -646,6 +662,7 @@ export function useExerciseCardState({
     targetsOf,
     logOf,
     lastFor,
+    alsoFor,
     skipPlan,
     swapMoves,
     /** "Swap for today" is offered only where today's app offers it: a planned slot's card no swap has touched (DECISIONS 199 (a)). */

@@ -211,7 +211,7 @@ describe('the last-time line and sheet (boards W6, W16, W17) read one source', (
   const lineOf = () => document.querySelector('[data-last-line]')!
   const sheet = () => within(screen.getByRole('dialog'))
 
-  it('the line opens the sheet, and so does the history icon; the sheet closes; FULL HISTORY goes to the exercise\'s history', () => {
+  it('the line opens the sheet, and so does ⋯ → Exercise history, while the history icon beside the ⋯ is gone (chunk 78; SPEC 1.2.1 [5]); the sheet closes; FULL HISTORY goes to the exercise\'s history', () => {
     renderScreen()
     expect(lineOf().textContent).toBe('LAST = LAST WEEK, TUE')
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -221,8 +221,13 @@ describe('the last-time line and sheet (boards W6, W16, W17) read one source', (
     expect(sheet().getByRole('link', { name: /FULL HISTORY/ }).getAttribute('href')).toBe('/exercise/ex-1')
     fireEvent.click(sheet().getByRole('button', { name: /close/i }))
     expect(screen.queryByRole('dialog')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Exercise history' }))
+    // no history icon in the header, whichever name it had before (the workout passes `onHistoryClick`, which turns it off)
+    expect(screen.queryByRole('button', { name: 'Exercise history' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'View exercise history' })).toBeNull()
+    fireEvent.click(screen.getByLabelText('Exercise options'))
+    fireEvent.click(screen.getByText('Exercise history'))
     expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(sheet().getByText('LAST WEEK')).toBeTruthy()
   })
 
   it('the line, the sheet and the rows\' LAST line all read the reference\'s primary session — last week\'s deload session is none of them', () => {

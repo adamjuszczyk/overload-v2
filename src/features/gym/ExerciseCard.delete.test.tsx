@@ -435,3 +435,41 @@ describe('the warmup row: its edit panel\'s DELETE asks W9 and deletes the warmu
     expect(order).toEqual(['delete lw-1', `changes ${JSON.stringify([{ change: { kind: 'deleted', weekPlanSetId: 'wup-1' }, id: null }])}`, `numbers ${JSON.stringify([{ id: 'lw-2', setNumber: 1 }])}`])
   })
 })
+
+// Chunk 78 (SPEC 1.2.1 [13], DECISIONS 228 (a); SPEC Rules 7: "display only … write nothing new"): an open warmup in rows mode has the set's ⋯, whose DELETE SET is 61's delete, as an
+// open working set's is: the same W9 question and the same writes in the same order, with no log to delete (it has none).
+describe('an open warmup (rows): its ⋯ → DELETE SET sends 61\'s delete as before (chunk 78; SPEC [13])', () => {
+  const plan = () => [plannedSet(1, { id: 'wup-1', isWarmup: true }), plannedSet(2, { id: 'wup-2', isWarmup: true }), plannedSet(3)]
+  const logs = () => [logOf({ id: 'lw-2', weekPlanSetId: 'wup-2', isWarmup: true, setNumber: 2 })]
+
+  it('asks W9 first ("Delete warmup?") and writes nothing until DELETE SET; then the `deleted` row for the planned warmup, the warmup after it renumbered, and no log delete (break: DELETE SET goes straight to the delete, or deletes a log)', async () => {
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, warmupDisplay: 'rows' })
+    const { order, deleted, writers, onDeleteSet } = recorder()
+    const { container } = renderCard({ plannedSets: plan(), logs: logs(), props: { onDeleteSet, writers } })
+    expect(rowLabels(container)).toEqual(['W', 'W', '01'])
+    expect(rowStates(container)).toEqual(['unlogged', 'logged', 'current']) // the first warmup is open, the second is logged
+    askFromSheet(container, 'set:wup-1')
+    expect(within(dialog()).getByText('Delete warmup?')).toBeTruthy()
+    expect(order).toEqual([]) // asking writes nothing
+    await press(within(dialog()).getByText('DELETE SET'))
+    expect(order).toEqual([`changes ${JSON.stringify([{ change: { kind: 'deleted', weekPlanSetId: 'wup-1' }, id: null }])}`, `numbers ${JSON.stringify([{ id: 'lw-2', setNumber: 1 }])}`])
+    expect(deleted).toEqual([]) // an open warmup has no log to delete
+    expect(writers.clearStageKind).not.toHaveBeenCalled()
+    expect(writers.patchLog).not.toHaveBeenCalled()
+  })
+
+  it('what the screen draws afterwards: the warmup is not an open row any more (the session\'s answer played back), and CANCEL in W9 writes nothing and leaves it', async () => {
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, warmupDisplay: 'rows' })
+    const { order, writers, onDeleteSet } = recorder()
+    const { container, setChanges } = renderCard({ plannedSets: plan(), logs: logs(), props: { onDeleteSet, writers } })
+    askFromSheet(container, 'set:wup-1')
+    await press(within(dialog()).getByText('CANCEL'))
+    expect(order).toEqual([])
+    expect(rowLabels(container)).toEqual(['W', 'W', '01'])
+    askFromSheet(container, 'set:wup-1')
+    await press(within(dialog()).getByText('DELETE SET'))
+    setChanges([held({ kind: 'deleted', weekPlanSetId: 'wup-1' }, 'chg-1')])
+    expect(rowLabels(container)).toEqual(['W', '01'])
+    expect(rowOf(container, 'set:wup-1')).toBeNull()
+  })
+})

@@ -186,6 +186,23 @@ describe('an upcoming planned set: its ⋯ → SET TYPE writes a `retyped` row k
     fireEvent.click(within(rowOf(skipped.container, 'set:set-2')).getByLabelText('Set options'))
     expect(within(dialog()).queryByText('SET TYPE')).toBeNull()
   })
+
+  // Chunk 78 (SPEC 1.2.1 [13], DECISIONS 228 (a)): the open warmup's ⋯ is a second way into this same picker and writer; before it, a set made a Warmup by mistake could not be
+  // made Normal again until it was logged.
+  it('an open warmup\'s ⋯ → SET TYPE opens the picker on Warmup, and Normal writes the same `retyped` row any open set\'s pick writes: the former warmup is then working set 01 (break: the ⋯ opens nothing)', async () => {
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, warmupDisplay: 'rows' })
+    const { order, writers } = recorder()
+    const { container, setChanges } = renderCard({ plannedSets: [plannedSet(1, { isWarmup: true }), plannedSet(2)], props: { writers } })
+    expect(rowLabels(container)).toEqual(['W', '01'])
+    openFromSheet(container, 'set:set-1')
+    expect(within(dialog()).getByText('Warmup').closest('button')!.getAttribute('aria-pressed')).toBe('true') // the picker opens on the set\'s own type
+    await pick('Normal')
+    expect(order).toEqual([`changes ${JSON.stringify([{ change: retyped(1, { kind: 'normal' }), id: null }])}`])
+    expect(writers.patchLog).not.toHaveBeenCalled() // an open set has no log to patch
+    expect(writers.patchNumbers).not.toHaveBeenCalled() // and no logged set after it to renumber
+    setChanges([held(retyped(1, { kind: 'normal' }), 'chg-1')])
+    expect(rowLabels(container)).toEqual(['01', '02']) // the warmup is working set 01 now, and the other follows it
+  })
 })
 
 describe('an added set that is not logged: its type is the card\'s own state, and LOG writes it with its log and a `pending_stages` row (DECISIONS 161)', () => {

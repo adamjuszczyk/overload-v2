@@ -187,10 +187,10 @@ function renderSession() {
   )
 }
 
-// Chunk 58b: a card says what its exercise's reference is in one line ("LAST = LAST WEEK, TUE ›"), and the sheet its history icon opens lists
-// the numbers. The sheet is a dialog in the page's body, so a card's sheet is opened from the card's own scope and read as the one dialog.
+// Chunk 58b: a card says what its exercise's reference is in one line ("LAST = LAST WEEK, TUE ›"), and the sheet that line opens lists
+// the numbers (chunk 78: the history icon beside the ⋯ is gone, the line and ⋯ → Exercise history open the sheet). The sheet is a dialog in the page's body, so a card's sheet is opened from the card's own scope and read as the one dialog.
 function openSheetOf(exerciseName: string) {
-  fireEvent.click(within(cardScopeFor(exerciseName)).getByRole('button', { name: 'Exercise history' }))
+  fireEvent.click(cardScopeFor(exerciseName).querySelector('[data-last-line]') as HTMLElement)
   return within(screen.getByRole('dialog'))
 }
 

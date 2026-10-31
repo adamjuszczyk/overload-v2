@@ -25,10 +25,11 @@ export default function ExerciseHeader({
   addedToday?: boolean
   // Chunk 59: the muscle group as the boards word it ("REAR DELTS"); left out, the stored name in capitals, as before.
   muscleLabel?: string
-  // Chunk 58b (boards W1, W6) — the workout's cards put the "LAST = LAST WEEK, TUE ›" line under the muscle group and let the history icon
-  // open the last-time sheet (`WorkoutExerciseHeader.tsx`). Left out, the header is today's: Today's session preview, which 1.2 doesn't
-  // rebuild, passes neither, and its icon still goes to the exercise's history.
+  // Chunk 58b (boards W1, W6) — the workout's cards put the "LAST = LAST WEEK, TUE ›" line under the muscle group (`WorkoutExerciseHeader.tsx`).
   lastLine?: ReactNode
+  // Chunk 78 (SPEC 1.2.1 [5]): the workout's header passes this, and a header that has it draws no history icon beside the ⋯ any more: the LAST line
+  // and ⋯ → HISTORY open the same sheet. Left out, the header is today's: Today's session preview, which passes neither, keeps its icon, which
+  // goes to the exercise's history.
   onHistoryClick?: () => void
 }) {
   const ex = programExercise.exercise
@@ -76,14 +77,16 @@ export default function ExerciseHeader({
         {lastLine}
       </div>
       <div className="flex-shrink-0 flex items-center">
-        <button
-          onClick={onHistoryClick ?? (() => navigate(`/exercise/${programExercise.exerciseId}`))}
-          aria-label={onHistoryClick ? 'Exercise history' : 'View exercise history'}
-          className="flex items-center justify-center"
-          style={{ width: onOptionsClick ? 36 : 28, height: onOptionsClick ? 36 : 28, color: 'var(--text-muted)' }}
-        >
-          <History size={15} />
-        </button>
+        {!onHistoryClick && (
+          <button
+            onClick={() => navigate(`/exercise/${programExercise.exerciseId}`)}
+            aria-label="View exercise history"
+            className="flex items-center justify-center"
+            style={{ width: onOptionsClick ? 36 : 28, height: onOptionsClick ? 36 : 28, color: 'var(--text-muted)' }}
+          >
+            <History size={15} />
+          </button>
+        )}
         {onOptionsClick && (
           <button
             onClick={onOptionsClick}
