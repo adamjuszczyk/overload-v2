@@ -271,6 +271,6 @@ Verdict:
 
 ## L29 Under 10 hours of running, against an estimate of 13–17   status: open
 Stage: build (1.2.1, the close)
-What happened: chunks 70–80 and the before-release agent steps ran 17:27 → ≈ 03:10 UTC (≈ 9.7 h, incl. a 30-min 5-hour-window stop), at ≈ $275 on the meter against ~$700–875. DATA chunks ran 1.1–1.55 h each (73's 2.4 h overlapped 74 and 75); the two LIGHT batches ≈ 2.9 h and 1.9 h. Running a DATA builder beside the previous chunk's review (74 beside 72, 75 beside 73, 80 beside batch 2) saved most of the time. The cost fit easily; the weekly window did not leave much room (L27).
+What happened: chunks 70–80 and the before-release agent steps ran 17:27 → ≈ 03:10 UTC (≈ 9.7 h, incl. a 30-min 5-hour-window stop), at $279 on the meter against ~$700–875. DATA chunks ran 1.1–1.55 h each (73's 2.4 h overlapped 74 and 75); the two LIGHT batches ≈ 2.9 h and 1.9 h. Running a DATA builder beside the previous chunk's review (74 beside 72, 75 beside 73, 80 beside batch 2) saved most of the time. The cost fit easily; the weekly window did not leave much room (L27).
 Possible change: the cost table's seeds move to the measured values (DATA ≈ 1.3 h; cost from the meter's deltas), and the estimate plans "next builder beside the current review" where the files allow.
 Verdict:
