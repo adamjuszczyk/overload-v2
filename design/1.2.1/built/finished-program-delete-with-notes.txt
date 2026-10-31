@@ -1,0 +1,79 @@
+FINISHED PROGRAM
+CUT PPL
+Jul 6 → Sep 13, 2026 · 10 weeks · 1 deload
+PRIORITIES
+Focus: chest, back · Don't care: calves
+WK
+1
+WK
+2
+WK
+3
+WK
+4
+WK
+5
+WK
+6
+DL
+7
+WK
+8
+WK
+9
+WK
+10
+STRUCTURE CHANGED THAT WEEK
+WEEK 3
+Changed from week 2
+~
+Incline Dumbbell Press: 3 → 4 sets
+PUSH 1 · PUSH 2
+WEEK 3 · STRUCTURE
+MONDAY
+Push 1
+1 CHANGE
+01
+Incline Dumbbell Press
+4 SETS
+TUESDAY
+Pull 1
+NO CHANGES
+01
+Lat Pulldown
+3 SETS
+02
+Seated Cable Row
+3 SETS
+03
+EZ Bar Curl
+1 WARMUP · 2 SETS
+04
+Straight-Arm Pulldown
+2 SETS
+THURSDAY
+Push 2
+1 CHANGE
+01
+Incline Dumbbell Press
+4 SETS
+SATURDAY
+Legs
+NO CHANGES
+01
+Back Squat
+1 WARMUP · 3 SETS
+02
+Romanian Deadlift
+3 SETS
+03
+Leg Extension
+3 SETS
+04
+Standing Calf Raise
+2 SETS
+DELETE THIS FINISHED PROGRAM
+Delete Cut PPL?
+Deletes its 10 weeks: 38 sessions and 1046 logged sets, plus 3 Coach analyses and 2 Coach notes. Its results leave History, Progress and every stat. This can't be undone.
+CANCEL
+DELETE

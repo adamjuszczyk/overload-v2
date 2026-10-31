@@ -32,8 +32,12 @@ vi.mock('./runService', () => ({ startRun: (...args: unknown[]) => startRunMock(
 vi.mock('./mesoService', () => ({
   fetchMesos: vi.fn(),
   completeMeso: (...args: unknown[]) => completeMesoMock(...args),
-  deleteMeso: vi.fn(),
+  // the full delete's three requests (chunk 75): `useMesos` imports them, this file never calls them (`finishedProgram.writers.test.tsx` does)
+  deleteFinishedRun: vi.fn(),
+  fetchFinishedRunCounts: vi.fn(),
+  fetchFinishedRunSessionIds: vi.fn(),
 }))
+vi.mock('./finishedRunQueue', () => ({ dropQueuedWritesOfDeletedRun: vi.fn() }))
 vi.mock('./programService', () => ({
   createProgram: (...args: unknown[]) => createProgramMock(...args),
   deleteSavedProgram: (...args: unknown[]) => deleteSavedProgramMock(...args),

@@ -5,10 +5,8 @@ import { stage } from '../plan/weekPlanning.testutil'
 import { DAYS, LEGS, NO_DAYS, PULL, SCHEDULE, session } from './programHistory.testutil'
 import type { Spec } from './programHistory.testutil'
 import {
-  DELETE_FINISHED_TITLE,
   buildProgramHistory,
   daysLabel,
-  deleteFinishedBody,
   exerciseMeta,
   finishedHeaderLine,
   openingWeek,
@@ -19,8 +17,8 @@ import type { HistoryInput, ProgramHistory } from './programHistory'
 // app types (`WeekPlan` and its parts, from chunk 42's builders), so what the screen reads from `useAllWeekPlans` fits without a cast.
 //
 // The board's own example is the world of most tests: Pull 1 (Lat Pulldown, Seated Cable Row, EZ Bar Curl, Straight-Arm Pulldown), Legs and Push.
-// Every rule is asserted through `buildProgramHistory`, which is what the screen calls; the small helpers (`exerciseMeta`, the header and the
-// confirm text) are the words the screen prints, asserted as printed.
+// Every rule is asserted through `buildProgramHistory`, which is what the screen calls; the small helpers (`exerciseMeta` and the header) are the
+// words the screen prints, asserted as printed. (PR15's confirm text went in chunk 75: `fullDeleteText.test.ts`.)
 
 function history(plans: WeekPlan[], over: Partial<HistoryInput> = {}): ProgramHistory {
   return buildProgramHistory({ plans, workoutDays: DAYS, unit: 'week', scheduleFor: () => SCHEDULE, ...over })
@@ -408,11 +406,5 @@ describe('the header and the confirm (boards PR14 and PR15)', () => {
   it('a deload part is left out when there is none, and a run with no end date says only when it started', () => {
     expect(finishedHeaderLine(RUN, 0)).toBe('Jul 6 → Sep 13, 2026 · 10 weeks')
     expect(finishedHeaderLine({ startDate: '2026-07-06', endDate: null }, 0)).toBe('Jul 6, 2026')
-  })
-
-  it('PR15: the title and the line under it, the program\'s name and dates said as the board says them', () => {
-    expect(DELETE_FINISHED_TITLE).toBe('Delete this finished program?')
-    expect(deleteFinishedBody(RUN)).toBe("Cut PPL, Jul 6 – Sep 13. Its weekly plan is deleted. Its sessions stay in History, and the saved program isn't touched. This can't be undone.")
-    expect(deleteFinishedBody({ ...RUN, endDate: null })).toBe("Cut PPL, Jul 6. Its weekly plan is deleted. Its sessions stay in History, and the saved program isn't touched. This can't be undone.")
   })
 })

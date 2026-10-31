@@ -11,9 +11,11 @@ import { DAYS, NO_DAYS, SCHEDULE, cutPplPlans, session } from './programHistory.
 // id belongs, the saved program the run started from) has data of its own that says so on the screen. The structure itself is
 // `programHistory.test.ts`'s; here: what the screen is made of, where it reads, where its PRIORITIES row leads, and DELETE.
 //
-// Write-path proofs (the delete): what is asked, with which id, after the confirm and not before, what happens on success (PROGRAMS, once the
-// delete has resolved) and on failure (the page stays, the reason is said, a retry works), and a second press in the same instant. The hook behind
-// it (`useDeleteMeso`: `networkMode: 'always'`, the invalidation returned) is `finishedProgram.writers.test.tsx`'s.
+// Write-path proofs (the delete; since chunk 75 a full delete through `FullDeleteConfirm`): what is counted and deleted, with which id (the run's own,
+// never its copy's program id or the saved program's), after the press and not before, with the session ids read with the counts; what happens on
+// success (PROGRAMS, once the delete has resolved, even though the list no longer holds the program by then) and on failure (the page stays, the reason
+// is said, a retry works), and a second press in the same instant. The confirmation's own states are `FullDeleteConfirm.test.tsx`'s, the hooks behind
+// it (`useFinishedRunCounts`, `useDeleteFinishedRun`: `networkMode: 'always'`, the invalidations returned) are `finishedProgram.writers.test.tsx`'s.
 
 const state = vi.hoisted(() => ({
   mesos: [] as unknown[],
@@ -28,13 +30,23 @@ const state = vi.hoisted(() => ({
   marksError: false,
   legacy: {} as Record<string, boolean>,
   pending: false,
-  asked: { days: [] as string[], plans: [] as string[], schedule: [] as Array<string | undefined>, marks: [] as Array<string | null>, legacy: [] as Array<string | null> },
+  // what the confirmation's counts read answers (a stand-in for `useFinishedRunCounts`) and what it was asked: [id, enabled]
+  counted: true,
+  counts: { weeks: 10, sessions: 38, loggedSets: 1046, coachAnalyses: 3, coachNotes: 0 } as Record<string, number>,
+  sessionIds: ['s-1', 's-2', 's-3'] as string[],
+  asked: { days: [] as string[], plans: [] as string[], schedule: [] as Array<string | undefined>, marks: [] as Array<string | null>, legacy: [] as Array<string | null>, counts: [] as Array<[string, boolean]> },
 }))
 const deleteMock = vi.hoisted(() => vi.fn())
 
 vi.mock('./useMesos', () => ({
   useMesos: () => (state.mesosLoading ? { data: undefined, isLoading: true } : state.mesosError ? { data: undefined, isError: true, error: state.mesosError } : { data: state.mesos }),
-  useDeleteMeso: () => ({ mutateAsync: deleteMock, isPending: state.pending }),
+  useFinishedRunCounts: (id: string, enabled: boolean) => {
+    state.asked.counts.push([id, enabled])
+    return state.counted && enabled
+      ? { data: { counts: state.counts, sessionIds: state.sessionIds }, isFetching: false, isError: false, error: null }
+      : { data: undefined, isFetching: enabled, isError: false, error: null }
+  },
+  useDeleteFinishedRun: () => ({ mutateAsync: deleteMock, isPending: state.pending }),
 }))
 vi.mock('./usePrograms', () => ({
   usePrograms: () => ({ data: state.programs }),
@@ -138,12 +150,15 @@ function world() {
   state.mesosLoading = false
   state.mesosError = null
   state.pending = false
+  state.counted = true
+  state.counts = { weeks: 10, sessions: 38, loggedSets: 1046, coachAnalyses: 3, coachNotes: 0 }
+  state.sessionIds = ['s-1', 's-2', 's-3']
 }
 
 beforeEach(() => {
   Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 390 })
   world()
-  state.asked = { days: [], plans: [], schedule: [], marks: [], legacy: [] }
+  state.asked = { days: [], plans: [], schedule: [], marks: [], legacy: [], counts: [] }
 })
 afterEach(() => {
   cleanup()
@@ -153,15 +168,16 @@ afterEach(() => {
 function Where() {
   return <div data-testid="where">AT {useLocation().pathname}</div>
 }
+const tree = (id: string) => (
+  <MemoryRouter initialEntries={[`/program/finished/${id}`]}>
+    <Routes>
+      <Route path="/program/finished/:mesocycleId" element={<FinishedProgramPage />} />
+      <Route path="*" element={<Where />} />
+    </Routes>
+  </MemoryRouter>
+)
 function renderAt(id: string) {
-  return render(
-    <MemoryRouter initialEntries={[`/program/finished/${id}`]}>
-      <Routes>
-        <Route path="/program/finished/:mesocycleId" element={<FinishedProgramPage />} />
-        <Route path="*" element={<Where />} />
-      </Routes>
-    </MemoryRouter>,
-  )
+  return render(tree(id))
 }
 const at = () => screen.getByTestId('where').textContent
 const tile = (week: number) => screen.getByRole('button', { name: new RegExp(`^WEEK ${week}\\b`) })
@@ -404,19 +420,44 @@ describe('the states', () => {
   })
 })
 
-describe('DELETE THIS FINISHED PROGRAM (PR15)', () => {
+describe('DELETE THIS FINISHED PROGRAM (PR15; since chunk 75 a full delete that counts what goes)', () => {
   const press = () => fireEvent.click(screen.getByText('DELETE THIS FINISHED PROGRAM'))
   const confirm = () => screen.getByRole('button', { name: 'DELETE' })
 
-  it('asks first, in the board\'s words, and deletes nothing until DELETE is pressed', () => {
+  it('asks first, in the words of the prototype\'s Delete, and counts and deletes nothing until it is pressed', () => {
     renderAt('meso-cut')
-    expect(screen.queryByText('Delete this finished program?')).toBeNull()
+    // closed: nothing is counted (the confirmation does not exist, so nothing asks the counts for anything)
+    expect(state.asked.counts).toEqual([])
+    expect(screen.queryByText('Delete Cut PPL?')).toBeNull()
     press()
-    expect(screen.getByText('Delete this finished program?')).toBeTruthy()
-    expect(screen.getByText("Cut PPL, Jul 6 – Sep 13. Its weekly plan is deleted. Its sessions stay in History, and the saved program isn't touched. This can't be undone.")).toBeTruthy()
+    expect(screen.getByText('Delete Cut PPL?')).toBeTruthy()
+    expect(screen.getByText("Deletes its 10 weeks: 38 sessions and 1046 logged sets, plus 3 Coach analyses. Its results leave History, Progress and every stat. This can't be undone.")).toBeTruthy()
     // the destructive variant of the shared confirm (the board draws DELETE in the error colour), not the accent's
     expect(confirm().getAttribute('style')).toContain('var(--error)')
     expect(confirm().getAttribute('style')).not.toContain('var(--accent)')
+    expect(deleteMock).not.toHaveBeenCalled()
+  })
+
+  it('counts THIS program: the run\'s own id, never its copy\'s program id or the saved program\'s, and only while it is open', () => {
+    renderAt('meso-cut')
+    press()
+    expect(state.asked.counts.length).toBeGreaterThan(0)
+    expect(state.asked.counts.every(([id]) => id === 'meso-cut')).toBe(true)
+    expect(state.asked.counts.every(([, enabled]) => enabled === true)).toBe(true) // the phone is online
+    fireEvent.click(screen.getByRole('button', { name: 'CANCEL' }))
+    const asked = state.asked.counts.length
+    fireEvent.click(tile(2))
+    expect(state.asked.counts).toHaveLength(asked)
+  })
+
+  it('"Counting what goes…" with DELETE off while the counts are out', () => {
+    state.counted = false
+    renderAt('meso-cut')
+    press()
+    expect(screen.getByText('Delete Cut PPL?')).toBeTruthy()
+    expect(screen.getByText('Counting what goes…')).toBeTruthy()
+    expect((confirm() as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(confirm())
     expect(deleteMock).not.toHaveBeenCalled()
   })
 
@@ -424,19 +465,19 @@ describe('DELETE THIS FINISHED PROGRAM (PR15)', () => {
     renderAt('meso-cut')
     press()
     fireEvent.click(screen.getByRole('button', { name: 'CANCEL' }))
-    expect(screen.queryByText('Delete this finished program?')).toBeNull()
+    expect(screen.queryByText('Delete Cut PPL?')).toBeNull()
     expect(deleteMock).not.toHaveBeenCalled()
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('CUT PPL')
   })
 
-  it('DELETE deletes this run once — its own id, not its program\'s or the saved program\'s — and then opens PROGRAMS', async () => {
-    deleteMock.mockResolvedValue(undefined)
+  it('DELETE deletes this program once — its own id, not its copy\'s or the saved program\'s — with the session ids read with the counts, and then opens PROGRAMS', async () => {
+    deleteMock.mockResolvedValue(['s-1'])
     renderAt('meso-cut')
     press()
     fireEvent.click(confirm())
     await waitFor(() => expect(at()).toBe('AT /program'))
     expect(deleteMock).toHaveBeenCalledTimes(1)
-    expect(deleteMock).toHaveBeenCalledWith('meso-cut')
+    expect(deleteMock).toHaveBeenCalledWith({ id: 'meso-cut', sessionIds: ['s-1', 's-2', 's-3'] })
   })
 
   it('it stays on the page until the delete has resolved: PROGRAMS opens after the write, never before it', async () => {
@@ -448,18 +489,39 @@ describe('DELETE THIS FINISHED PROGRAM (PR15)', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
     expect(deleteMock).toHaveBeenCalledTimes(1)
     expect(screen.queryByTestId('where')).toBeNull()
-    expect(screen.getByText('Delete this finished program?')).toBeTruthy()
+    expect(screen.getByText('Delete Cut PPL?')).toBeTruthy()
+    await act(async () => { resolve() })
+    await waitFor(() => expect(at()).toBe('AT /program'))
+  })
+
+  it('the confirmation outlives the program: the list is read again before the delete resolves and no longer holds it, and DELETING… stays on screen until PROGRAMS opens', async () => {
+    let resolve!: () => void
+    deleteMock.mockImplementation(() => new Promise<void>((res) => { resolve = res }))
+    const view = renderAt('meso-cut')
+    press()
+    fireEvent.click(confirm())
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)) })
+
+    state.mesos = state.mesos.filter((m) => (m as Mesocycle).id !== 'meso-cut') // the lists were read again: the program is gone from them
+    state.pending = true
+    await act(async () => { view.rerender(tree('meso-cut')) })
+
+    expect(screen.getByText("COULDN'T FIND THIS PROGRAM")).toBeTruthy() // behind the dialog, for the moment before PROGRAMS
+    expect(screen.getByText('Delete Cut PPL?')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'DELETING…' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByTestId('where')).toBeNull()
+
     await act(async () => { resolve() })
     await waitFor(() => expect(at()).toBe('AT /program'))
   })
 
   it('a failed delete keeps the program and the page, says why in the confirm, and DELETE can be pressed again', async () => {
-    deleteMock.mockRejectedValueOnce(new Error('permission denied for table v2_mesocycles')).mockResolvedValueOnce(undefined)
+    deleteMock.mockRejectedValueOnce(new Error('permission denied for function v2_delete_finished_run')).mockResolvedValueOnce(undefined)
     renderAt('meso-cut')
     press()
     fireEvent.click(confirm())
     await waitFor(() => expect(screen.getByText("Couldn't delete Cut PPL.")).toBeTruthy())
-    expect(screen.getByText('permission denied for table v2_mesocycles')).toBeTruthy()
+    expect(screen.getByText('permission denied for function v2_delete_finished_run')).toBeTruthy()
     expect(screen.queryByTestId('where')).toBeNull()
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('CUT PPL')
     fireEvent.click(confirm())
@@ -488,6 +550,14 @@ describe('DELETE THIS FINISHED PROGRAM (PR15)', () => {
     const button = screen.getByRole('button', { name: 'DELETING…' }) as HTMLButtonElement
     expect(button.disabled).toBe(true)
   })
+
+  it('a program that planned no week is counted and deleted like any other ("0 weeks" when the database says so)', () => {
+    state.plans['meso-cut'] = []
+    state.counts = { weeks: 0, sessions: 0, loggedSets: 0, coachAnalyses: 0, coachNotes: 0 }
+    renderAt('meso-cut')
+    press()
+    expect(screen.getByText("Deletes its 0 weeks: 0 sessions and 0 logged sets. Its results leave History, Progress and every stat. This can't be undone.")).toBeTruthy()
+  })
 })
 
 describe('375 px: long names wrap and nothing is wider than the screen', () => {
@@ -503,7 +573,7 @@ describe('375 px: long names wrap and nothing is wider than the screen', () => {
     const nameCell = screen.getAllByText(LONG).find((el) => el.tagName === 'SPAN')!
     expect(nameCell.style.overflowWrap).toBe('anywhere')
     press()
-    expect(screen.getByText(new RegExp(`^${LONG}, Jul 6`)).style.overflowWrap).toBe('anywhere')
+    expect(screen.getByText(`Delete ${LONG}?`).style.overflowWrap).toBe('anywhere')
 
     function press() {
       fireEvent.click(screen.getByText('DELETE THIS FINISHED PROGRAM'))
