@@ -256,3 +256,9 @@ Possible change: per-chunk cost is the meter's delta, read by the coordinator be
 after its merge (with agents of other chunks running at once, the delta is per stretch, not per chunk); agents stop
 estimating dollars. BUILD.md's Bootstrap names `get_session`'s `usage.cost_usd` as the meter.
 Verdict:
+
+## L27 The weekly window reached its warning about 7.5 h into the build   status: open
+Stage: build (1.2.1)
+What happened: at 01:07 UTC on 2026-10-31 `get_session`'s `rate_limit_info` switched from the 5-hour window to `rateLimitType: seven_day`, `status: allowed_warning` (resets Mon 2026-11-02 03:00 UTC), with chunks 70–75, 79 and the batch-1 work merged and four agents running; the meter read $219.34. The estimate said ~46% of the week (~57% with rework) for the whole build, from a proxy (L16); the meter gives no weekly percentage (L18), only this state change. The weekly use before the build (the setup sessions, other work that week) was never read.
+Possible change: the coordinator reads the weekly state before chunk 70 and at every merge, and the estimate states the week's starting point; at `allowed_warning` the coordinator runs one agent at a time and tells Adam the reset time.
+Verdict:
