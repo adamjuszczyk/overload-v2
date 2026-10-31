@@ -14,31 +14,36 @@ import { useMesos } from './useMesos'
 import { usePrograms, useWorkoutDays } from './usePrograms'
 import { buildProgramHistory, finishedHeaderLine, openingWeek } from './programHistory'
 import type { HistoryChange, HistoryRow, HistoryWeek, HistoryWorkout } from './programHistory'
-import { finishedPrioritiesPath, legacyPrioritiesPath, markLine } from './programsTabLogic'
+import { finishedPrioritiesPath, finishedProgramMarks, markLine } from './programsTabLogic'
 
-// A finished program (chunk 66; TASKS-1.2 "A finished program"; SPEC Screens → PROGRAMS → Finished program, Programs and runs [1.2] (a finished
-// program's priorities stay editable; G50), Defaults 11, Language "Program everywhere" (C12); boards PR14 and PR15), at `/program/finished/:id`,
-// opened from a FINISHED row of the PROGRAMS tab: the program's name, its dates, weeks and deloads, a PRIORITIES row, a tile for each week it
-// planned (a dot on a week whose structure changed), what changed in the open week, that week's structure workout by workout, and DELETE THIS
-// FINISHED PROGRAM (asks first: PR15; since chunk 75 it is a full delete, and the confirmation is `FullDeleteConfirm`'s: it counts what goes, and
-// the program's weeks, sessions, logs and Coach rows go with it).
+// A finished program (chunk 66; TASKS-1.2 "A finished program"; SPEC Screens → PROGRAMS → Finished program, Defaults 11, Language "Program
+// everywhere" (C12); boards PR14 and PR15; since chunk 76 SPEC 1.2.1's Finished program [24] [25] [20] and Finished program · PRIORITIES, read-only
+// [1]), at `/program/finished/:id`, opened from a FINISHED row of the PROGRAMS tab: the program's name, its dates, weeks and deloads, a PRIORITIES
+// row, a tile for each week it planned (a dot on a week whose structure changed), what changed in the open week, that week's structure workout by
+// workout, and DELETE THIS FINISHED PROGRAM (asks first: PR15; since chunk 75 it is a full delete, and the confirmation is `FullDeleteConfirm`'s:
+// it counts what goes, and the program's weeks, sessions, logs and Coach rows go with it).
 //
 // The weeks are read as Plan reads a running program's (`useAllWeekPlans`: each planned session with its exercises, in the week's own order, and
 // its sets), and `programHistory.ts` decides what they say. What it reads of the run: the run itself (`useMesos`), its own copy (`usePrograms`,
 // `useWorkoutDays`: the workouts' names, and the weekdays in force in each week through `useRunSchedule`, as Today and Plan read them), and its
-// marks (below). Nothing here writes but the delete and, in the editor this row opens, the marks.
+// marks (below). Nothing here writes but the delete: the marks are only read.
 //
-// The PRIORITIES row routes by where the run's marks are (SPEC: "A run finished before 1.1, whose marks exist only in the old priorities table
-// ... PRIORITIES opens that page as it is, wording included (G50)"). The run copy's `v2_program_priorities` rows → the editor over that copy
-// (`/program/finished/:id/priorities`: the planner's step 1, on the run's own program id, which is the marks copied at the run's start and not the
-// saved program's); none there and some in `v2_coach_meso_tag_priorities` → today's completed-run page (`/meso/:id/priorities`, Coach's, untouched);
-// neither → the editor (a mark can be set on any finished program).
+// The PRIORITIES row always opens `/program/finished/:id/priorities`, the read-only screen (`FinishedProgramPriorities`; SPEC 1.2.1 [1]: "Every
+// finished program's PRIORITIES row opens the same read-only screen"), whichever table the run's marks are in. Its second line, "Focus: chest, back
+// · Don't care: calves", reads the run copy's `v2_program_priorities` rows (the marks copied at the run's start, never the saved program's) and,
+// when the copy holds none, the old table's (`v2_coach_meso_tag_priorities`, a run finished before 1.1: Coach's `usePriorityContext`, read as it
+// is) through migration 033's mapping (top → Focus, low → Don't care, high and normal nothing): `finishedProgramMarks`, the one function the screen
+// asks too. Coach's old page (`/meso/:id/priorities`) stays in the code and nothing links to it.
 //
-// Display choices no board settles, provisional under D31: it opens on the first week whose structure changed (the board opens on a changed
-// week), else the first; a deload part and the legend are left out when there is no deload and no dot (an unset feature shows nothing); the
-// PRIORITIES row's second line is only for a run whose marks are in the new table (the old page shows its own), and the row is only its label
-// when nothing is marked; a run that isn't found, isn't finished or planned no week says so; a read that failed says so with the real reason (SPEC
-// Errors (15)); a failed delete says "Couldn't delete [name]." with the reason, in the confirm, and the program stays (`FullDeleteConfirm`).
+// The week strip never shrinks ([24]: a scrolling strip in a flex column collapses to nothing once the week's cards are taller than the screen),
+// the screen opens on week 1 ([25]), and the rows carry no superset labels ([20], DECISIONS 193 (a): `programHistory.ts`).
+//
+// Display choices no board settles, provisional under D31: a deload part and the legend are left out when there is no deload and no dot (an unset
+// feature shows nothing); the PRIORITIES row's second line is only for a run with marks, and the row is only its label when nothing is marked; the
+// row is a link from the first paint (where it leads no longer depends on a read), and a read of the marks that failed says "Couldn't load
+// priorities." under the label while the row still opens the screen, which says why; a run that isn't found, isn't finished or planned no week says
+// so; a read that failed says so with the real reason (SPEC Errors (15)); a failed delete says "Couldn't delete [name]." with the reason, in the
+// confirm, and the program stays (`FullDeleteConfirm`).
 
 const MONO_CAPTION: CSSProperties = { fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.2em', color: 'var(--text-muted)' }
 const CARD: CSSProperties = { background: 'var(--surface)', borderRadius: 12, ...hairline('var(--border)') }
@@ -120,21 +125,17 @@ function WorkoutCard({ workout }: { workout: HistoryWorkout }) {
   )
 }
 
-function PrioritiesRow({ target, summary, failed }: { target: string | null; summary: string | null; failed: boolean }) {
-  const content = (
-    <>
+function PrioritiesRow({ target, summary, failed }: { target: string; summary: string | null; failed: boolean }) {
+  return (
+    <Link to={target} data-priorities-row="" style={{ ...CARD, borderRadius: 10, minHeight: 44, boxSizing: 'border-box', padding: '0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, textDecoration: 'none' }}>
       <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <span style={{ ...MONO_CAPTION, fontSize: 9 }}>PRIORITIES</span>
         {summary && <span style={{ overflowWrap: 'anywhere', fontSize: 13, color: 'var(--text-primary)' }}>{summary}</span>}
         {failed && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Couldn't load priorities.</span>}
       </span>
       <ChevronRight size={14} strokeWidth={2.5} aria-hidden="true" style={{ flex: '0 0 auto', color: 'var(--text-muted)' }} />
-    </>
+    </Link>
   )
-  const style: CSSProperties = { ...CARD, borderRadius: 10, minHeight: 44, boxSizing: 'border-box', padding: '0 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, textDecoration: 'none' }
-  // Until the marks have been read the row doesn't know where it leads: it is there, and not a link yet.
-  if (target === null) return <div aria-disabled="true" data-priorities-row="pending" style={{ ...style, opacity: 0.6 }}>{content}</div>
-  return <Link to={target} data-priorities-row="ready" style={style}>{content}</Link>
 }
 
 function Message({ title, children, tone = 'muted' }: { title: string; children: ReactNode; tone?: 'muted' | 'error' }) {
@@ -162,9 +163,11 @@ export default function FinishedProgramPage() {
   const plansRead = useAllWeekPlans(run?.id ?? '')
   const scheduleRead = useRunSchedule(run && programsRead.data && unit === 'week' ? run.id : undefined)
   const marksRead = useProgramPriorities(run?.programId ?? null)
-  const marks = marksRead.data
+  const ownMarks = marksRead.data
   // The old table is asked only when the run copy holds no marks of its own.
-  const legacyRead = usePriorityContext(run && marks !== undefined && marks.length === 0 ? run.id : null)
+  const legacyRead = usePriorityContext(run && ownMarks !== undefined && ownMarks.length === 0 ? run.id : null)
+  // The marks the header line reads: the run copy's own, else the old table's mapped (migration 033); undefined until what decides it has been read.
+  const marks = finishedProgramMarks(ownMarks, legacyRead.data?.entries)
 
   const needed = [mesosRead, programsRead, ...(run ? [daysRead, plansRead, ...(unit === 'week' ? [scheduleRead] : [])] : [])]
   const failedRead = needed.find((read) => read.isError === true && read.data === undefined)
@@ -198,13 +201,8 @@ export default function FinishedProgramPage() {
     row.scrollLeft = Math.max(0, tile.offsetLeft - (row.clientWidth - tile.offsetWidth) / 2)
   }, [opening, hasTiles])
 
-  // Where PRIORITIES leads: known once the run copy's marks are read and, when it has none, the old table too.
-  let priorityTarget: string | null = null
-  if (run && marks !== undefined) {
-    if (marks.length > 0) priorityTarget = finishedPrioritiesPath(run.id)
-    else if (legacyRead.data !== undefined) priorityTarget = legacyRead.data.anyExplicit ? legacyPrioritiesPath(run.id) : finishedPrioritiesPath(run.id)
-  }
-  const prioritiesFailed = priorityTarget === null && (marksRead.isError === true || legacyRead.isError === true)
+  // A read that failed before the marks were known (TanStack keeps the data a later failing read leaves: a known answer is not a failure).
+  const prioritiesFailed = marks === undefined && (marksRead.isError === true || legacyRead.isError === true)
 
   // ─── DELETE ───
   // The program whose full-delete confirmation is open (chunk 75), held whole: the program list is read again before the delete resolves and no
@@ -228,7 +226,7 @@ export default function FinishedProgramPage() {
           <Message title="NO WEEKS WERE PLANNED">There is nothing to show for this program.</Message>
         ) : (
           <>
-            <div ref={strip} className="hide-scrollbar" aria-label={unit === 'cycle' ? 'Cycles of this program' : 'Weeks of this program'} style={{ display: 'flex', gap: 6, overflowX: 'auto', overflowY: 'hidden' }}>
+            <div ref={strip} className="hide-scrollbar" aria-label={unit === 'cycle' ? 'Cycles of this program' : 'Weeks of this program'} style={{ display: 'flex', gap: 6, overflowX: 'auto', overflowY: 'hidden', flexShrink: 0 /* [24]: it scrolls, so in a flex column it shrinks to nothing once the week is taller than the screen */ }}>
               {history.weeks.map((w) => (
                 <Tile key={w.week} week={w} open={w.week === openNumber} onPick={setPicked} />
               ))}
@@ -297,7 +295,7 @@ export default function FinishedProgramPage() {
         {run && history && (
           <>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.05em', lineHeight: 1.6, color: 'var(--text-secondary)' }}>{finishedHeaderLine(run, history.deloads)}</span>
-            <PrioritiesRow target={priorityTarget} summary={marks && marks.length > 0 ? markLine(marks) : null} failed={prioritiesFailed} />
+            <PrioritiesRow target={finishedPrioritiesPath(run.id)} summary={marks ? markLine(marks) : null} failed={prioritiesFailed} />
           </>
         )}
       </div>

@@ -4,6 +4,7 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { Mesocycle, Program, RunSchedule, WeeklySchedule } from '../../types'
 import type { StoredMark } from '../../lib/priorityMarks'
+import { densifyPriorities } from '../../lib/priorityTags'
 import { captureRender } from '../../testing/captureRender'
 import { DAYS, SCHEDULE, cutPplPlans } from './programHistory.testutil'
 
@@ -46,7 +47,8 @@ vi.mock('./usePrograms', () => ({
 vi.mock('../plan/useWeekPlan', () => ({ useAllWeekPlans: (mesoId: string) => ({ data: mesoId ? (state.plans[mesoId] ?? []) : undefined }) }))
 vi.mock('../plan/useRunSchedule', () => ({ useRunSchedule: (mesoId: string | undefined) => ({ data: mesoId ? (state.schedules[mesoId] ?? []) : undefined }) }))
 vi.mock('../plan/useProgramPriorities', () => ({ useProgramPriorities: (programId: string | null) => ({ data: programId ? (state.marks[programId] ?? []) : undefined }) }))
-vi.mock('../coach/usePriorityContext', () => ({ usePriorityContext: (mesoId: string | null) => ({ data: mesoId ? { anyExplicit: false } : undefined }) }))
+// Coach's old table, asked for a run whose copy holds no marks: nothing set (the real answer's shape: all 34 tags, none explicit)
+vi.mock('../coach/usePriorityContext', () => ({ usePriorityContext: (mesoId: string | null) => ({ data: mesoId ? { mesocycleId: mesoId, ...densifyPriorities([]) } : undefined }) }))
 
 const { default: FinishedProgramPage } = await import('./FinishedProgramPage')
 
@@ -108,6 +110,56 @@ describe('PR14 — a finished program', () => {
     fireEvent.click(tile(4))
     captureRender('finished-program-pr14-long-name', document.body)
     expect(screen.getAllByText(LONG).length).toBeGreaterThan(1)
+  })
+})
+
+// Chunk 76 (1.2.1 items 24, 25, 20 and 1): the prototype's "Finished program" has two DEMO states of the screen itself, Cut PPL, 10 weeks and False start,
+// 1 week, captured as `finished-program-cut-ppl-10-weeks` and `finished-program-false-start-1-week` (design/1.2.1/built/<same name>.png + .txt by `npm run
+// shot`). Cut PPL is the 10-week run with tall cards: week 1's four workouts are taller than the phone, so the week strip above them is the one that used to
+// shrink to nothing. A capture shows that only when the screen is held to the phone's height, as it is in the app (its page root is `height: 100%`, and
+// `captureRender` takes the render's body, whose wrapper has no height of its own, so the full-page pictures of PR14 and the deletes never constrained it):
+// these two are drawn inside an 844 px frame. The screen opens on week 1, its rows carry no superset labels, and the PRIORITIES row says "Focus: chest,
+// back · Don't care: calves" (the prototype's seed). The false start is the prototype's Push Pull Legs of Oct 5 to Oct 11: Push 1 and Pull 1 of its one
+// week, no marks.
+describe('Finished program (1.2.1): Cut PPL, 10 weeks and False start, 1 week', () => {
+  it('Cut PPL, 10 weeks: it opens on week 1, the strip of ten tiles never shrinks, the cards carry no superset label, and PRIORITIES leads with its marks', () => {
+    render(<div style={{ height: 844 }}>{ui()}</div>)
+    captureRender('finished-program-cut-ppl-10-weeks', document.body)
+
+    expect(tile(1).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByText('Started from the program')).toBeTruthy()
+    expect(screen.getByText('WEEK 1 · STRUCTURE')).toBeTruthy()
+    const strip = screen.getByLabelText('Weeks of this program')
+    expect(strip.children).toHaveLength(10)
+    expect(strip.style.flexShrink).toBe('0')
+    expect(Array.from(document.querySelectorAll('[data-workout]')).map((el) => el.getAttribute('data-workout'))).toEqual(['workout-push-1', 'workout-pull-1', 'workout-push-2', 'workout-legs'])
+    expect(document.body.textContent).not.toMatch(/\b[AB][12] · /)
+    expect(document.querySelector<HTMLAnchorElement>('[data-priorities-row]')!.getAttribute('href')).toBe('/program/finished/meso-cut/priorities')
+    expect(screen.getByText("Focus: chest, back · Don't care: calves")).toBeTruthy()
+  })
+
+  it('False start, 1 week: one tile, open, Push 1 and Pull 1, PRIORITIES with no line (nothing is marked)', () => {
+    state.mesos = [{ ...RUN, id: 'meso-ppl2', name: 'Push Pull Legs', programId: 'prog-run-ppl2', startDate: '2026-10-05', endDate: '2026-10-11' }]
+    state.programs = [{ ...COPY, id: 'prog-run-ppl2', name: 'Push Pull Legs' }]
+    state.days = { 'prog-run-ppl2': DAYS }
+    state.plans = { 'meso-ppl2': cutPplPlans().filter((p) => p.weekNumber === 1 && (p.workoutDayId === 'push-1' || p.workoutDayId === 'pull-1')) }
+    state.schedules = { 'meso-ppl2': [{ ...ROWS[0], mesocycleId: 'meso-ppl2' }] }
+    render(
+      <div style={{ height: 844 }}>
+        <MemoryRouter initialEntries={['/program/finished/meso-ppl2']}>
+          <Routes>
+            <Route path="/program/finished/:mesocycleId" element={<FinishedProgramPage />} />
+          </Routes>
+        </MemoryRouter>
+      </div>,
+    )
+    captureRender('finished-program-false-start-1-week', document.body)
+
+    expect(screen.getByText('Oct 5 → Oct 11, 2026 · 1 week')).toBeTruthy()
+    expect(Array.from(document.querySelectorAll('[data-week]')).map((t) => t.textContent)).toEqual(['WK1'])
+    expect(tile(1).getAttribute('aria-pressed')).toBe('true')
+    expect(Array.from(document.querySelectorAll('[data-workout]')).map((el) => el.getAttribute('data-workout'))).toEqual(['workout-push-1', 'workout-pull-1'])
+    expect(document.querySelector('[data-priorities-row]')!.textContent).toBe('PRIORITIES')
   })
 })
 

@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { addDays, format, getDay, parseISO } from 'date-fns'
 import type { StoredMark } from '../../lib/priorityMarks'
+import { densifyPriorities } from '../../lib/priorityTags'
+import type { PriorityLevel, PriorityTagType, StoredPriority } from '../../lib/priorityTags'
 import {
   CHANGE_PROGRAM_PATH,
   CHOOSE_TYPES_HINT,
@@ -10,9 +12,10 @@ import {
   PRIORITIES_PATH,
   createState,
   finishedMeta,
+  finishedProgramMarks,
   finishedProgramPath,
   finishedPrioritiesPath,
-  legacyPrioritiesPath,
+  mapLegacyMarks,
   markLine,
   markSummary,
   finishedWeekCount,
@@ -303,9 +306,81 @@ describe('where the tab\'s links go', () => {
     expect(PLAN_WEEK_ONE_PATH).toBe('/plan?week=1')
   })
 
-  it('a FINISHED row opens the finished program (chunk 66); its PRIORITIES row opens the editor, or for a pre-1.1 run the completed-run page as it is (G50)', () => {
+  it('a FINISHED row opens the finished program (chunk 66); its PRIORITIES row opens the one read-only screen, for every finished program (chunk 76)', () => {
     expect(finishedProgramPath('meso-3')).toBe('/program/finished/meso-3')
     expect(finishedPrioritiesPath('meso-3')).toBe('/program/finished/meso-3/priorities')
-    expect(legacyPrioritiesPath('meso-3')).toBe('/meso/meso-3/priorities')
+  })
+
+  it('Coach\'s completed-run priorities page (`/meso/:id/priorities`) is linked from nowhere: the helper that built its address is gone (SPEC 1.2.1 [1])', async () => {
+    const logic = await import('./programsTabLogic')
+    expect('legacyPrioritiesPath' in logic).toBe(false)
+  })
+})
+
+// Chunk 76 (SPEC 1.2.1 Finished program · PRIORITIES [1]): a pre-1.1 run's marks live only in Coach's old four-level table, and the finished program's
+// header line and its read-only screen show them through migration 033's mapping. The entries are the real densified shape (`densifyPriorities`: all 34
+// tags, an unset one `normal`, not explicit, with no time), so what the mapping reads is what Coach's `usePriorityContext` gives.
+describe('mapLegacyMarks (migration 033\'s mapping, chunk 76)', () => {
+  const stored = (tagType: PriorityTagType, tagValue: string, priority: PriorityLevel, updatedAt = '2026-03-02T09:00:00Z'): StoredPriority => ({ tagType, tagValue, priority, updatedAt })
+  const entries = (rows: StoredPriority[]) => densifyPriorities(rows).entries
+  const asText = (marks: StoredMark[]) => marks.map((m) => `${m.tagType}:${m.tagValue}=${m.mark}`)
+
+  it('top is a focus mark and low a don\'t care mark; high and normal show nothing, and neither does a tag nobody set', () => {
+    const rows = [
+      stored('muscle_group', 'quads', 'top'),
+      stored('muscle_group', 'chest', 'high'),
+      stored('muscle_group', 'calves', 'low'),
+      stored('muscle_group', 'back', 'normal'),
+    ]
+    expect(asText(mapLegacyMarks(entries(rows)))).toEqual(['muscle_group:quads=focus', 'muscle_group:calves=dont_care'])
+  })
+
+  it('each level on its own: top → focus, low → dont_care, high → nothing, a stored normal → nothing', () => {
+    expect(asText(mapLegacyMarks(entries([stored('muscle_group', 'chest', 'top')])))).toEqual(['muscle_group:chest=focus'])
+    expect(asText(mapLegacyMarks(entries([stored('muscle_group', 'chest', 'low')])))).toEqual(['muscle_group:chest=dont_care'])
+    expect(mapLegacyMarks(entries([stored('muscle_group', 'chest', 'high')]))).toEqual([])
+    expect(mapLegacyMarks(entries([stored('muscle_group', 'chest', 'normal')]))).toEqual([])
+    expect(mapLegacyMarks(entries([]))).toEqual([])
+  })
+
+  it('the tag type goes with the mark: six values are both a group and a subgroup, and each keeps its own', () => {
+    const rows = [stored('muscle_group', 'quads', 'top'), stored('muscle_subgroup', 'quads', 'low'), stored('muscle_subgroup', 'upper_chest', 'top'), stored('muscle_subgroup', 'calves', 'high')]
+    expect(asText(mapLegacyMarks(entries(rows))).sort()).toEqual(['muscle_group:quads=focus', 'muscle_subgroup:quads=dont_care', 'muscle_subgroup:upper_chest=focus'])
+  })
+
+  it('a mark keeps the time the old row was written', () => {
+    const [mapped] = mapLegacyMarks(entries([stored('muscle_group', 'quads', 'top', '2026-03-05T09:30:00Z')]))
+    expect(mapped.updatedAt).toBe('2026-03-05T09:30:00Z')
+  })
+
+  it('the header line reads the mapped marks: "Focus: quads · Don\'t care: calves"', () => {
+    const rows = [stored('muscle_group', 'quads', 'top'), stored('muscle_group', 'chest', 'high'), stored('muscle_group', 'calves', 'low')]
+    expect(markLine(mapLegacyMarks(entries(rows)))).toBe("Focus: quads · Don't care: calves")
+    expect(markLine(mapLegacyMarks(entries([stored('muscle_group', 'chest', 'high')])))).toBeNull()
+  })
+})
+
+describe('finishedProgramMarks (the marks a finished program shows, chunk 76)', () => {
+  const own: StoredMark[] = [{ tagType: 'muscle_group', tagValue: 'chest', mark: 'focus', updatedAt: '2026-01-01T00:00:00Z' }]
+  const legacy = densifyPriorities([{ tagType: 'muscle_group', tagValue: 'quads', priority: 'top', updatedAt: '2026-03-01T00:00:00Z' }]).entries
+  const none = densifyPriorities([]).entries
+
+  it('the run copy\'s own marks when it has any, whatever the old table holds', () => {
+    expect(finishedProgramMarks(own, legacy)).toEqual(own)
+    expect(finishedProgramMarks(own, undefined)).toEqual(own)
+  })
+
+  it('none of its own: the old table\'s, mapped', () => {
+    expect(finishedProgramMarks([], legacy)).toEqual([{ tagType: 'muscle_group', tagValue: 'quads', mark: 'focus', updatedAt: '2026-03-01T00:00:00Z' }])
+  })
+
+  it('neither holds any: empty (known, and nothing is marked)', () => {
+    expect(finishedProgramMarks([], none)).toEqual([])
+  })
+
+  it('not known yet: undefined until the run copy\'s marks are read and, when it has none, the old table too', () => {
+    expect(finishedProgramMarks(undefined, undefined)).toBeUndefined()
+    expect(finishedProgramMarks(undefined, legacy)).toBeUndefined()
+    expect(finishedProgramMarks([], undefined)).toBeUndefined()
   })
 })
