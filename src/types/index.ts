@@ -360,6 +360,18 @@ export interface Mesocycle {
   sourceProgramId?: string | null
 }
 
+// What a full delete of a finished program would remove (chunk 75; 1.2.1 item 8b; migration 048's `v2_finished_run_counts`, read-only). The
+// confirmation names these, and nothing else: `loggedSets` is History's own count (a set's head row, not skipped, not a warmup; drop stages never
+// counted: DECISIONS 252); `coachAnalyses` is the session analyses of the run's sessions, its program analysis and the weekly analyses of weeks that
+// held only its sessions; `coachNotes` is the notes on its sessions (DECISIONS 249 rows 10, 13, 15 and 14).
+export interface FinishedRunCounts {
+  weeks: number
+  sessions: number
+  loggedSets: number
+  coachAnalyses: number
+  coachNotes: number
+}
+
 // ─── Weekly Plan (Layer 2) ────────────────────────────────────────────────────
 
 // One WeekPlan per workout day per week of a meso.

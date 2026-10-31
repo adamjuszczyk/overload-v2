@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { format, parseISO } from 'date-fns'
-import { useMesos, useDeleteMeso } from '../programs/useMesos'
+import { useMesos } from '../programs/useMesos'
+import FullDeleteConfirm from '../programs/FullDeleteConfirm'
 import { useHistorySessions } from './useHistory'
 import SessionDetail from './SessionDetail'
 import type { MuscleGroup } from '../../types'
@@ -44,7 +45,6 @@ export default function HistorySessions() {
   } = useHistorySessions()
   const sessions = useMemo(() => data?.pages.flatMap((p) => p.rows) ?? [], [data])
   const { data: mesos = [] } = useMesos()
-  const { mutate: deleteMeso, isPending: isDeletingMeso } = useDeleteMeso()
 
   const [selectedId, setSelectedId]         = useState<string | null>(null)
   const [filterMesoId, setFilterMesoId]     = useState('')
@@ -54,7 +54,10 @@ export default function HistorySessions() {
   const [filterMuscle, setFilterMuscle]     = useState<MuscleGroup | ''>('')
   const [searchQuery, setSearchQuery]       = useState('')
   const [showAdvanced, setShowAdvanced]     = useState(false)
-  const [mesoDeleteConfirm, setMesoDeleteConfirm] = useState(false)
+  // The finished program whose full-delete confirmation is open (chunk 75: the same one DELETE THIS FINISHED PROGRAM opens), held whole: the
+  // program list is read again before the delete resolves and no longer holds it, which must not take the confirmation away from under its own
+  // DELETING….
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null)
 
   const selectedMeso = mesos.find(m => m.id === filterMesoId) ?? null
 
@@ -106,10 +109,7 @@ export default function HistorySessions() {
         {/* Meso selector */}
         <select
           value={filterMesoId}
-          onChange={e => {
-            setFilterMesoId(e.target.value)
-            setMesoDeleteConfirm(false)
-          }}
+          onChange={e => setFilterMesoId(e.target.value)}
           className="w-full px-3 py-2.5 rounded-xl text-sm outline-none appearance-none"
           style={inputStyle}
         >
@@ -242,75 +242,25 @@ export default function HistorySessions() {
             border: '1px solid rgba(248, 113, 113, 0.2)',
           }}
         >
-          {!mesoDeleteConfirm ? (
-            <div className="flex items-center justify-between gap-3">
-              <p
-                className="text-xs truncate"
-                style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
-              >
-                {selectedMeso.name.toUpperCase()}
-              </p>
-              <button
-                onClick={() => setMesoDeleteConfirm(true)}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold shrink-0"
-                style={{
-                  backgroundColor: 'rgba(248, 113, 113, 0.1)',
-                  color: 'var(--error)',
-                  fontFamily: 'var(--font-mono)',
-                }}
-              >
-                DELETE PROGRAM
-              </button>
-            </div>
-          ) : (
-            <>
-              <p
-                className="text-xs font-bold mb-1"
-                style={{ color: 'var(--error)', fontFamily: 'var(--font-mono)' }}
-              >
-                DELETE FINISHED PROGRAM?
-              </p>
-              <p className="text-xs mb-3" style={{ color: 'var(--text-secondary)' }}>
-                This will permanently delete{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>{selectedMeso.name}</strong>'s
-                plan. This cannot be undone. Its logged sessions aren't deleted — they'll remain
-                in History, no longer linked to this program.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setMesoDeleteConfirm(false)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-bold"
-                  style={{
-                    backgroundColor: 'var(--surface-raised)',
-                    color: 'var(--text-muted)',
-                    fontFamily: 'var(--font-mono)',
-                  }}
-                >
-                  CANCEL
-                </button>
-                <button
-                  onClick={() =>
-                    deleteMeso(selectedMeso.id, {
-                      onSuccess: () => {
-                        setFilterMesoId('')
-                        setMesoDeleteConfirm(false)
-                      },
-                    })
-                  }
-                  disabled={isDeletingMeso}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-bold"
-                  style={{
-                    backgroundColor: 'rgba(248, 113, 113, 0.15)',
-                    color: 'var(--error)',
-                    fontFamily: 'var(--font-mono)',
-                    opacity: isDeletingMeso ? 0.5 : 1,
-                  }}
-                >
-                  {isDeletingMeso ? 'DELETING…' : 'CONFIRM DELETE'}
-                </button>
-              </div>
-            </>
-          )}
+          <div className="flex items-center justify-between gap-3">
+            <p
+              className="text-xs truncate"
+              style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}
+            >
+              {selectedMeso.name.toUpperCase()}
+            </p>
+            <button
+              onClick={() => setDeleting({ id: selectedMeso.id, name: selectedMeso.name })}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold shrink-0"
+              style={{
+                backgroundColor: 'rgba(248, 113, 113, 0.1)',
+                color: 'var(--error)',
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              DELETE PROGRAM
+            </button>
+          </div>
         </div>
       )}
 
@@ -452,6 +402,18 @@ export default function HistorySessions() {
           </button>
         )}
       </div>
+
+      {/* Chunk 75: the same confirmation DELETE THIS FINISHED PROGRAM opens; deleted, History stays here with its program filter reset. */}
+      {deleting && (
+        <FullDeleteConfirm
+          run={deleting}
+          onCancel={() => setDeleting(null)}
+          onDeleted={() => {
+            setFilterMesoId('')
+            setDeleting(null)
+          }}
+        />
+      )}
     </div>
   )
 }
