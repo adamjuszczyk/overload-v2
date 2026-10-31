@@ -12,10 +12,12 @@
 //   - the pass reads the status again at once (the screen does not wait for the hour), and the pass after the status turns from on to off sends the
 //     held writes, in order.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { act, cleanup, render, renderHook, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { QueueServer } from './queueServer.testutil'
+import { versionCheckAnswers } from '../release/versionGate.testutil'
 
 interface QueueItem {
   id: number
@@ -166,6 +168,9 @@ describe('the test server refuses as migration 048 does', () => {
 })
 
 describe('W: a write refused OL001 stays in the queue, uncounted, and the pass ends there', () => {
+  // These passes are started by hand, so the version check has answered before them (chunk 73): this version may send the queue.
+  beforeEach(() => versionCheckAnswers())
+
   // The first write in the queue is each kind in turn (the pre-read, 72-5), and a delete that names no row too: the first is the one that is
   // refused, and the other two are not sent. Each write is on a record of its own, so nothing but the pass's ending holds the later ones back.
   const SHAPES: Array<{ name: string; arrange: () => string; sendStarted: boolean; deleted: string }> = [

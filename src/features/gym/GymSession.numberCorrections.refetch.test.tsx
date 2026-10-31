@@ -10,6 +10,8 @@
 // on a later tick and returns copies, and the server keeps the row, fails the PATCH as many times as the test says, then takes it.
 // (The queue's own rules: useSyncQueue.patch.test.ts; the screen's use of the hook with a spy: GymSession.numberCorrections.test.tsx.)
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
+import { versionCheckAnswers } from '../release/versionGate.testutil'
 import { render, cleanup, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClientProvider, useQuery } from '@tanstack/react-query'
@@ -188,6 +190,7 @@ beforeEach(() => {
   // and continued. The second is the fourth set now; its log still holds 5.
   serverLogs = [head(1), head(2), head(3), log({ id: 'log-b', setNumber: 5, addedPlace: 2 })]
   queryClient.clear()
+  versionCheckAnswers() // the version check has answered: this version may send the queue (chunk 73)
   useOfflineStore.setState({ syncFailures: [], failedIds: new Set(), pendingIds: new Set() })
 })
 

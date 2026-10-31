@@ -30382,3 +30382,67 @@ Chunk 74 — delete a saved program [8a] (DATA · M), built beside chunk 72's re
 - **Staging (before the merge; the branch rebased on `66c552a`, served by `route.fulfill`, service workers blocked, staging's database):** test account 10/10 (the running program's source DELETE off with FINISH IT FIRST, once; a press writes nothing; `OL002` via the API, the row unchanged); staging-empty 38/38 (two programs made, the confirm's texts, offline DELETE off with an empty `sync_queue`, DELETING… with one `POST rpc/v2_delete_saved_program → 204`, both lists re-read before closing, A gone and B kept in YOUR PROGRAMS and both START sheets, A's row read with `deleted_at` set, `/program/<A>` refused); clean-up by hard delete as the account; smoke 62/62.
 - **Card (release batch):** `v2_start_run` (028) checks only `kind = 'saved'`, so a START sheet older than its 5-minute stale time (another phone deleted the program) or a race starts a run from a deleted program; the run works, the program stays hidden. Recommend leave for 1.2.1 (SPEC: the five existing functions are not changed); a later migration in the next-version notes. Observation: the Library's exercise-delete confirm still names a deleted program among those using the exercise (display only; not in SPEC's picker list).
 - **Display choices:** offline only the sentence, DELETE keeps its label dimmed; a row's DELETE `--text-muted`, the running row's `--text-dim` with an 8 px caption; the confirm closes after both lists are re-read; the failure inside the confirm as PR6's; the planner's refusal has no second line.
+
+## 2026-10-31 chunk 75
+Chunk 75 — full delete of a finished program [8b] (DATA · L), built beside chunk 73. Builder (Sonnet) 23:09–00:04 UTC, `build/chunk-75` `c85180a`, PR #265 (break table in a PR comment); reviewer (Opus) 00:08–00:39, merge-ready; squash-merged by the coordinator as `a27e4f6` (before 73, which rebases on it). Briefed with the gap pre-read's 75 items and DECISIONS 272.
+- **Built:** `mesoService.ts` (`fetchFinishedRunCounts` validated, `fetchFinishedRunSessionIds` ordered and paged 500, `deleteFinishedRun` = the RPC; `deleteMeso` gone); `useMesos.ts` (`useFinishedRunCounts` counts + ids in one query, `networkMode: 'always'`, `retry: false`, `staleTime`/`gcTime` 0; `useDeleteFinishedRun` drops the queue inside `mutationFn` after the RPC, a failed drop logged; `useDeleteMeso` gone); `FullDeleteConfirm.tsx`, `fullDeleteText.ts`, `finishedRunCaches.ts`, `finishedRunQueue.ts` (queue-only sessions read through `src/lib/db.ts`; queued notes on the run's sessions dropped before the sessions' writes); both entry points; History's inline confirm replaced by the dialog, its filter reset after a delete; `programHistory.ts` loses the old texts; 4 new test files (incl. `finishedRunCaches.static.test.ts` reading Coach's literals) + 7 updated; 8 fixtures, `finished-program-pr15*` removed; captures `finished-program-delete{,-no-coach-rows,-offline,-with-notes,-counting,-failed}`, `history-sessions-delete`. 118 breaks + 8 controls; `vitest --changed` 80 files / 1598. Context ≈ 350k, ≈ 55 min.
+- **Review:** all 118 breaks and 8 controls re-run plus R1–R4 of its own (swaps read left out of the removals; sessions from the server's ids only; notes for the server's ids only; notes matched by a side field): 122 caught, 9 controls pass; every script; `vitest --changed` 80 / 1598; overflow at 375 px in 9 confirm copies; embeds 30/30 live.
+- **Staging (before the merge; staging-flavoured build, `route.fulfill`, service workers blocked):** on staging-empty a saved program and two runs started (`v2_start_run` 200, `v2_plan_week` 200), one set logged in each, completed, finished (`1|1|1|0|0`); run one's confirm offline (no counts request), online "Counting what goes…" then "Deletes its 1 week: 1 session and 1 logged set. …"; Coach rows by API (note, session analysis, weekly analysis naming only its session, a control) → "…, plus 2 Coach analyses and 1 Coach note."; queued offline (sends held with 503): a note on run one's session, a queue-only session of run one with a note, run two's note, a general note; DELETE → one write (`rpc/v2_delete_finished_run` 204), `/program`; the queue kept only run two's note and the general note, which then sent; by API the run, sessions, log, weeks, copy and three Coach rows gone, the control kept. Run two via History's filter: the notes-only text, one write, History reset to ALL PROGRAMS. Test account: the seed's STG Full Body confirm "Deletes its 3 weeks: 9 sessions and 66 logged sets, plus 3 Coach analyses and 1 Coach note." — CANCEL only. Clean-up by hard delete; smoke 62/62.
+- **Cards:** 272 accepted as built (a pass already running sent a dropped note after the delete: refused 23503, not re-queued, not on the server; only a send inside the function's own transaction window could leave it unlinked); a failed count read → "Couldn't count what goes." + reason, DELETE off, no auto-retry: accepted; the Dexie mirror not cleared: accepted (its one reader matches the current workout day only). **New, DECISIONS 274:** the prototype no longer builds (its FinishedProgramPage override imports the removed `useDeleteMeso`; dead code; 3 of 9 smoke tests fail); the review's fix, not applied:
+```
+diff --git a/prototype/src/overrides/FinishedProgramPage.tsx b/prototype/src/overrides/FinishedProgramPage.tsx
+index 1c0b937..316ea0a 100644
+--- a/prototype/src/overrides/FinishedProgramPage.tsx
++++ b/prototype/src/overrides/FinishedProgramPage.tsx
+@@ -10,7 +10,7 @@ import { useProgramPriorities } from '@app/features/plan/useProgramPriorities'
+ import { useRunSchedule } from '@app/features/plan/useRunSchedule'
+ import { useAllWeekPlans } from '@app/features/plan/useWeekPlan'
+ import { scheduleForWeek } from '@app/features/programs/runSchedule'
+-import { useDeleteMeso, useMesos } from '@app/features/programs/useMesos'
++import { useMesos } from '@app/features/programs/useMesos'
+ import { usePrograms, useWorkoutDays } from '@app/features/programs/usePrograms'
+ import { useDemo } from '../demo/demoStore'
+ import { useQuery } from '@tanstack/react-query'
+@@ -211,7 +211,6 @@ export default function FinishedProgramPage() {
+   const prioritiesFailed = priorityTarget === null && (marksRead.isError === true || legacyRead.isError === true)
+ 
+   // ─── DELETE ───
+-  const deleteMeso = useDeleteMeso()
+   const [confirmDelete, setConfirmDelete] = useState(false)
+   const demoOnline = useDemo((d) => d.online)
+   const counting = useDemo((d) => d.counting)
+@@ -219,24 +218,6 @@ export default function FinishedProgramPage() {
+   useEffect(() => {
+     if (openDelete === 'finished' && run) { useDemo.getState().set({ openDelete: null }); setConfirmDelete(true) }
+   }, [openDelete, run])
+-  const [deleteError, setDeleteError] = useState<{ reason: unknown } | null>(null)
+-  // A second tap on DELETE in the same instant arrives before React has drawn the pending state: a ref says a delete is already out.
+-  const deleting = useRef(false)
+-
+-  async function remove() {
+-    if (!run || deleting.current) return
+-    deleting.current = true
+-    setDeleteError(null)
+-    try {
+-      await deleteMeso.mutateAsync(run.id)
+-      // The program is gone and so is this page: PROGRAMS, in its place in the history.
+-      navigate('/program', { replace: true })
+-    } catch (reason) {
+-      setDeleteError({ reason })
+-    } finally {
+-      deleting.current = false
+-    }
+-  }
+ 
+   function content() {
+     if (failedRead) return <Message title="COULDN'T LOAD THIS PROGRAM" tone="error">{errorReason(failedRead.error, offline)}</Message>
+```
+- **Observations:** a lost reply after the server committed shows "Couldn't delete" and drops nothing (as History's session delete); on staging-empty a second run started the same day a first run's session was completed opened Today as "TODAY — DONE" with its workout NOT STARTED (not chunk 75's; not investigated).
+- **Display choices:** the failed-count caption without TRY AGAIN; DELETING…; History's delete as a modal; "0 weeks"; the notes-only sentence; "Counting what goes…" again after a reconnect; long names wrap.
+
+## 2026-10-31 chunk 73
+Chunk 73 — required updates [11] (DATA · L), built beside chunk 74's review and 75. Builder (Sonnet) 22:45–00:16 UTC, `build/chunk-73` `8eb26cf` (staging merged in), PR #266; reviewer (Opus) 00:18–01:06, merge-ready with 3 tests owed; the reviewer merged staging (75, then 75's docs) into the branch (RULES: never force-push a PR branch) and added `eebc2f1` (`vitest.setup.ts` + a `setupFiles` line: 75 made the frozen `usePriorityContext.test.ts` reach the queue, which can't take a per-file stub) and `7d30b0f` (75's `finishedRun.queue.test.tsx` answers the version gate); head `93444a0`, squash-merged by the coordinator as `f24d897`. Briefed with the gap pre-read's 73-1 to 73-5, 73-7 and chunk 72's review notes D and P2.
+- **Built:** `versionGate.ts` (+ `useVersionGate`, `updateRequired`, a testutil), `useRequiredUpdate.ts`, `useServiceWorker.ts`, `pwaRegister.ts` (the one `virtual:pwa-register/react` import; mock it, since a file naming a virtual id fails Vite's import analysis), `UpdateRequiredScreen` in `gates.tsx`, the gate order in `App.tsx` (update before maintenance and before the session spinner); `flushSyncQueue` holds on the check (every caller: the runner, both RETRYs, the finish, number corrections, change rows; a running pass stops at the next write); the runner (flush on → ok, a read on reconnect, a minute re-read while unanswered with held writes); `useAppStatus.ts` (one foreground listener; a minute read while the update screen shows; comment corrected); `PwaUpdateNotice.tsx`, `usePwaUpdate.ts` removed; 7 new test files, 3 extended; 121 test files gained a `vi.hoisted` version stub (now redundant beside `vitest.setup.ts`); captures `update-to-continue-{ready,unsent-changes,updating,couldnt-update}`. 55 breaks; full suite 392 / 7169; local Chromium probes `probe73.mjs` 16/16, `probe73b.mjs` 21/21. Context ≈ 0.5–0.6M, ≈ 1 h 30 min.
+- **Review:** 51 breaks caught by assertions, B4d equivalent, B7g and B7j caught only by the 20 s test timeout and B7h only by a hang (3 tests owed, each recipe proven by a probe); stylesheet byte-identical, no banner strings in the bundle (staging's deployed bundle still had them: the control); scripts 417/417; affected 140 files / 1869; on the merged head the full suite 396 / 7271; the prototype with 274's fix applied in a scratch copy only: 9/9.
+- **Staging (before the merge; staging-flavoured builds against staging's database):** A (1.2.1, service workers blocked) 15/15: the real row → no screen, a set logs and unlogs; an offline LOG, `min 9.9.9` intercepted → UPDATE TO CONTINUE over the workout ("This is 1.2.1. Overload needs 9.9.9 or newer." + the unsent line), nothing sent in 8 s, the row kept across `location.reload()`; `1.2.1` → the screen goes, the workout reopens with the set, the queue sends, the rest countdown gone. C (a 1.2.0 build against staging's real `min_version`) 6/6: 1.2.1 sent nothing while reads were held; 1.2.0 gated over the workout, nothing sent, queue intact; back on 1.2.1 the queue sent. B (a real worker update, 127.0.0.1) 11/11: the screen at `min 1.2.2`, a 1.2.2 build deployed, UPDATE → UPDATING… → one `registration.update()` → reload into 1.2.2 in ≈ 1.35 s, the new version sent the queue; its once-sheet over the workout. The builder's probes re-run: 16/16, 21/21 (controls 15/21, 18/21). verify-rls 35 / 70/70. Restored: the session's 3 logs and fingerprint, 203 set logs, the status row.
+- **Cards (release batch):** A the suite-wide test default (`vitest.setup.ts`, built; options: a lazy read in `version.ts`, a dynamic import in `useMesos.ts`); 1 the update screen also covers signed out, no SIGN IN; 2 the queue is held while `v2_app_status` can't be read, so 1.2.1 must never run where 048 isn't live (TASKS Release step 4's order; keep the production read of `v2_app_status` as the run sheet's gate). Observations: an `ok` after a long background stretch without an offline event is still trusted (the foreground read's round trip); from 1.2.2 an exempt account gets new code during maintenance only by reopening the app; up to three status observers each keep an interval. Display choices: the screen before the sign-in read; UPDATING… at 60% opacity; the error line under the sentences; after a reconnect the last answer's screen until the fresh read; the once-sheet over the reopened workout after UPDATE.

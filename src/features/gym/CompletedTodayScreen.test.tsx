@@ -8,6 +8,7 @@
 // finished session or edit its note. These tests pin that nothing on it can
 // skip or create a session, and that CONTINUE still reopens.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import type { WorkoutDay, Session } from '../../types'
 

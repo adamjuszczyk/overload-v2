@@ -94,9 +94,9 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         // Registration is done explicitly via `virtual:pwa-register/react`
-        // (see src/features/pwa/usePwaUpdate.ts) instead of the auto-injected
-        // <script>, so it can wire onNeedReload to a dismissible in-app notice
-        // instead of the default silent window.location.reload().
+        // (see src/features/pwa/useServiceWorker.ts) instead of the auto-injected
+        // <script>, so it can wire onNeedReload to a record the update screen
+        // reads instead of the default silent window.location.reload().
         injectRegister: false,
         // vite-plugin-pwa only auto-sets workbox.skipWaiting/clientsClaim from
         // registerType: 'autoUpdate' when injectRegister is 'auto' or unset
