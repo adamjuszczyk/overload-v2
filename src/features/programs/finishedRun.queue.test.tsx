@@ -543,7 +543,7 @@ describe('a clean-up the phone\'s own database refuses is logged and does not fa
 })
 
 describe('a pass already running when the delete is made does not send what the clean-up removed', () => {
-  it('the pass holds A\'s writes in the list it read; the clean-up removed them from the queue and the pass skips them', async () => {
+  it('the pass holds A\'s writes in the list it read; the clean-up removed them from the queue and the pass skips them; the two notes it still holds are refused 23503, not on the server, not queued again', async () => {
     const notes = await queuedWorld()
     // the pass is waiting on C's log, the first write in the queue; A's writes are all behind it in the list the pass has read
     const inFlight = server.hold('upsert v2_set_logs:lC1')
@@ -562,6 +562,15 @@ describe('a pass already running when the delete is made does not send what the 
     expect(server.has('v2_set_logs', 'lB1')).toBe(true)
     expect(server.has('v2_set_logs', 'lC1')).toBe(true)
     expect(serverIds('v2_coach_notes')).toContain(notes.B1)
+    // The run's two queued notes (one on a session the delete took, one on the session only this phone knew) left the queue, but this pass had read them
+    // before: a clean-up cannot take an item out of a list a pass holds. It sends them, the server refuses each `23503` (their session is gone) and nothing
+    // puts them back (DECISIONS 272; chunk 75's review). The other writes of A were skipped, so these two are the only requests the server refused.
+    for (const id of [notes.A1, notes.Q]) {
+      expect(server.requests, 'sent by the pass that held it, and refused').toContain(`upsert v2_coach_notes:${id} -> 23503 session_id`)
+      expect(server.has('v2_coach_notes', id), 'not on the server').toBe(false)
+      expect(queued(), 'not queued again').not.toContain(`upsert v2_coach_notes:${id}`)
+    }
+    expect(sorted(server.refused), 'the notes are all the server refused').toEqual(sorted([`upsert v2_coach_notes:${notes.A1}`, `upsert v2_coach_notes:${notes.Q}`]))
     expect(notice()).toBe(0)
     expect(queue()).toEqual([])
   })
