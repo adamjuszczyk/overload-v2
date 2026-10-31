@@ -74,7 +74,7 @@ vi.mock('./features/settings/ReleaseNotesPage', () => ({ default: () => <div>REL
 vi.mock('./features/settings/AfterUpdateSheet', () => ({ default: () => null }))
 vi.mock('./features/coach/CoachPage', () => ({ default: () => <div>COACH PAGE</div> }))
 vi.mock('./components/Nav', () => ({ default: () => <div>NAV</div> }))
-vi.mock('./features/pwa/PwaUpdateNotice', () => ({ default: () => null }))
+vi.mock('./features/pwa/useServiceWorker', () => ({ useServiceWorker: () => {}, serviceWorkerRecord: () => ({ registration: undefined, newWorkerActive: false }) }))
 vi.stubGlobal('__APP_VERSION__', '1.2.1')
 
 const { AppRoutes } = await import('./App')
@@ -237,6 +237,31 @@ describe('offline the app cannot read the flag and works as usual (the pre-read\
     await waitFor(() => expect(world.reads).toBe(2))
     expect(screen.queryByText(SCREEN)).toBeNull()
     expect(screen.getByText('LIBRARY PAGE')).toBeTruthy()
+  })
+
+  // Chunk 72's review, D: a read that fails online after one that answered keeps the answer (TanStack holds the data of the last good read), so the
+  // screen stays up; the comment in useAppStatus.ts said it left none. Only a read that answers differently changes what the person sees.
+  it('a read that fails after one that answered changes nothing: the screen stays up, until a read that answers says otherwise', async () => {
+    const defaults = queryClient.getDefaultOptions()
+    queryClient.setDefaultOptions({ queries: { retry: false } }) // the failure is the point, not the retry after it
+    try {
+      mount('/library')
+      expect(await screen.findByText(SCREEN)).toBeTruthy()
+      world.read = 'fails'
+      await reread()
+      await waitFor(() => expect(queryClient.getQueryState(APP_STATUS_KEY)?.status).toBe('error'))
+      expect(world.reads).toBe(2)
+      expect(screen.getByText(SCREEN), 'the failed read did not erase the screen').toBeTruthy()
+      expect(appIsShown()).toBe(false)
+
+      world.read = 'answers'
+      world.status = { ...world.status, maintenance: false }
+      await reread()
+      await waitFor(() => expect(screen.queryByText(SCREEN)).toBeNull())
+      expect(screen.getByText('LIBRARY PAGE')).toBeTruthy()
+    } finally {
+      queryClient.setDefaultOptions(defaults)
+    }
   })
 })
 

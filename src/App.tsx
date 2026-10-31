@@ -23,15 +23,17 @@ import FinishedProgramPage from './features/programs/FinishedProgramPage'
 import FinishedProgramPriorities from './features/programs/FinishedProgramPriorities'
 import Nav from './components/Nav'
 import Toast from './features/notifications/Toast'
-import PwaUpdateNotice from './features/pwa/PwaUpdateNotice'
+import { useServiceWorker } from './features/pwa/useServiceWorker'
 import StagingBadge from './components/StagingBadge'
 import { useAccentColour } from './hooks/useAccentColour'
 import { useSettings } from './features/settings/useSettings'
 import { useSyncQueueInit, useSyncQueueRunner } from './features/offline/useSyncQueue'
 import SyncFailedNotice from './features/offline/SyncFailedNotice'
 import { useSeedDefaultExercisesIfEmpty } from './features/library/useExercises'
-import { MaintenanceScreen, MaintenanceStrip } from './features/release/gates'
+import { MaintenanceScreen, MaintenanceStrip, UpdateRequiredScreen } from './features/release/gates'
 import { useGate } from './features/release/useAppStatus'
+import { useRequiredUpdate } from './features/release/useRequiredUpdate'
+import { APP_VERSION } from './lib/version'
 
 function SyncManager() {
   useSyncQueueInit()
@@ -41,16 +43,16 @@ function SyncManager() {
 }
 
 export default function App() {
+  // 1.2.1 (chunk 73; SPEC Update to continue [11]) — the service worker's registration and its update checks, once, here, whatever the app is
+  // showing. A stale bundle on the login screen is just as real a problem as one mid-workout, and a registration that lived in the signed-in shell
+  // (or behind a gate) would be gone exactly when the update screen, which replaces the shell, needs it for UPDATE (the gap pre-read's 73-5).
+  // Nothing is drawn: the RELOAD banner is gone, the new code installs in the background, and the update screen decides whether the old one may
+  // still be used.
+  useServiceWorker()
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          {/* Unconditional on auth state — a stale bundle on the login
-              screen is just as real a problem as one mid-workout, and
-              registering the update check here (rather than only once
-              authenticated) means it can't be blocked on a test/verification
-              path that needs to reach a logged-in screen. */}
-          <PwaUpdateNotice />
           <StagingBadge />
           <AppRoutes />
         </BrowserRouter>
@@ -88,6 +90,9 @@ export function AppRoutes() {
   // 1.2.1 (chunk 72; SPEC Maintenance [10]) — what the release state asks of this account: the maintenance screen, the strip an exempt account
   // works under, or nothing (also when it is unread or the phone is offline: the app works as usual).
   const gate = useGate()
+  // 1.2.1 (chunk 73; SPEC Update to continue [11]) — whether this version is older than the database's `min_version`: the update screen, which wins
+  // over maintenance (an old app must update before it can wait out maintenance). Nothing offline or before the first read, as for maintenance.
+  const update = useRequiredUpdate()
 
   // Apply accent colour from settings (falls back to #FF8C42 default)
   useAccentColour(settings.accentColour)
@@ -99,6 +104,12 @@ export function AppRoutes() {
 
   // The theme and the accent are applied above the gate, here, before anything below returns: the maintenance screen draws in the user's own
   // theme and accent as the app does (chunk 72's pre-read, 72-6; the prototype's Shell does the same).
+
+  // 1.2.1 (chunk 73) — the update screen replaces the whole app, navigation included, whatever the person is doing and whether or not anyone is signed
+  // in or the sign-in is still being read: an old app must never keep writing into a newer database. It is first, so it also comes before maintenance.
+  if (update.required) {
+    return <UpdateRequiredScreen appVersion={APP_VERSION} minVersion={update.minVersion} state={update.state} onUpdate={() => void update.update()} />
+  }
 
   if (loading) {
     return (

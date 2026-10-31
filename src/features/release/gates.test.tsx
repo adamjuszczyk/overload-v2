@@ -8,7 +8,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 const queued = vi.hoisted(() => ({ count: 0 }))
 vi.mock('./useQueuedWriteCount', () => ({ useQueuedWriteCount: () => queued.count }))
 
-const { MaintenanceScreen, MaintenanceStrip, GateScreen } = await import('./gates')
+const { MaintenanceScreen, MaintenanceStrip, GateScreen, UpdateRequiredScreen } = await import('./gates')
 
 const QUEUED_LINE = 'Changes you made offline are kept and sent then.'
 
@@ -90,5 +90,105 @@ describe('MaintenanceStrip', () => {
     render(<MaintenanceStrip />)
     expect(screen.queryByRole('heading')).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
+  })
+})
+
+// Chunk 73 (SPEC.md 1.2.1, Screens → Update to continue [11]; the prototype's "Update to continue": Ready, Unsent changes, Updating, Couldn't update).
+// SPEC's words: "UPDATE / UPDATE TO CONTINUE / This is 1.2.0. Overload needs 1.2.1 or newer." with an UPDATE button; "With unsent changes, it adds:
+// 'Unsent changes are kept and sent after the update.'"; UPDATING…; "Couldn't update. Check your connection and try again.", and the button reads TRY AGAIN.
+describe('UpdateRequiredScreen', () => {
+  const UNSENT = 'Unsent changes are kept and sent after the update.'
+  const ERROR = "Couldn't update. Check your connection and try again."
+  const draw = (state: 'ready' | 'updating' | 'failed' = 'ready', onUpdate = vi.fn()) =>
+    render(<UpdateRequiredScreen appVersion="1.2.0" minVersion="1.2.1" state={state} onUpdate={onUpdate} />)
+
+  it('Ready: UPDATE / UPDATE TO CONTINUE / "This is 1.2.0. Overload needs 1.2.1 or newer." and an UPDATE button, nothing else', () => {
+    const { container } = draw()
+    expect(container.querySelector('p')!.textContent, 'the eyebrow').toBe('UPDATE')
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('UPDATE TO CONTINUE')
+    expect(screen.getByText('This is 1.2.0. Overload needs 1.2.1 or newer.')).toBeTruthy()
+    const button = screen.getByRole('button')
+    expect(button.textContent).toBe('UPDATE')
+    expect((button as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.queryByText(UNSENT)).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(container.textContent).toBe('UPDATEUPDATE TO CONTINUEThis is 1.2.0. Overload needs 1.2.1 or newer.UPDATE')
+  })
+
+  it('the two versions are the ones it is given, whatever they are', () => {
+    render(<UpdateRequiredScreen appVersion="1.2.1" minVersion="1.2.2" state="ready" onUpdate={vi.fn()} />)
+    expect(screen.getByText('This is 1.2.1. Overload needs 1.2.2 or newer.')).toBeTruthy()
+  })
+
+  it('Unsent changes: the line follows the version sentence when the phone holds writes (the queue holds 3), and is gone with none', () => {
+    queued.count = 3
+    draw()
+    const first = screen.getByText('This is 1.2.0. Overload needs 1.2.1 or newer.')
+    expect(first.compareDocumentPosition(screen.getByText(UNSENT)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    cleanup()
+    for (const [count, shown] of [[0, false], [1, true], [3, true], [40, true]] as const) {
+      queued.count = count
+      const { unmount } = draw()
+      expect(screen.queryAllByText(UNSENT).length, `queue of ${count}`).toBe(shown ? 1 : 0)
+      unmount()
+    }
+  })
+
+  it('Updating: the button reads UPDATING… and is held, so a second press does nothing', () => {
+    const onUpdate = vi.fn()
+    draw('updating', onUpdate)
+    const button = screen.getByRole('button') as HTMLButtonElement
+    expect(button.textContent).toBe('UPDATING…')
+    expect(button.disabled).toBe(true)
+    expect(button.style.opacity).toBe('0.6')
+    fireEvent.click(button)
+    expect(onUpdate).not.toHaveBeenCalled()
+  })
+
+  it("Couldn't update: the error line (an alert) under the sentences, and the button reads TRY AGAIN and works", () => {
+    const onUpdate = vi.fn()
+    draw('failed', onUpdate)
+    const alert = screen.getByRole('alert')
+    expect(alert.textContent).toBe(ERROR)
+    expect(alert.style.color).toBe('var(--error)')
+    expect(screen.getByText('This is 1.2.0. Overload needs 1.2.1 or newer.').compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const button = screen.getByRole('button', { name: 'TRY AGAIN' }) as HTMLButtonElement
+    expect(button.disabled).toBe(false)
+    expect(button.style.opacity).toBe('1')
+    fireEvent.click(button)
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('the error line is only in the failed state, and TRY AGAIN only there; UPDATE reads UPDATE in the others', () => {
+    for (const state of ['ready', 'updating'] as const) {
+      const { unmount } = draw(state)
+      expect(screen.queryByRole('alert'), state).toBeNull()
+      expect(screen.queryByText('TRY AGAIN'), state).toBeNull()
+      unmount()
+    }
+  })
+
+  it('UPDATE calls the update once per press', () => {
+    const onUpdate = vi.fn()
+    draw('ready', onUpdate)
+    fireEvent.click(screen.getByRole('button'))
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+  })
+
+  it('replaces the whole app: a full-height screen of its own; the button is the accent with its text in --on-accent; no hard-coded colour', () => {
+    const { container } = draw()
+    const root = container.firstElementChild as HTMLElement
+    expect(root.className).toContain('h-dvh')
+    expect(root.style.background).toBe('var(--base)')
+    const button = screen.getByRole('button')
+    expect(button.style.background).toBe('var(--accent)')
+    expect(button.style.color).toBe('var(--on-accent)')
+    expect(container.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+  })
+
+  it('has no way past it: no other button, no link', () => {
+    const { container } = draw('failed')
+    expect(container.querySelectorAll('button').length).toBe(1)
+    expect(container.querySelectorAll('a').length).toBe(0)
   })
 })

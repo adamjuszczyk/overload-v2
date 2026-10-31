@@ -17,6 +17,7 @@
 // weightUnit override (null) and no targetWeight at all, so D30 stays
 // byte-identical regardless of anything in this file.
 import { describe, it, expect, vi, afterEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ProgramExercise, WeekPlan, WeekPlanSet, WorkoutDay, Session } from '../../types'

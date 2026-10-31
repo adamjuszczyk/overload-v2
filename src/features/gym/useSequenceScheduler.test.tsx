@@ -9,6 +9,7 @@
 // hand-built lastEvent; this file is the one proof that THIS hook builds
 // that lastEvent correctly from real-shaped query results.
 import { describe, it, expect, vi, afterEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, screen } from '@testing-library/react'
 import type { WorkoutDay, WeekPlan, Session, SequenceItem, Mesocycle } from '../../types'
 

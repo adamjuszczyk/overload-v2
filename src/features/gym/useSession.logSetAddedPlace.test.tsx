@@ -5,6 +5,7 @@
 // as does a drop's, so the rows a plain session writes are what they were. `useLogSet` also takes the log's id from the caller when it
 // is given one (an added set's list entry names its log before the request goes out).
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { renderHook, act } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'

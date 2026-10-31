@@ -6,6 +6,7 @@
 // when the insert carries none (as Postgres' default does), and can lose one
 // reply after the row is stored.
 import { describe, it, expect, vi, afterEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { renderHook, waitFor } from '@testing-library/react'
 import { onlineManager, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'

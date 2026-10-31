@@ -7,7 +7,8 @@ import { useOfflineStore, type SyncFailure } from './offlineStore'
 import type { SyncQueueItem } from '../../lib/db'
 import { deriveCompletedAt, shouldClassifyAsSkipped } from '../gym/sessionCompletion'
 import { APP_STATUS_KEY, isMaintenanceRefusal } from '../../lib/maintenanceRefusal'
-import { useAppStatus } from '../release/useAppStatus'
+import { GATE_POLL_MS, useAppStatus } from '../release/useAppStatus'
+import { readVersionGate, useVersionGate, type VersionGate } from '../release/versionGate'
 
 export function useSyncQueueInit() {
   const addPending = useOfflineStore((s) => s.addPending)
@@ -47,7 +48,12 @@ export function useSyncQueueRunner() {
 
   useEffect(() => {
     if (isOnline && !prevOnline.current) {
+      // Chunk 73: this pass is held by `flushSyncQueue` itself until the version check has answered (below). A phone that comes back online
+      // holds an answer from before it left, which the gate does not trust (versionGate.ts), and TanStack does not read again on a reconnect
+      // it never saw as one (an app opened offline has not been told it was offline): so the read is asked for here too. A read already
+      // on its way is joined, never cancelled and sent twice.
       flushSyncQueue().catch((err) => console.error('[sync] flush failed', err))
+      if (readVersionGate() !== 'ok') void queryClient.refetchQueries({ queryKey: APP_STATUS_KEY }, { cancelRefetch: false })
     }
     prevOnline.current = isOnline
   }, [isOnline])
@@ -66,6 +72,34 @@ export function useSyncQueueRunner() {
     }
     lastKnown.current = maintenance
   }, [maintenance])
+
+  // Chunk 73 (SPEC.md 1.2.1, Screens → Update to continue [11]; Rule 5; the gap pre-read's 73-1 to 73-3). `flushSyncQueue` sends nothing until the
+  // version check has answered and says this version may run (versionGate.ts), so the passes started meanwhile were held, and none is started later by
+  // itself: the pass that follows the gate turning to 'ok' is this one. Not on the first look (a gate that is already 'ok' when the runner mounts has
+  // had its pass above), and not for 'blocked' (that is a screen, and nothing is sent).
+  const gate = useVersionGate()
+  const lastGate = useRef<VersionGate | null>(null)
+  useEffect(() => {
+    if (gate === 'ok' && lastGate.current !== null && lastGate.current !== 'ok') {
+      flushSyncQueue().catch((err) => console.error('[sync] flush failed', err))
+    }
+    lastGate.current = gate
+  }, [gate])
+
+  // While the gate has no answer, the phone is online and it holds writes, the status is read every minute (73-3): a read that failed, or an answer
+  // the gate does not trust yet, would otherwise hold the queue until the next hourly read. Joins a read already on its way.
+  useEffect(() => {
+    if (!isOnline || gate !== 'unknown') return
+    const timer = setInterval(() => {
+      void Promise.resolve()
+        .then(() => db.sync_queue.count())
+        .then((held) => {
+          if (held > 0) return queryClient.refetchQueries({ queryKey: APP_STATUS_KEY }, { cancelRefetch: false })
+        })
+        .catch(() => {})
+    }, GATE_POLL_MS)
+    return () => clearInterval(timer)
+  }, [isOnline, gate])
 }
 
 // B3: a finish queued offline guessed its status and completed_at from the
@@ -312,6 +346,9 @@ async function flushOnce() {
   // Record keys with an earlier write still unsent in this pass.
   const held = new Set<string>()
   for (const item of items) {
+    // Chunk 73: a pass that began under an 'ok' stops sending the moment the check says otherwise (an answer that this version is older than
+    // `min_version` lands mid-pass, or the phone is back online and its answer is not trusted yet). What it has not sent stays queued as it is.
+    if (readVersionGate() !== 'ok') break
     const payload = item.payload as { id?: string }
     const own = recordKey(item)
     if (removedByCleanup.has(item.id!)) continue
@@ -382,6 +419,8 @@ async function flushOnce() {
 // set of attempts, and the queue is sent again, in order. It was sent
 // MAX_SYNC_ATTEMPTS times, so it stays "sent" (`sendStarted`) when `attempts`
 // starts again from zero: a delete queued behind it must not cancel against it.
+// Chunk 73: while the version check holds the queue the pass that follows is held (flushSyncQueue), but the fresh set of attempts stays given: it is what
+// the person asked for, it sends nothing, and the pass after the check turns to 'ok' sends the writes.
 export async function retrySyncFailures(): Promise<void> {
   const items = await db.sync_queue.toArray()
   for (const item of items) {
@@ -401,6 +440,12 @@ let inFlight: Promise<void> | null = null
 let passRequested = false
 
 export function flushSyncQueue(): Promise<void> {
+  // Chunk 73 (SPEC.md 1.2.1, Rule 5; RULES.md, Standing rules: "Queued writes across a version change"; the gap pre-read's 73-1): the queue is sent
+  // by the version that is running, and an old version never sends it once the version check has refused it, nor before that check has answered.
+  // Every way into a pass comes through here (the runner, a retry, the finish, the number corrections, the change rows), so the check is made here,
+  // from the status in the query cache at this moment (versionGate.ts). A held call returns at once, resolved and with nothing sent: a finish that
+  // awaits it finds the session's writes still queued and queues its own behind them. The runner flushes when the check turns to 'ok'.
+  if (readVersionGate() !== 'ok') return Promise.resolve()
   if (inFlight) {
     passRequested = true
     return inFlight
@@ -410,7 +455,7 @@ export function flushSyncQueue(): Promise<void> {
       do {
         passRequested = false
         await flushOnce()
-      } while (passRequested)
+      } while (passRequested && readVersionGate() === 'ok')
     } finally {
       inFlight = null
     }

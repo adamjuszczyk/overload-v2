@@ -11,6 +11,7 @@
 // (`FullDeleteConfirm`: "Delete [name]?", what goes counted, CANCEL and a red DELETE), with the same hooks and the program's own id; deleted, History
 // stays here with its program filter reset. The confirmation's own states are `FullDeleteConfirm.test.tsx`'s.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, screen, fireEvent, within, waitFor, act } from '@testing-library/react'
 import type { Mesocycle } from '../../types'
 import type { HistoryRow } from './historyService'
