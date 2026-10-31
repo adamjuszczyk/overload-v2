@@ -318,6 +318,10 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 - **`verify-rls` reads a revoked anon select as a pass** (`42501` counts as a pass): for a table anon must read (`v2_app_status`), only the smoke's signed-out read catches a lost grant. `v2_app_status` sits in `TABLES` (since chunk 72; it was in `TABLES_AHEAD_OF_THE_APP` from 70), `PUBLIC_BY_DESIGN` and `NO_USER_ID_COLUMN` (without the last two: anon LEAK, signed-in 42703).
 
 **Verification and process**
+- **A chunk that removes or renames an export under `src/` searches `prototype/src` for it, then runs the prototype's smoke tests (`npx vitest run test --root .` from `prototype/`) and its build** (chunk 75's review): the prototype uses the real modules through `@app` and swaps only those in `SWAPS` and `OVERRIDDEN`; no script and no `vitest --changed` run looks at it (DECISIONS 274).
+- **A queue check on staging can put items in the producers' own shape straight into IndexedDB** (`overload-v2`, `sync_queue`) while the context is offline, and answer their table's POSTs with 503 to keep them queued while an online action runs; read `sync_queue` before and after (chunk 75's review).
+- **A drop that unlinks runs after the drop that finds by link** (chunk 75: notes before sessions).
+- **`vitest run --changed <base>` is the affected-files census** (chunk 75): it follows the import graph, where grepping a hook's callers misses some.
 - **To judge a re-captured fixture, capture it on the base tree too** (chunk 74's review): what the base's own fresh capture changes was already stale; what the branch adds beyond it is the chunk's change (14 of 19 `programs-pr*` fixtures were one link stale since chunk 66, with every check green).
 - **On a real screen, equal `fr` columns are compared with a tolerance** (chunk 74's review): Chromium lays out in 1/64 px and gives the remainder to one column.
 - **A soft delete leaves the row, and `staging-smoke.mjs` counts raw rows** (chunk 74): a reviewer that deletes a throwaway program on `staging-empty` hard-deletes it through the API as the account afterwards (RLS allows it), then runs the smoke (62/62).
