@@ -198,6 +198,7 @@ To-dos:
 - **70** (#253): optional — a re-runnable `scripts/` proof of 048's functions (the builder's proof2 S1–S6 and its 31-break runner, now only in the build's scratchpad), like `apply-ops-proof.mjs` for 043, with stdout and stderr read apart and a comment-only control; so 74, 75 or a later migration can re-prove them.
 - **75** (#265): `finishedRun.queue.test.tsx`'s "a pass already running…" also asserts the run's queued notes the running pass still held are refused (23503), are not on the server and are not queued again (the review's scratch probe passes on the branch; not committed).
 - **73** (#266), in `src/features/release/useRequiredUpdate.test.tsx`: (1) the update check refused fails at once (fake timers, `registration.update` rejected, `advance(1)` → false, no reload; today's test passes B7g at the 20 s cap); (2) a worker that turns redundant fails at once (same shape; B7j); (3) one attempt at a time by count (two unawaited presses, `advance(0)`, `registration.update` called once; today's test hangs under B7h).
+- The 1.2.1 tests-owed run (#275, 2026-10-31) added 75's one and 73's three owed tests (and one for an already-redundant worker), each failing under its named break by an assertion; 70's optional 048 proof was skipped (its kit is in the build's scratchpad).
 
 ## Format for all new entries
 
@@ -1303,6 +1304,23 @@ Chunk: 75   Date: 2026-10-31
 Recommendation: (a) delete the dead lines in `prototype/src/overrides/FinishedProgramPage.tsx` (one import name, one call, the unused `remove()` block; 21 lines; the review's patch makes the prototype build and pass 9/9, no DEMO state changes); (b) leave it broken until the release. Recommend (a), applied with the tests-owed run before the release's screen comparison. Non-blocking: batch 2's builders view the prototype from a pre-75 checkout (`c846229`).
 Answer: open — release batch.
 Evidence: HISTORY.md "2026-10-31 chunk 75"; the patch is in the coordinator's scratchpad (`prototype-fix.patch`), restated in HISTORY.
+
+
+## 275 The 1.2.1 release batch: the non-blocking questions raised during the build, each built as recommended
+Chunk: 71–80, the final review   Date: 2026-10-31
+Recommendation: take every recommendation as built (one line each below); the open entries 270, 271, 272 and 274 are answered with this batch.
+Answer: open — Adam's release card (2026-10-31).
+Evidence: each item's chunk section in HISTORY.md. The items:
+- 71: two lines of 1.2's notes reworded to pass the wording guard ("A stable program takes…"; `"Program" everywhere, "cues", "change the program".`), where SPEC says word for word. 71: the version test asserts the app is not older than the seeded `min_version` (TASKS says equal; 1.2.2 raises the row by SQL).
+- 79: SUPERSET on a last member with a superset below merges the two; a stored tempo past 20 steps to 20; the CURRENT PROGRAM card shows no days until the week's schedule is read.
+- 72: A no SIGN OUT on the maintenance screen (signing out wipes the queue it promises to keep); B two direct workout writes (`writeSetChanges`, the CUES write) don't re-read the status on `OL001` (leave; one line each otherwise); C the release run sheet's "every phone shows the screen within a minute" is reworded (an idle phone sees it within the hour); D a failed status read after an "on" answer keeps the screen (keep).
+- 74: `v2_start_run` ignores `deleted_at`, so a START sheet older than 5 minutes can start a deleted program (leave; a later migration in the next-version notes).
+- 75: a failed count read shows "Couldn't count what goes." with DELETE off; the phone's offline copy of the deleted sessions is not cleared (its one reader never matches them).
+- 73: A a suite-wide test default for the version (`vitest.setup.ts`); 1 the update screen also covers the sign-in page, no SIGN IN; 2 the queue is held while `v2_app_status` can't be read, so 048 must be live first (the run sheet keeps the production read of `v2_app_status` as its gate).
+- 78: an exercise added by + ADD EXERCISE has no sets, so WORKOUT COMPLETE stays until its first + ADD SET.
+- 80: the third line applies only queued `deleted` rows; a `retyped` / `pending_stages` row queued offline whose first send fails reads undone until the next pass (apply-all in the next-version notes).
+- Final review: SPEC [8b] says the full delete "goes back to PROGRAMS"; from History's filter the built app stays on History with the filter reset (TASKS 75's scope); keep as built.
+- 274 (amended by the tests-owed run and the final review): the prototype fix also drops or adjusts `prototype/test/workout.test.tsx`'s "preview: new design" assertion of 'TARGET RIR' (its "1.2 today" state renders the real, rebuilt preview since chunk 77); with both, the prototype builds and passes its smoke.
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
