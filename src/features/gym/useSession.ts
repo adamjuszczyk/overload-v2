@@ -7,6 +7,8 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useOfflineStore } from '../offline/offlineStore'
 import { DONE_WEEK_PLANS_KEY } from '../plan/useDoneWeekPlanIds'
 import { dropQueuedWritesNamingLog, flushSyncQueue, hasQueuedWritesFor, queueSetLogDelete, queuedSetLogsFor } from '../offline/useSyncQueue'
+import { withChangeRecords } from './useSessionSetChanges'
+import { toSessionSetChangeRecord, type DbSessionSetChange } from './sessionSetChangesService'
 import type { Session, SetLog, WeightUnit, FormRating, EnergyRating, PumpRating, Exercise } from '../../types'
 import type { StageKind } from '../../lib/plannerVocabulary.js'
 import {
@@ -14,6 +16,7 @@ import {
   fetchLastDoneOrSkippedSession,
   fetchSession,
   withQueuedSetLogs,
+  type QueuedSessionWrites,
   createSession,
   completeSession,
   reopenSession,
@@ -63,17 +66,38 @@ export function useLastDoneOrSkippedSession(mesoId: string) {
   })
 }
 
-// The workout's read of its session (DECISIONS 239): the server's rows and the set logs this phone has queued and not yet sent. The queue is read FIRST, so a pass that
-// sends and clears a log while the server is being asked can't leave it in neither (the server read began before the send landed, the queue read after the item was
-// gone). A queue that can't be read leaves the server's answer as it was: a read of the session never fails because of the phone's database.
+// What the phone has queued when its queue holds nothing for the session, or can't be read.
+const NOTHING_QUEUED: QueuedSessionWrites = { logs: [], deletedLogIds: [], patches: [], changeRows: [] }
+
+/**
+ * SPEC.md 1.2.1, Rules 6 [17], third line (Adam, 2026-10-30, DECISIONS 269 (a)): the workout's read of its session also applies this phone's queued DELETION records, the
+ * `deleted` rows of `v2_session_set_changes` that `queueSetChange` queued (`queuedSetLogsFor`'s `changeRows`), matched as `withChangeRecords` matches them (a row for the same
+ * planned set, or the same id, is replaced). A planned set deleted offline then stays hidden in a read that came back before the row was sent, and a LOG can't land on it
+ * (the log the later row hides would still count in History and Volume, `setDelete.ts`). Read-only: nothing in the queue changes. Only the deletion records, as SPEC words
+ * it: a queued `retyped` or `pending_stages` row is not applied here (it is held in the screen's cache, `holdInCache`, as before).
+ */
+export function withQueuedDeletions(session: Session, rows: ReadonlyArray<Record<string, unknown>>): Session {
+  const records = rows.flatMap((row) => {
+    if (row.kind !== 'deleted' || typeof row.id !== 'string' || typeof row.week_plan_set_id !== 'string') return []
+    const record = toSessionSetChangeRecord({ created_at: row.updated_at, ...row } as unknown as DbSessionSetChange)
+    return record === null ? [] : [record]
+  })
+  return records.length === 0 ? session : (withChangeRecords(session, records) as Session)
+}
+
+// The workout's read of its session (DECISIONS 239): the server's rows and what this phone has queued and not yet sent. The queue is read FIRST, so a pass that sends and
+// clears a write while the server is being asked can't leave it in neither (the server read began before the send landed, the queue read after the item was gone). A queue that
+// can't be read leaves the server's answer as it was: a read of the session never fails because of the phone's database.
+// SPEC.md 1.2.1, Rules 6: (1) the set logs the phone has queued (239); (2) the deletes and renumbers it has queued for the logs the server holds (243, `withQueuedSetLogs`);
+// (3) its queued deletion records, so a planned set deleted offline stays hidden (DECISIONS 269 (a), `withQueuedDeletions`). All three are read-only: the queue is as it was.
 export async function readActiveSession(sessionId: string): Promise<Session> {
-  let queued: Array<Record<string, unknown>> = []
+  let queued = NOTHING_QUEUED
   try {
     queued = await queuedSetLogsFor(sessionId)
   } catch {
-    queued = []
+    queued = NOTHING_QUEUED
   }
-  return withQueuedSetLogs(await fetchSession(sessionId), queued)
+  return withQueuedDeletions(withQueuedSetLogs(await fetchSession(sessionId), queued), queued.changeRows)
 }
 
 export function useActiveSession(sessionId: string | null) {
