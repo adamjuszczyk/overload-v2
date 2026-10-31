@@ -37,6 +37,9 @@ const REBUILT_SCREENS: Record<string, string> = {
   'features/programs/ChangeProgramPage.tsx': 'CHANGE THE PROGRAM',
   'features/planner/PlannerPage.tsx': 'the stepped program planner',
   'features/gym/GymSession.tsx': 'the workout screen',
+  // 1.2.1 (chunk 77): Today's PREVIEW SESSION is drawn in the workout's design and takes the token (its START SESSION); TodayPage.tsx, which opens it,
+  // keeps its current code (NOT_REBUILT below).
+  'features/gym/SessionPreview.tsx': 'PREVIEW SESSION',
   // 1.2.1 (chunk 71): Settings' WHAT'S NEW. SettingsPage.tsx itself keeps its current code (NOT_REBUILT below); these are the new files it
   // loads or opens, drawn in the new look, so a place on the accent in them takes the token (the sheet's GOT IT does).
   'features/settings/WhatsNewCard.tsx': "Settings' WHAT'S NEW card",
@@ -68,12 +71,8 @@ const NOT_REBUILT: Record<string, number> = {
   'components/Nav.tsx': 1, // INSTALL, the bottom bar's install strip: app chrome, in no 1.2 screen and on no board
   'features/auth/LoginPage.tsx': 1, // sign-in: Sign in
   'features/gym/CompletedTodayScreen.tsx': 3, // Today, after a session is finished (SPEC: finished session unchanged)
-  'features/gym/ExerciseReference.tsx': 1, // Today's session preview (the workout's cards stopped loading it in chunk 58b: the last-time sheet replaces its panel)
   'features/gym/MissedSessionPrompt.tsx': 1, // Today
-  'features/gym/PlanTargetsPanel.tsx': 1, // Today's session preview (the workout's cards stopped loading it in chunk 58a: the targets are in the rows)
-  'features/gym/PreviewExerciseCard.tsx': 1, // Today's session preview
   'features/gym/SequenceTodayPage.tsx': 1, // Today, a sequence run
-  'features/gym/SessionPreview.tsx': 1, // Today's session preview
   'features/gym/TodayPage.tsx': 2, // Today: START SESSION and GO TO PROGRAMS
   'features/history/HistoryPage.tsx': 1, // History: the picked tab
   'features/history/HistorySessions.tsx': 3, // History: the status and muscle chips

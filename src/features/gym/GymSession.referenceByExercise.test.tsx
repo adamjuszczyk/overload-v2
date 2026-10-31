@@ -8,8 +8,10 @@ import type { ReferenceSession } from './sessionService'
 // Screen-layer test (Lessons: "a screen-layer test asserting what
 // ExerciseReference receives and shows"; reviewer's note 4: "Swapped-in,
 // extra and superset members all resolve by their own exercise_id") —
-// renders the REAL GymSession -> SupersetBlock/ExerciseCard -> ExerciseReference
-// tree (same precedent as GymSession.superset.test.tsx, trimmed to a
+// renders the REAL GymSession -> SupersetBlock/ExerciseCard -> WorkoutExerciseHeader
+// tree (the `ExerciseReference` panel the quoted lesson names was replaced in
+// chunk 58b by the header's LAST line and sheet, which this test reads, and its
+// component was removed in chunk 77) (same precedent as GymSession.superset.test.tsx, trimmed to a
 // static render — no interaction needed here) with a mocked
 // useExerciseReferenceSessions Map holding FOUR distinctly-keyed,
 // discriminating entries (a plain superset member, its block partner, a

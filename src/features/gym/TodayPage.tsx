@@ -19,6 +19,7 @@ import SequenceTodayPage from './SequenceTodayPage'
 import CompletedTodayScreen from './CompletedTodayScreen'
 import TodayHeader from './TodayHeader'
 import { countCompletedSets } from './countCompletedSets'
+import { headerEyebrow } from './workoutHeaderLogic'
 import { useToday } from '../../hooks/useToday'
 import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import type { WorkoutDay, WeekPlan, DueTodayEntry } from '../../types'
@@ -204,9 +205,12 @@ export default function TodayPage() {
         <SessionPreview
           workoutDay={workoutDay}
           weekPlan={weekPlan}
-          weekNumber={currentWeek}
           today={today}
           isStarting={isStartingSession}
+          // Chunk 77 (SPEC PREVIEW SESSION: "[eyebrow as the workout writes it] · PREVIEW"): the workout's own first line, from the one function
+          // that writes it — the week and the weekday the session is due on (a moved session: the day it was moved to), DELOAD first on a
+          // deload session. A sequence run never previews (SequenceTodayPage), so this is always a weekday run's.
+          eyebrow={headerEyebrow({ scheduleType: 'weekday', weekNumber: currentWeek, isDeload: weekPlan?.isDeload === true, date: effectiveDate, slot: null })}
           onBack={() => setShowPreview(false)}
           onStart={handleStart}
         />
