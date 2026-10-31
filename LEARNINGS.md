@@ -262,3 +262,15 @@ Stage: build (1.2.1)
 What happened: at 01:07 UTC on 2026-10-31 `get_session`'s `rate_limit_info` switched from the 5-hour window to `rateLimitType: seven_day`, `status: allowed_warning` (resets Mon 2026-11-02 03:00 UTC), with chunks 70–75, 79 and the batch-1 work merged and four agents running; the meter read $219.34. The estimate said ~46% of the week (~57% with rework) for the whole build, from a proxy (L16); the meter gives no weekly percentage (L18), only this state change. The weekly use before the build (the setup sessions, other work that week) was never read.
 Possible change: the coordinator reads the weekly state before chunk 70 and at every merge, and the estimate states the week's starting point; at `allowed_warning` the coordinator runs one agent at a time and tells Adam the reset time.
 Verdict:
+
+## L28 A batch built in parallel committed captures a sibling's merge made stale   status: open
+Stage: build (1.2.1, LIGHT batch 2)
+What happened: 77 captured the new preview on its branch, where the exercise header still drew the history icon; 78 removed the icon in another branch of the same batch. Both merged green; the final review found the two committed preview pictures showing an icon the merged code doesn't draw. A prototype state that renders a real module ("1.2 today") drifted the same way when 77 rewrote it: its smoke tests caught it, its build didn't.
+Possible change: at a batch's last merge the reviewer re-runs the batch's capture tests with `CAPTURE_RENDER=1` on the merged tree and checks `git status` of the fixtures (React `useId` ids are noise); and the prototype's smoke runs at every merge that changes a module it renders.
+Verdict:
+
+## L29 Under 10 hours of running, against an estimate of 13–17   status: open
+Stage: build (1.2.1, the close)
+What happened: chunks 70–80 and the before-release agent steps ran 17:27 → ≈ 03:10 UTC (≈ 9.7 h, incl. a 30-min 5-hour-window stop), at $279 on the meter against ~$700–875. DATA chunks ran 1.1–1.55 h each (73's 2.4 h overlapped 74 and 75); the two LIGHT batches ≈ 2.9 h and 1.9 h. Running a DATA builder beside the previous chunk's review (74 beside 72, 75 beside 73, 80 beside batch 2) saved most of the time. The cost fit easily; the weekly window did not leave much room (L27).
+Possible change: the cost table's seeds move to the measured values (DATA ≈ 1.3 h; cost from the meter's deltas), and the estimate plans "next builder beside the current review" where the files allow.
+Verdict:
