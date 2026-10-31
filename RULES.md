@@ -315,9 +315,19 @@ Each of these gave a false result. Treat the check as insufficient on its own.
 - **A catalog-driven migration reaches tables only production has** (chunk 70's review): production's `public` holds Northstar's `ns_*` and Atlas's `atlas_*` tables (`scripts/schema-compare-exclude.txt`), which neither the replay nor staging has; a count proven on the replay is the replay's count, not production's. Such tables took the trigger under every owner tried, so they can't fail the deploy.
 - **PostgREST 12 answers a function's `P0002` with HTTP 500 and `OL001`–`OL003` with 400** (chunk 70's review): the app reads `error.code`, never the status.
 - **A re-seed while maintenance is on is refused whole (`OL001`)**: turn maintenance off before re-seeding.
-- **`verify-rls` reads a revoked anon select as a pass** (`42501` counts as a pass): for a table anon must read (`v2_app_status`), only the smoke's signed-out read catches a lost grant. `v2_app_status` sits in `TABLES_AHEAD_OF_THE_APP`, `PUBLIC_BY_DESIGN` and `NO_USER_ID_COLUMN` (the ahead entry alone fails: anon LEAK, signed-in 42703).
+- **`verify-rls` reads a revoked anon select as a pass** (`42501` counts as a pass): for a table anon must read (`v2_app_status`), only the smoke's signed-out read catches a lost grant. `v2_app_status` sits in `TABLES` (since chunk 72; it was in `TABLES_AHEAD_OF_THE_APP` from 70), `PUBLIC_BY_DESIGN` and `NO_USER_ID_COLUMN` (without the last two: anon LEAK, signed-in 42703).
 
 **Verification and process**
+- **To judge a re-captured fixture, capture it on the base tree too** (chunk 74's review): what the base's own fresh capture changes was already stale; what the branch adds beyond it is the chunk's change (14 of 19 `programs-pr*` fixtures were one link stale since chunk 66, with every check green).
+- **On a real screen, equal `fr` columns are compared with a tolerance** (chunk 74's review): Chromium lays out in 1/64 px and gives the remainder to one column.
+- **A soft delete leaves the row, and `staging-smoke.mjs` counts raw rows** (chunk 74): a reviewer that deletes a throwaway program on `staging-empty` hard-deletes it through the API as the account afterwards (RLS allows it), then runs the smoke (62/62).
+- **A new RPC's name and parameter are provable live as anon** (chunk 74's builder): the right shape answers the function's own refusal, a made-up parameter `PGRST202`.
+- **TanStack keeps a query's data when a later read fails** (chunk 72's review): "no answer when the read fails" holds only before the first success; a gate built on a query is tested with a read that fails after one that answered.
+- **A live check waits until no read of the intercepted table is in flight before routing it** (chunk 72's review): a foreground event joins a read already in flight, which then returns the real row.
+- **A fresh browser profile gets the once-sheet (chunk 71) over the first signed-in screen**: a live tool closes it with GOT IT before pressing anything.
+- **A CSS property name in a committed fixture's inline style makes Tailwind build a utility** (chunk 72: `text-wrap`); compare the stylesheet's rules, not only its name.
+- **Since the 2026-10-30 re-seed the test account is exempt in staging's real `v2_app_status`**: proving the trigger passes a non-exempt write takes a zero-row update as `staging-stable`.
+- **A first-paint test proves something applied above a gate** (chunk 72's builder: theme and accent survived the break until the cache was seeded before the first render).
 - **A break runner reads psql's stdout and stderr apart** (chunk 70's review): notices go to stderr, and with `> f 2>&1` a line diff shows changes even for a comment-only control. Every break runner has a comment-only control.
 - **Docker Hub answers 429 for the replay image here** (chunk 70): pull `supabase/postgres:<tag>` through `mirror.gcr.io` and `docker tag` it to the expected name.
 - Live browser verification against real data is a hard gate whenever a task calls for it (see Escalation 1). Live tests write only with an explicit go-ahead.

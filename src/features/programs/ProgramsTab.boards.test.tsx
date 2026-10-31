@@ -17,6 +17,10 @@ import { captureRender } from '../../testing/captureRender'
 //
 // The fixture names read "programs-pr1" and so on; none is a utility-shaped word (RULES: Tailwind builds the stylesheet from every
 // tracked file, and an id like those the rules name would add a rule to it).
+//
+// Chunk 74 (1.2.1 item 8a) adds the four DEMO states of the prototype's "Programs · YOUR PROGRAMS" at the bottom — Normal, Delete, Delete offline, No
+// programs — as `programs-your-programs-<state>` (turned into design/1.2.1/built/<same name>.png + .txt by `npm run shot`), and one long-name
+// variant of the confirm for the Chromium check of a name with no break in it.
 
 const state = vi.hoisted(() => ({
   mesos: [] as unknown[],
@@ -28,9 +32,11 @@ const state = vi.hoisted(() => ({
   workoutDays: {} as Record<string, unknown[]>,
   startError: null as unknown,
   pending: false,
+  online: true,
 }))
 const startRunMock = vi.hoisted(() => vi.fn())
 const completeMock = vi.hoisted(() => vi.fn())
+const deleteMock = vi.hoisted(() => vi.fn())
 
 vi.mock('./useMesos', () => ({
   useMesos: () => (state.loading ? { data: undefined, isLoading: true } : { data: state.mesos }),
@@ -41,6 +47,7 @@ vi.mock('./usePrograms', () => ({
   useSavedPrograms: () => ({ data: state.saved }),
   usePrograms: () => ({ data: state.programs }),
   useCreateProgram: () => ({ mutateAsync: vi.fn(), isPending: state.pending }),
+  useDeleteSavedProgram: () => ({ mutateAsync: deleteMock, isPending: state.pending }),
   useWorkoutDays: (programId: string) => ({ data: programId ? state.workoutDays[programId] : undefined }),
   useSequenceItems: () => ({ data: undefined }),
 }))
@@ -49,6 +56,7 @@ vi.mock('../plan/useSequenceCurrentCycle', () => ({ useSequenceCurrentCycle: () 
 // the card's weekday rows (1.2.1 item 19): none, so the run's own copy is in force in every week, as these boards were drawn
 vi.mock('../plan/useRunSchedule', () => ({ useRunSchedule: () => ({ data: [] }) }))
 vi.mock('../../hooks/useToday', () => ({ useToday: () => state.today }))
+vi.mock('../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => state.online }))
 
 const { default: ProgramsTab } = await import('./ProgramsTab')
 const { default: StartProgramSheet } = await import('./StartProgramSheet')
@@ -62,11 +70,13 @@ beforeEach(() => {
   state.marks = []
   state.workoutDays = {}
   state.pending = false
+  state.online = true
 })
 afterEach(() => {
   cleanup()
   startRunMock.mockReset()
   completeMock.mockReset()
+  deleteMock.mockReset()
 })
 
 const NO_DAYS: WeeklySchedule = { monday: null, tuesday: null, wednesday: null, thursday: null, friday: null, saturday: null, sunday: null }
@@ -327,5 +337,96 @@ describe('PR13 and PR13b — New program', () => {
     captureRender('programs-pr13b', document.body)
     expect((screen.getByRole('button', { name: 'CREATE PROGRAM' }) as HTMLButtonElement).disabled).toBe(false)
     expect(screen.getByText('You can change both later in the program.')).toBeTruthy()
+  })
+})
+
+// ─── Chunk 74 — Programs · YOUR PROGRAMS, the prototype's four DEMO states (1.2.1 item 8a) ───────────────────────────────────────────────────────
+// The prototype's world (prototype/src/demo/seed.ts): Upper/Lower runs, three saved programs (the one that runs first), three finished. Its Delete
+// states open the confirm on the first saved program that is not the running one: Push Pull Legs.
+
+describe('Programs · YOUR PROGRAMS (1.2.1 item 8a)', () => {
+  const UPPER_LOWER = program({ id: 'sp-ul', name: 'Upper/Lower', schedule: FOUR_DAYS, planningType: 'week_dependent' })
+  const PUSH_PULL_LEGS = program({ id: 'sp-ppl', name: 'Push Pull Legs', schedule: FIVE_DAYS, planningType: 'stable' })
+  const FULL_BODY = program({ id: 'sp-fb', name: 'Full Body 3x', schedule: { ...NO_DAYS, monday: 'wd-a', wednesday: 'wd-b', friday: 'wd-c' }, planningType: 'stable' })
+  const UL_COPY = program({ id: 'rc-ul', name: 'Upper/Lower', kind: 'run', schedule: FOUR_DAYS, planningType: 'week_dependent' })
+  const RUN: Mesocycle = { id: 'm-active', userId: 'user-1', name: 'Upper/Lower', programId: 'rc-ul', sourceProgramId: 'sp-ul', status: 'active', startDate: '2026-10-12', endDate: null, createdAt: '2026-10-12T08:00:00Z' }
+  const DONE: Mesocycle[] = [
+    { id: 'm-ppl2', userId: 'user-1', name: 'Push Pull Legs', programId: 'rc-ppl2', sourceProgramId: 'sp-ppl', status: 'completed', startDate: '2026-10-05', endDate: '2026-10-11', createdAt: '2026-10-05T08:00:00Z' },
+    { id: 'm-cut', userId: 'user-1', name: 'Cut PPL', programId: 'rc-cut', sourceProgramId: 'sp-ppl', status: 'completed', startDate: '2026-07-06', endDate: '2026-09-13', createdAt: '2026-07-06T08:00:00Z' },
+    { id: 'm-old', userId: 'user-1', name: 'Strength Block', programId: 'rc-old', sourceProgramId: 'sp-ppl', status: 'completed', startDate: '2026-04-06', endDate: '2026-06-14', createdAt: '2026-04-06T08:00:00Z' },
+  ]
+  const demoWorld = () => {
+    state.today = '2026-10-14'
+    state.mesos = [RUN, ...DONE]
+    state.saved = [UPPER_LOWER, PUSH_PULL_LEGS, FULL_BODY]
+    state.programs = [UL_COPY, UPPER_LOWER, PUSH_PULL_LEGS, FULL_BODY]
+    state.workoutDays = { 'sp-ul': [{ id: 'wd-a' }], 'sp-ppl': [{ id: 'wd-a' }], 'sp-fb': [{ id: 'wd-a' }] }
+  }
+  // by the row's id: the running program's name is also on the card above the list
+  const rowOf = (id: string) => document.querySelector(`[data-program="${id}"]`) as HTMLElement
+  const deleteOf = (id: string) => within(rowOf(id)).getByText('DELETE').closest('button') as HTMLButtonElement
+
+  it('Normal: OPEN · START · DELETE on every row; the running program\'s DELETE greyed with FINISH IT FIRST under it', () => {
+    demoWorld()
+    render(ui())
+    captureRender('programs-your-programs-normal', document.body)
+
+    expect(screen.getAllByText('DELETE')).toHaveLength(3)
+    expect(screen.getAllByText('FINISH IT FIRST')).toHaveLength(1)
+    expect(deleteOf('sp-ul').disabled).toBe(true)
+    expect(deleteOf('sp-ppl').disabled).toBe(false)
+    expect(deleteOf('sp-fb').disabled).toBe(false)
+    expect(within(rowOf('sp-ul')).getByText('RUNNING')).toBeTruthy()
+  })
+
+  it('Delete: "Delete Push Pull Legs?", the two sentences, CANCEL and a red DELETE', () => {
+    demoWorld()
+    render(ui())
+    fireEvent.click(deleteOf('sp-ppl'))
+    captureRender('programs-your-programs-delete', document.body)
+
+    expect(screen.getByText('Delete Push Pull Legs?')).toBeTruthy()
+    expect(screen.getByText('It leaves YOUR PROGRAMS. Its finished programs stay in History.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'CANCEL' })).toBeTruthy()
+    const confirm = within(screen.getByText('Delete Push Pull Legs?').parentElement as HTMLElement).getByRole('button', { name: 'DELETE' }) as HTMLButtonElement
+    expect(confirm.disabled).toBe(false)
+    expect(confirm.style.background).toBe('var(--error)')
+  })
+
+  it('Delete offline: "You\'re offline. Deleting needs a connection." and DELETE off', () => {
+    demoWorld()
+    state.online = false
+    render(ui())
+    fireEvent.click(deleteOf('sp-ppl'))
+    captureRender('programs-your-programs-delete-offline', document.body)
+
+    expect(screen.getByText('Delete Push Pull Legs?')).toBeTruthy()
+    expect(screen.getByText("You're offline. Deleting needs a connection.")).toBeTruthy()
+    expect(screen.queryByText('It leaves YOUR PROGRAMS. Its finished programs stay in History.')).toBeNull()
+    const confirm = within(screen.getByText('Delete Push Pull Legs?').parentElement as HTMLElement).getByRole('button', { name: 'DELETE' }) as HTMLButtonElement
+    expect(confirm.disabled).toBe(true)
+  })
+
+  it('No programs: "No programs yet" (unchanged from 1.2), with no DELETE on the screen', () => {
+    render(ui())
+    captureRender('programs-your-programs-no-programs', document.body)
+
+    expect(screen.getByText('No programs yet')).toBeTruthy()
+    expect(screen.queryByText('DELETE')).toBeNull()
+  })
+
+  it('the confirm with a name that has no break in it, and a refused delete\'s reason under it (for the Chromium check of the dialog\'s width)', async () => {
+    demoWorld()
+    const LONG = 'X'.repeat(80)
+    state.saved = [UPPER_LOWER, { ...PUSH_PULL_LEGS, name: LONG }, FULL_BODY]
+    deleteMock.mockRejectedValue({ code: 'OL002', message: 'a program with a running program cannot be deleted: finish it first' })
+    render(ui())
+    fireEvent.click(deleteOf('sp-ppl'))
+    fireEvent.click(within(screen.getByText(`Delete ${LONG}?`).parentElement as HTMLElement).getByRole('button', { name: 'DELETE' }))
+    await screen.findByRole('alert')
+    captureRender('programs-your-programs-delete-long-name', document.body)
+
+    expect(screen.getByText(`Delete ${LONG}?`).style.overflowWrap).toBe('anywhere')
+    expect(screen.getByText(`Couldn't delete ${LONG}.`).style.overflowWrap).toBe('anywhere')
   })
 })

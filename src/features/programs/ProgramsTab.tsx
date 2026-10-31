@@ -6,10 +6,11 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import { errorReason } from '../../components/exercisePickerLogic'
 import PlanTabs, { type PlanTab } from '../plan/PlanTabs'
 import { useSequenceCurrentCycle } from '../plan/useSequenceCurrentCycle'
+import { useOnlineStatus } from '../../hooks/useOnlineStatus'
 import { useToday } from '../../hooks/useToday'
 import type { Mesocycle, Program } from '../../types'
 import { useMesos, useCompleteMeso } from './useMesos'
-import { usePrograms, useSavedPrograms } from './usePrograms'
+import { useDeleteSavedProgram, usePrograms, useSavedPrograms } from './usePrograms'
 import CurrentProgramCard from './CurrentProgramCard'
 import StartProgramSheet from './StartProgramSheet'
 import NewProgramSheet from './NewProgramSheet'
@@ -22,6 +23,12 @@ import { finishedMeta, finishedProgramPath, plannerPath, programTypesLine, weekO
 // reads are out, PR4; with no program running the PLAN tab is locked (PR2). START and the New program sheet are `StartProgramSheet` and
 // `NewProgramSheet`; FINISH asks first (PR6) and finishes through `useCompleteMeso` (FINISHING…, PR7). END RUN, ACTIVE RUN, COMPLETED RUNS and
 // START RUN are gone with the page, as is the 'Mesocycle' literal.
+//
+// Chunk 74 (1.2.1 item 8a; SPEC Screens → Programs · YOUR PROGRAMS: delete a saved program; prototype "Programs · YOUR PROGRAMS"): a row's foot is
+// OPEN · START · DELETE. DELETE is greyed on the program the run started from, with FINISH IT FIRST under it (the database refuses that delete
+// too: `OL002`); on any other row it asks first ("Delete [name]?", `DeleteProgramConfirm` below) and deletes through `useDeleteSavedProgram`
+// (`v2_delete_saved_program`: the row stays, marked; no undo). Deleting needs a connection (SPEC Rules 2): offline the confirm says so and its
+// DELETE is off, and nothing is queued. A refused or failed delete stays inside the confirm as "Couldn't delete [name]." with the real reason.
 //
 // Where it goes: OPEN → the stepped planner on that saved program (`/program/:id`); FOCUS and DON'T CARE → the run's priorities, view-only
 // (`/plan/priorities`); EDIT PROGRAM → `/plan/change`; a FINISHED row → the finished program (chunk 66: `finishedProgramPath`).
@@ -83,6 +90,58 @@ function useRunUnit(meso: Mesocycle | null, program: Program | undefined, today:
   return sequence ? { word: 'CYCLE', n: cycle.cycle } : { word: 'WEEK', n: weekOfRun(today, meso.startDate) }
 }
 
+// The DELETE confirm (chunk 74; SPEC Screens → Programs · YOUR PROGRAMS [8a]): "Delete [name]?", "It leaves YOUR PROGRAMS. Its finished programs
+// stay in History." (Adam, DECISIONS 251: the UI never says "run"), CANCEL and a red DELETE; offline "You're offline. Deleting needs a connection."
+// and DELETE is off (the prototype's frame: the offline sentence takes the question's place; DELETE keeps its label, dimmed). While the request
+// is out the button says DELETING…; a failure stays here as "Couldn't delete [name]." and the reason the database gave, `OL002`'s included
+// (`errorReason` reads the message of a Supabase error, which is no `Error`). Mounted only while it is open, so `useOnlineStatus` watches the
+// phone only then and the screen test needs no mock for the other states.
+function DeleteProgramConfirm({ program, onClose }: { program: Program; onClose: () => void }) {
+  const isOnline = useOnlineStatus()
+  const deleteProgram = useDeleteSavedProgram()
+  const [failure, setFailure] = useState<{ reason: unknown } | null>(null)
+  // A second tap on DELETE in the same instant arrives before React has drawn the pending state: a ref says a delete is already out.
+  const sending = useRef(false)
+
+  // Offline the button is disabled, so a press never gets here: nothing is sent and nothing is queued (SPEC Rules 2).
+  async function confirm() {
+    if (sending.current) return
+    sending.current = true
+    setFailure(null)
+    try {
+      await deleteProgram.mutateAsync(program.id)
+      onClose()
+    } catch (reason) {
+      setFailure({ reason })
+    } finally {
+      sending.current = false
+    }
+  }
+
+  return (
+    <ConfirmDialog
+      title={`Delete ${program.name}?`}
+      body={
+        <>
+          <span>{isOnline ? 'It leaves YOUR PROGRAMS. Its finished programs stay in History.' : "You're offline. Deleting needs a connection."}</span>
+          {failure && (
+            <span role="alert" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 12 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 10, letterSpacing: '0.1em', color: 'var(--error)', overflowWrap: 'anywhere' }}>{`Couldn't delete ${program.name}.`}</span>
+              <span style={{ fontSize: 13, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{errorReason(failure.reason, !isOnline)}</span>
+            </span>
+          )}
+        </>
+      }
+      confirmLabel="DELETE"
+      pendingLabel={deleteProgram.isPending ? 'DELETING…' : 'DELETE'}
+      danger
+      isPending={deleteProgram.isPending || !isOnline}
+      onConfirm={confirm}
+      onCancel={onClose}
+    />
+  )
+}
+
 function Section({ label, action, children }: { label: string; action?: ReactNode; children: ReactNode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -122,6 +181,9 @@ export default function ProgramsTab({ onTab }: ProgramsTabProps) {
   const offline = typeof navigator !== 'undefined' && navigator.onLine === false
 
   const [sheet, setSheet] = useState<Sheet>(null)
+  // The saved program whose DELETE confirm is open (chunk 74), held whole: the confirm outlives the row, which leaves YOUR PROGRAMS the moment
+  // the lists are read again, before the confirm closes.
+  const [deleting, setDeleting] = useState<Program | null>(null)
   const [confirmFinish, setConfirmFinish] = useState(false)
   const [finishError, setFinishError] = useState<{ reason: unknown } | null>(null)
   // A second tap on FINISH in the same instant arrives before React has drawn the pending state: a ref says a finish is already out.
@@ -242,12 +304,22 @@ export default function ProgramsTab({ onTab }: ProgramsTabProps) {
                   </span>
                   <span style={{ ...MONO_CAPTION, overflowWrap: 'anywhere' }}>{programTypesLine(program, true)}</span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', borderTopWidth: 1, borderTopStyle: 'solid', borderTopColor: 'var(--border-subtle)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', borderTopWidth: 1, borderTopStyle: 'solid', borderTopColor: 'var(--border-subtle)' }}>
                   <Link to={plannerPath(program.id)} style={{ ...FOOT_BUTTON, borderRightWidth: 1, borderRightStyle: 'solid', borderRightColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}>
                     OPEN
                   </Link>
-                  <button type="button" onClick={() => setSheet({ kind: 'start', presetProgramId: program.id })} style={{ ...FOOT_BUTTON, color: 'var(--accent)' }}>
+                  <button type="button" onClick={() => setSheet({ kind: 'start', presetProgramId: program.id })} style={{ ...FOOT_BUTTON, borderRightWidth: 1, borderRightStyle: 'solid', borderRightColor: 'var(--border-subtle)', color: 'var(--accent)' }}>
                     START
+                  </button>
+                  {/* Chunk 74: greyed, with its reason under it, on the program the run started from (the database refuses that delete too, OL002). */}
+                  <button
+                    type="button"
+                    disabled={running}
+                    onClick={() => setDeleting(program)}
+                    style={{ ...FOOT_BUTTON, flexDirection: 'column', gap: 2, color: running ? 'var(--text-dim)' : 'var(--text-muted)', cursor: running ? 'default' : 'pointer' }}
+                  >
+                    DELETE
+                    {running && <span style={{ fontSize: 8, letterSpacing: '0.12em' }}>FINISH IT FIRST</span>}
                   </button>
                 </div>
               </div>
@@ -294,6 +366,9 @@ export default function ProgramsTab({ onTab }: ProgramsTabProps) {
         />
       )}
       {sheet?.kind === 'new' && <NewProgramSheet onClose={() => setSheet(null)} />}
+
+      {/* Closing only closes this program's confirm: a delete that answers after CANCEL, with another program's confirm open by then, leaves that one. */}
+      {deleting && <DeleteProgramConfirm program={deleting} onClose={() => setDeleting((open) => (open?.id === deleting.id ? null : open))} />}
 
       {confirmFinish && activeMeso && (
         <ConfirmDialog

@@ -50,6 +50,8 @@ vi.mock('./usePrograms', () => ({
   useSavedPrograms: () => state.saved,
   usePrograms: () => state.programs,
   useCreateProgram: () => ({ mutateAsync: createProgramMock, isPending: false }),
+  // chunk 74: DELETE's own cases are ProgramsTab.deleteSaved.test.tsx's; this file only needs the hook to exist
+  useDeleteSavedProgram: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useWorkoutDays: (programId: string) => ({ data: programId ? state.workoutDays[programId] : undefined }),
   useSequenceItems: (programId: string) => ({ data: programId ? state.sequenceItems[programId] : undefined }),
 }))
@@ -270,7 +272,7 @@ describe('PR1 — a program running', () => {
     expect(screen.getByText("DON'T CARE")).toBeTruthy()
   })
 
-  it('YOUR PROGRAMS: each saved program with its types in capitals, OPEN and START; RUNNING only on the program the run started from', () => {
+  it('YOUR PROGRAMS: each saved program with its types in capitals, OPEN, START and DELETE (chunk 74); RUNNING only on the program the run started from', () => {
     running()
     state.saved = { data: [SAVED_PPL, SAVED_UL, SAVED_SAME_NAME] }
     renderTab()
@@ -281,6 +283,7 @@ describe('PR1 — a program running', () => {
     for (const id of ['prog-ppl', 'prog-ul', 'prog-ppl-2']) {
       expect(within(programRow(id)).getByText('OPEN')).toBeTruthy()
       expect(within(programRow(id)).getByText('START')).toBeTruthy()
+      expect(within(programRow(id)).getByText('DELETE')).toBeTruthy()
     }
     // RUNNING follows the run's source program (an id), not a name that happens to match
     expect(within(programRow('prog-ppl')).getByText('RUNNING')).toBeTruthy()
@@ -949,10 +952,12 @@ describe('absence — the old page\'s words are gone from every state (Checks th
     expect(screen.queryByRole('button', { name: /trash/i })).toBeNull()
   })
 
-  it('and no row of the tab has a delete control (a finished run is deleted from its own page, chunk 66)', () => {
+  it('and no finished program on the tab has a delete control (it is deleted from its own page, chunk 66); YOUR PROGRAMS\' rows have DELETE since chunk 74 (ProgramsTab.deleteSaved.test.tsx)', () => {
     running()
     renderTab()
     expect(screen.queryByLabelText(/delete/i)).toBeNull()
+    expect(within(section('FINISHED')).queryByText(/delete/i)).toBeNull()
+    expect(within(section('CURRENT PROGRAM')).queryByText(/delete/i)).toBeNull()
   })
 })
 

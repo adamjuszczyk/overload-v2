@@ -32,7 +32,8 @@ export type WeightUnit = 'kg' | 'lbs'
 // v2_programs.kind (migration 027/028, chunk 6) — 'saved' is the reusable
 // template; 'run' is a run's own copy, created by v2_start_run and never
 // shown in a program list (programService.ts's fetchSavedPrograms filters
-// to 'saved' at the query; fetchPrograms stays unfiltered — PlanPage and
+// to 'saved' at the query, and since chunk 74 to the undeleted ones, through
+// isListedSavedProgram; fetchPrograms stays unfiltered — PlanPage and
 // the planner (PlannerPage.tsx, chunk 11) both look a program up by a
 // meso's/route's own id, which is a 'run' program for an active run's copy).
 export type ProgramKind = 'saved' | 'run'
@@ -326,6 +327,12 @@ export interface Program {
   // above; undefined reads as 'weekday' (the column default) everywhere
   // this is checked.
   scheduleType?: ScheduleType
+  // Chunk 74 (1.2.1 item 8a; migration 048's v2_programs.deleted_at): set when a saved
+  // program is deleted — the row stays, and a run's source_program_id keeps pointing at
+  // it. Optional like the fields above (hand-built literals predate it); undefined and
+  // null both read as "not deleted". programService.ts's isListedSavedProgram is the one
+  // test of it.
+  deletedAt?: string | null
   // There is no deloadRules here (chunk 48; SPEC Objects stored → Program
   // [1.2]): v2_programs.deload_rules stays in the database, unread and
   // unwritten, and the deload rules are the user's Settings rules
