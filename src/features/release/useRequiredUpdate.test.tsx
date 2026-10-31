@@ -221,6 +221,48 @@ describe('applyUpdate: UPDATE, branch by branch', () => {
     expect(reload).not.toHaveBeenCalled()
   })
 
+  // The three tests below ("fails at once") run on fake timers and read the answer one millisecond in, so a failure that waits for the 20 s cap is caught by an
+  // assertion. The two tests before them (a refused check, a redundant worker) wait on real timers and the cap resolves the same `false`: under a break that
+  // defers the answer to the cap they pass at 20 s, or time out earlier, and neither is an assertion (chunk 73's review: B7g, B7j).
+  it('the update check refused (update() rejects) fails at once: one millisecond on the attempt is over, the 20 s cap is not what ends it', async () => {
+    vi.useFakeTimers()
+    install()
+    registration.update.mockRejectedValue(new TypeError('Failed to fetch'))
+    let outcome: boolean | undefined
+    void applyUpdate().then((ok) => (outcome = ok))
+    await advance(1)
+    expect(outcome, 'a refusal that waits for the cap is still undefined here').toBe(false)
+    expect(registration.update).toHaveBeenCalledTimes(1)
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('a worker that turns redundant while UPDATE watches it fails at once, not at the cap', async () => {
+    vi.useFakeTimers()
+    install()
+    const worker = new FakeWorker('installing')
+    registration.installing = worker
+    let outcome: boolean | undefined
+    void applyUpdate().then((ok) => (outcome = ok))
+    await advance(0) // UPDATE has attached to the worker
+    expect(outcome, 'still waiting while the worker installs').toBeUndefined()
+    worker.become('redundant')
+    await advance(1)
+    expect(outcome, 'a redundant worker that waits for the cap is still undefined here').toBe(false)
+    expect(reload).not.toHaveBeenCalled()
+  })
+
+  it('a worker that is already redundant when UPDATE looks at it fails at once, not at the cap', async () => {
+    vi.useFakeTimers()
+    install()
+    registration.installing = new FakeWorker('redundant')
+    let outcome: boolean | undefined
+    void applyUpdate().then((ok) => (outcome = ok))
+    await advance(1)
+    expect(outcome, 'a redundant worker that waits for the cap is still undefined here').toBe(false)
+    expect(registration.update, 'there was a worker to look at, so no update is asked for').not.toHaveBeenCalled()
+    expect(reload).not.toHaveBeenCalled()
+  })
+
   it('no worker within 20 s: failed at 20 s and not before, nothing reloaded; a worker that comes later is not reloaded for', async () => {
     vi.useFakeTimers()
     install()
@@ -375,6 +417,25 @@ describe('useRequiredUpdate: when the screen shows, and the steps UPDATE goes th
     await act(async () => void (await result.current.update()))
     expect(reload).toHaveBeenCalledTimes(1)
     expect(result.current.state).toBe('updating')
+  })
+
+  it('two presses at once make one attempt: the registration is asked for an update once, counted without awaiting either press', async () => {
+    // The test after this one awaits its second press. Under a missing guard that press runs a second attempt, which waits on the cap and hangs on fake timers
+    // (and leaves the hook of every test behind it unrendered); the count below fails by an assertion instead. It stands first so that it runs on a clean page.
+    vi.useFakeTimers()
+    install()
+    const { result } = renderHook(() => useRequiredUpdate(), { wrapper })
+    await advance(0)
+    expect(result.current.required).toBe(true)
+    act(() => {
+      void result.current.update()
+      void result.current.update()
+    })
+    await advance(0)
+    expect(registration.update, 'one request for an update, however many presses').toHaveBeenCalledTimes(1)
+    expect(result.current.state).toBe('updating')
+    await advance(UPDATE_WAIT_MS)
+    expect(result.current.state, 'the one attempt ended at the cap').toBe('failed')
   })
 
   it('a second press while it works does nothing: one attempt at a time', async () => {
