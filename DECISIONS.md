@@ -1322,6 +1322,13 @@ Evidence: each item's chunk section in HISTORY.md. The items:
 - Final review: SPEC [8b] says the full delete "goes back to PROGRAMS"; from History's filter the built app stays on History with the filter reset (TASKS 75's scope); keep as built.
 - 274 (amended by the tests-owed run and the final review): the prototype fix also drops or adjusts `prototype/test/workout.test.tsx`'s "preview: new design" assertion of 'TARGET RIR' (its "1.2 today" state renders the real, rebuilt preview since chunk 77); with both, the prototype builds and passes its smoke.
 
+
+## 276 The 1.2.1 vibe check on staging: like, dislike, confused
+Chunk: the release   Date: 2026-10-31
+Recommendation: —
+Answer: Adam, 2026-10-31: liked all 11 stops (01 What's new, 02 PREVIEW SESSION, 03 exercise headers, 04 warmup rows, 05 workout complete, 06 programs, 07 planner, 08 CHANGE THE PROGRAM, 09 finished program, 10 priorities, 11 full delete); disliked none, so nothing goes to the next-version notes from it; confused by 12, the maintenance flip: not checked on a second account, and the screen showed with a delay — explained: the app reads the flag at start, on return to the foreground and hourly, while the database refuses writes at once (SPEC [10], Rule 3); no change. Release card decision 1 confirmed: every display choice stays as built.
+Evidence: DECISIONS 254, 271, 275 (72's card C).
+
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
 - Answer: (Adam, 2026-10-16) "(a) changed: a picker switched to a segment the set doesn't have carries the set's own value over: NUMBER n → RANGE n–(n+2); RANGE a–b → NUMBER a. The boards' examples are used only when the set has no target at all. (b) and (c) accepted." So (a) changes, built in d31b (#162, `bc2de7c`); its AMRAP case and "the set's own value" are 180; (b) and (c) stand. No SPEC rule says what a picker's segment switch starts from, so (a) has no SPEC line (as 128's starting target). Full text in HISTORY.md.
