@@ -1277,19 +1277,19 @@ Evidence: HISTORY.md "2026-10-30 independent gap pre-read of chunks 72, 73, 75 a
 ## 270 [10] Signed out during maintenance the screen covers the login page, so an exempt account can't sign in (SPEC "signing in still works", DECISIONS 255)
 Chunk: 72   Date: 2026-10-30
 Recommendation: (b) a small SIGN IN action on the signed-out maintenance screen only, because SPEC decides behaviour; (a) as drawn, with "be signed in first" on 1.2.2's run sheet. Built as (b) unless Adam says otherwise; non-blocking (unused until 1.2.2).
-Answer: open — release batch.
+Answer: as built (b), SIGN IN on the signed-out screen (Adam, 2026-10-31, release card: "All as built, pending my vibe check (dislikes come separately)").
 Evidence: HISTORY.md pre-read, 72-3.
 
 ## 271 [10] [11] A direct write refused `OL001` doesn't bring the maintenance screen up until the next hourly read
 Chunk: 72   Date: 2026-10-30
 Recommendation: any response with `code === 'OL001'` re-reads `['v2_appStatus']` at once (the queue's catch and one `MutationCache` `onError`), so the run sheet's "within a minute" holds and an old app stops writing at once; otherwise the run sheet's line changes. Built as recommended; non-blocking.
-Answer: open — release batch.
+Answer: as built (Adam, 2026-10-31, release card: all as built, pending his vibe check).
 Evidence: HISTORY.md pre-read, 72-4.
 
 ## 272 [8b] A Coach note queued offline on a deleted run's session survives the full delete, unlinked
 Chunk: 75   Date: 2026-10-30
 Recommendation: drop such queued notes in the full delete (249 row 14 says the run's notes go); or accept it as rare (Adam's account only). Built as the drop unless Adam says otherwise; non-blocking.
-Answer: open — release batch.
+Answer: as built, the drop (Adam, 2026-10-31, release card: all as built, pending his vibe check).
 Evidence: HISTORY.md pre-read, 75-5.
 
 ## 273 Independent gap pre-read of 72, 73, 75 and 80: the non-blocking findings go into each chunk's brief
@@ -1302,14 +1302,14 @@ Evidence: HISTORY.md "2026-10-30 independent gap pre-read of chunks 72, 73, 75 a
 ## 274 The prototype no longer builds: chunk 75 removed `useDeleteMeso`, which the prototype's FinishedProgramPage override imports (dead code)
 Chunk: 75   Date: 2026-10-31
 Recommendation: (a) delete the dead lines in `prototype/src/overrides/FinishedProgramPage.tsx` (one import name, one call, the unused `remove()` block; 21 lines; the review's patch makes the prototype build and pass 9/9, no DEMO state changes); (b) leave it broken until the release. Recommend (a), applied with the tests-owed run before the release's screen comparison. Non-blocking: batch 2's builders view the prototype from a pre-75 checkout (`c846229`).
-Answer: open — release batch.
+Answer: (a), in the 1.2.1 notes PR, with 275's amendment (Adam, 2026-10-31, release card).
 Evidence: HISTORY.md "2026-10-31 chunk 75"; the patch is in the coordinator's scratchpad (`prototype-fix.patch`), restated in HISTORY.
 
 
 ## 275 The 1.2.1 release batch: the non-blocking questions raised during the build, each built as recommended
 Chunk: 71–80, the final review   Date: 2026-10-31
 Recommendation: take every recommendation as built (one line each below); the open entries 270, 271, 272 and 274 are answered with this batch.
-Answer: open — Adam's release card (2026-10-31).
+Answer: all as built, pending Adam's vibe check; dislikes come separately (Adam, 2026-10-31, release card). The 1.2.1 notes: drafted by an agent from what was built, Adam edits.
 Evidence: each item's chunk section in HISTORY.md. The items:
 - 71: two lines of 1.2's notes reworded to pass the wording guard ("A stable program takes…"; `"Program" everywhere, "cues", "change the program".`), where SPEC says word for word. 71: the version test asserts the app is not older than the seeded `min_version` (TASKS says equal; 1.2.2 raises the row by SQL).
 - 79: SUPERSET on a last member with a superset below merges the two; a stored tempo past 20 steps to 20; the CURRENT PROGRAM card shows no days until the week's schedule is read.
@@ -1321,6 +1321,13 @@ Evidence: each item's chunk section in HISTORY.md. The items:
 - 80: the third line applies only queued `deleted` rows; a `retyped` / `pending_stages` row queued offline whose first send fails reads undone until the next pass (apply-all in the next-version notes).
 - Final review: SPEC [8b] says the full delete "goes back to PROGRAMS"; from History's filter the built app stays on History with the filter reset (TASKS 75's scope); keep as built.
 - 274 (amended by the tests-owed run and the final review): the prototype fix also drops or adjusts `prototype/test/workout.test.tsx`'s "preview: new design" assertion of 'TARGET RIR' (its "1.2 today" state renders the real, rebuilt preview since chunk 77); with both, the prototype builds and passes its smoke.
+
+
+## 276 The 1.2.1 vibe check on staging: like, dislike, confused
+Chunk: the release   Date: 2026-10-31
+Recommendation: —
+Answer: Adam, 2026-10-31: liked all 11 stops (01 What's new, 02 PREVIEW SESSION, 03 exercise headers, 04 warmup rows, 05 workout complete, 06 programs, 07 planner, 08 CHANGE THE PROGRAM, 09 finished program, 10 priorities, 11 full delete); disliked none, so nothing goes to the next-version notes from it; confused by 12, the maintenance flip: not checked on a second account, and the screen showed with a delay — explained: the app reads the flag at start, on return to the foreground and hourly, while the database refuses writes at once (SPEC [10], Rule 3); no change. Release card decision 1 confirmed: every display choice stays as built.
+Evidence: DECISIONS 254, 271, 275 (72's card C).
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.
