@@ -88,6 +88,8 @@ describe('TodayPage → PREVIEW SESSION: the eyebrow is the workout\'s own first
     expect(screen.getByText('WEEK 2 · TUESDAY · PREVIEW')).toBeTruthy()
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('PULL 1')
     expect(container.textContent).toContain('55 kg × 9 @ RIR 2')
+    // Today's own date is the one "last week" is counted from: Tuesday 2026-01-06, last week's Tuesday
+    expect(Array.from(container.querySelectorAll('[data-last-line]')).map((el) => el.textContent)).toEqual(Array(4).fill('LAST = LAST WEEK, TUE'))
     expect(screen.queryByText(/DELOAD/)).toBeNull()
   })
 

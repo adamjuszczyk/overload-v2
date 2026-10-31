@@ -260,8 +260,9 @@ export default function TodayPage() {
                 {/* Chunk 21 (SPEC "Deload" — a deload is a property of a
                     SESSION, not a week): was "DELOAD WEEK"; this is one
                     upcoming session's own plan row, same condition as
-                    GymSession.tsx/SessionPreview.tsx's own "DELOAD · WEEK N"
-                    label, which already read this way. */}
+                    GymSession.tsx's own "DELOAD · WEEK N" header line, which
+                    already read this way (and, since chunk 77, as the preview's
+                    eyebrow, which Today writes with the same function). */}
                 DELOAD
               </p>
             )}

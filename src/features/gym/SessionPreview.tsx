@@ -36,7 +36,7 @@ interface SessionPreviewProps {
   onStart: () => void
 }
 
-// A card as a card is: a surface in the scrolling column that is never squeezed to the screen's height.
+// A card: a surface in the scrolling column, never squeezed to the screen's height.
 const CARD: CSSProperties = { background: 'var(--surface)', borderRadius: 12, ...hairline('var(--border)'), overflow: 'hidden', flexShrink: 0 }
 
 const pad2 = (n: number): string => String(n).padStart(2, '0')

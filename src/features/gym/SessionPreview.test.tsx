@@ -277,6 +277,20 @@ describe('PREVIEW SESSION — supersets as the workout draws them', () => {
     expect(Array.from(block.querySelectorAll('[data-preview-round]')).map((round) => setsIn(round))).toEqual([[['A1 60 kg × 12 @ RIR 2'], ['B1 15 kg × 18 @ RIR 1']]])
   })
 
+  it('each member\'s rows are in its own unit, its warmups and its place in the rounds alike (an lbs member beside a kg one, Settings in kg)', () => {
+    const lbsRow = { ...peRow, weightUnit: 'lbs' as const }
+    const kgFace = { ...peFace, weightUnit: 'kg' as const }
+    const sets = [
+      plannedSet('row-a', 'xe-row', 1, { targetWeight: 60, repMin: 12, repMax: 12, targetRir: 2 }),
+      plannedSet('face-w', 'xe-face', 1, { isWarmup: true, targetWeight: 10, repMin: 12, repMax: 12, targetRir: null }),
+      plannedSet('face-a', 'xe-face', 2, { targetWeight: 15, repMin: 18, repMax: 18, targetRir: 1 }),
+    ]
+    const { container } = renderPreview({ weekPlan: planOf([lbsRow, kgFace], sets) })
+    const block = container.querySelector('[data-preview-superset="A"]') as HTMLElement
+    expect(setsIn(card(container, 'xe-face'))).toEqual([['W 10 kg × 12']])
+    expect(Array.from(block.querySelectorAll('[data-preview-round]')).map((round) => setsIn(round))).toEqual([[['A1 132.3 lbs × 12 @ RIR 2'], ['B1 15 kg × 18 @ RIR 1']]])
+  })
+
   it('consecutive exercises that share a block are one superset, the blocks are lettered in the order they are drawn, and a lone member is a plain card', () => {
     const member = (id: string, position: number, block: string | null) => programExercise(id, `e-${id}`, `Exercise ${id}`, 'back', position, { supersetBlockId: block })
     const exercises = [member('p1', 0, 'blk-x'), member('p2', 1, 'blk-x'), member('p3', 2, null), member('p4', 3, 'blk-y'), member('p5', 4, 'blk-y'), member('p6', 5, 'blk-y'), member('p7', 6, 'blk-x')]
@@ -345,6 +359,10 @@ describe('PREVIEW SESSION — empty states', () => {
     expect(screen.queryByText('No exercises in this workout yet.')).toBeNull()
     expect(container.querySelectorAll('[data-preview-exercise]')).toHaveLength(0)
     expect(screen.getByRole('button', { name: 'START SESSION' })).toBeTruthy()
+    cleanup()
+    // a planned week is its own source: its empty list is "no exercises" whatever the program's read is doing
+    renderPreview({ weekPlan: planOf([], []) })
+    expect(screen.getByText('No exercises in this workout yet.')).toBeTruthy()
   })
 })
 
