@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -27,6 +28,7 @@ vi.mock('./appStatusService', () => ({
 
 const { queryClient } = await import('../../lib/queryClient')
 const { useAppStatus, useGate, maintenanceGate, GATE_POLL_MS, IDLE_POLL_MS } = await import('./useAppStatus')
+const APP_QUERY_DEFAULTS = queryClient.getDefaultOptions() // a test that changes them puts them back
 
 const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 const ON: AppStatus = { maintenance: true, minVersion: '1.2.1', exemptUserIds: [], updatedAt: 'now' }
@@ -53,6 +55,7 @@ afterEach(() => {
   vi.useRealTimers()
   vi.restoreAllMocks()
   onlineManager.setOnline(true) // the manager is module state: an offline test leaves it offline for the next
+  queryClient.setDefaultOptions(APP_QUERY_DEFAULTS)
   queryClient.clear()
 })
 
@@ -246,5 +249,133 @@ describe('what the status asks of an account (maintenanceGate)', () => {
     await waitFor(() => expect(adam.result.current).toBe('strip'))
     act(() => goOffline())
     expect(adam.result.current, 'offline: the app works as usual').toBeNull()
+  })
+})
+
+// ─── Chunk 73 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+const MUST_UPDATE: AppStatus = { ...OFF, minVersion: '1.2.2' } // the running version is stubbed 1.2.1
+
+describe('chunk 72 review, D: a read that fails after one that answered keeps the answer (TanStack holds the data of the last good read)', () => {
+  it('maintenance read on, then a read that fails online: the screen stays up, and nothing is erased', async () => {
+    queryClient.setDefaultOptions({ queries: { retry: false } }) // the failure is the point, not the retry after it
+    world.status = ON
+    const { result } = renderHook(() => useGate(), { wrapper })
+    await waitFor(() => expect(result.current).toBe('maintenance'))
+    world.failing = true
+    act(() => setVisibility('visible'))
+    await waitFor(() => expect(queryClient.getQueryState(['v2_appStatus'])?.status).toBe('error'))
+    expect(world.reads).toBe(2)
+    expect(result.current, 'the failed read changed nothing the person sees').toBe('maintenance')
+    expect(queryClient.getQueryData(['v2_appStatus'])).toMatchObject({ maintenance: true })
+    world.failing = false
+    world.status = OFF
+    act(() => setVisibility('visible'))
+    await waitFor(() => expect(result.current).toBeNull()) // a read that answers differently is what changes it
+  })
+
+  it('the same for the version: an update that was required stays required through a read that fails', async () => {
+    queryClient.setDefaultOptions({ queries: { retry: false } })
+    world.status = MUST_UPDATE
+    const { result } = renderHook(() => useAppStatus(), { wrapper })
+    await waitFor(() => expect(result.current.data?.minVersion).toBe('1.2.2'))
+    world.failing = true
+    act(() => setVisibility('visible'))
+    await waitFor(() => expect(queryClient.getQueryState(['v2_appStatus'])?.status).toBe('error'))
+    expect(result.current.data?.minVersion).toBe('1.2.2')
+  })
+})
+
+describe('chunk 72 review, P2: one read when the app comes back to the foreground, however many components use the status', () => {
+  it('three users of the status (the gate, and two more): a return reads once, and once more for the next', async () => {
+    const gate = renderHook(() => useGate(), { wrapper })
+    const second = renderHook(() => useAppStatus(), { wrapper })
+    const third = renderHook(() => useAppStatus(), { wrapper })
+    await waitFor(() => expect(second.result.current.data).toBeDefined())
+    expect(world.reads, 'one read at start for all three').toBe(1)
+
+    act(() => setVisibility('visible'))
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(world.reads, 'a return is one read').toBe(2)
+    act(() => setVisibility('visible'))
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(world.reads).toBe(3)
+
+    third.unmount()
+    act(() => setVisibility('visible'))
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(world.reads, 'one user fewer: still one read').toBe(4)
+    gate.unmount()
+    second.unmount()
+    act(() => setVisibility('visible'))
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(world.reads, 'nobody listens: none').toBe(4)
+  })
+
+  it("the listener is the document's own and is added once: one add for three users, removed with the last", () => {
+    const add = vi.spyOn(document, 'addEventListener')
+    const remove = vi.spyOn(document, 'removeEventListener')
+    const ofVisibility = (spy: typeof add) => spy.mock.calls.filter(([type]) => type === 'visibilitychange').length
+    const views = [renderHook(() => useAppStatus(), { wrapper }), renderHook(() => useAppStatus(), { wrapper }), renderHook(() => useGate(), { wrapper })]
+    expect(ofVisibility(add)).toBe(1)
+    views[0].unmount()
+    views[1].unmount()
+    expect(ofVisibility(remove), 'one user still listens').toBe(0)
+    views[2].unmount()
+    expect(ofVisibility(remove)).toBe(1)
+  })
+})
+
+describe('Update to continue is checked at the same moments as maintenance: every minute while the screen shows', () => {
+  it('the running version is older than min_version: a read every minute, minute after minute, whatever maintenance says', async () => {
+    world.status = MUST_UPDATE
+    const { result } = await mountWithFakeTimers()
+    expect(result.current.data?.minVersion).toBe('1.2.2')
+    expect(world.reads).toBe(1)
+    await advance(GATE_POLL_MS - 1)
+    expect(world.reads).toBe(1)
+    await advance(1)
+    expect(world.reads).toBe(2)
+    await advance(GATE_POLL_MS * 3)
+    expect(world.reads).toBe(5)
+  })
+
+  it('an exempt account is gated by the version like everyone: its strip is not a screen, but the update screen is', async () => {
+    world.user = { id: 'u-adam' }
+    world.status = { ...MUST_UPDATE, maintenance: true, exemptUserIds: ['u-adam'] }
+    await mountWithFakeTimers()
+    await advance(GATE_POLL_MS * 2)
+    expect(world.reads).toBe(3)
+  })
+
+  it('signed out too (the screen covers the sign-in page)', async () => {
+    world.user = null
+    world.status = MUST_UPDATE
+    await mountWithFakeTimers()
+    await advance(GATE_POLL_MS * 2)
+    expect(world.reads).toBe(3)
+  })
+
+  it('the minute that finds min_version back at the running version stops the minutes: the next read is an hour away', async () => {
+    world.status = MUST_UPDATE
+    const { result } = await mountWithFakeTimers()
+    await advance(GATE_POLL_MS)
+    expect(world.reads).toBe(2)
+    world.status = OFF
+    await advance(GATE_POLL_MS)
+    expect(world.reads).toBe(3)
+    await advance(1)
+    expect(result.current.data?.minVersion).toBe('1.2.1')
+    await advance(GATE_POLL_MS * 30)
+    expect(world.reads, 'half an hour on: nothing more').toBe(3)
+    await advance(IDLE_POLL_MS)
+    expect(world.reads).toBe(4)
+  })
+
+  it('control: min_version at the running version is no screen, so only the hour reads', async () => {
+    world.status = OFF
+    await mountWithFakeTimers()
+    await advance(GATE_POLL_MS * 10)
+    expect(world.reads).toBe(1)
   })
 })

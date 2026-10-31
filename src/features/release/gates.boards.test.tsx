@@ -43,7 +43,7 @@ vi.mock('../programs/FinishedProgramPriorities', () => ({ default: () => <div>FI
 vi.mock('../coach/MesoPrioritiesPage', () => ({ default: () => <div>MESO PRIORITIES</div> }))
 vi.mock('../library/LibraryPage', () => ({ default: () => <div>LIBRARY PAGE</div> }))
 vi.mock('../coach/CoachPage', () => ({ default: () => <div>COACH PAGE</div> }))
-vi.mock('../pwa/PwaUpdateNotice', () => ({ default: () => null }))
+vi.mock('../pwa/useServiceWorker', () => ({ useServiceWorker: () => {}, serviceWorkerRecord: () => ({ registration: undefined, newWorkerActive: false }) }))
 vi.mock('../settings/AfterUpdateSheet', () => ({ default: () => null }))
 
 // The three vite `define` globals (vite.config.ts), which vitest.config.ts doesn't define.

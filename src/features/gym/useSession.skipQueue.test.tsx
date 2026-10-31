@@ -5,6 +5,7 @@
 // queued upsert and in the device's row: after a reload the skip alone holds the kind and the place of the gap a moved set left (46r's
 // P1 and P1b), so a skip that reached the server without them would read as a working set logged before 044.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { renderHook, act } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'

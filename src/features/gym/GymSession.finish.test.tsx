@@ -7,6 +7,7 @@
 // Chunk 78 (SPEC 1.2.1 [6]) adds the pinned bar's other way in: once every working set and stage is logged or skipped the rest bar says WORKOUT COMPLETE and its FINISH opens
 // the same screen (the last describe).
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, fireEvent, act, screen, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'

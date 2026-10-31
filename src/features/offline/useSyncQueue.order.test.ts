@@ -25,6 +25,7 @@
 //   server can also hold an upsert's reply (a request in flight) or lose it, and
 //   a page that dies mid-request leaves IndexedDB as it was when the request left.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 
 interface QueueItem {
   id: number
@@ -206,6 +207,12 @@ vi.mock('../../lib/supabase', () => ({
   },
 }))
 vi.mock('../../lib/queryClient', () => ({ queryClient: { invalidateQueries: vi.fn() } }))
+// Chunk 73: the version check is not what this file looks at (useSyncQueue.versionGate.test.tsx is); the queue here sends as it always did.
+vi.mock('../release/versionGate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../release/versionGate')>()),
+  readVersionGate: () => 'ok' as const,
+  useVersionGate: () => 'ok' as const,
+}))
 vi.mock('../../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }))
 
 const { flushSyncQueue, retrySyncFailures, hasQueuedWritesFor, queueSetLogDelete, dropQueuedWritesNamingLog, MAX_SYNC_ATTEMPTS } = await import('./useSyncQueue')

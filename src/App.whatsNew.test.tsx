@@ -45,9 +45,12 @@ vi.mock('./features/coach/MesoPrioritiesPage', () => ({ default: () => <div>MESO
 vi.mock('./features/library/LibraryPage', () => ({ default: () => <div>LIBRARY PAGE</div> }))
 vi.mock('./features/coach/CoachPage', () => ({ default: () => <div>COACH PAGE</div> }))
 vi.mock('./components/Nav', () => ({ default: () => <div>NAV</div> }))
-vi.mock('./features/pwa/PwaUpdateNotice', () => ({ default: () => null }))
+// The service worker's module reaches vite-plugin-pwa's virtual module, which vitest does not have (App.test.tsx).
+vi.mock('./features/pwa/useServiceWorker', () => ({ useServiceWorker: () => {}, serviceWorkerRecord: () => ({ registration: undefined, newWorkerActive: false }) }))
 // Chunk 72 — the release gate (maintenance) is not what this file looks at (App.maintenance.test.tsx mounts the real one in this shell): no gate.
 vi.mock('./features/release/useAppStatus', () => ({ useGate: () => null }))
+// Chunk 73 — the update screen ("Update to continue") is not what this file looks at (App.update.test.tsx mounts the real one in this shell): no update is required.
+vi.mock('./features/release/useRequiredUpdate', () => ({ useRequiredUpdate: () => ({ required: false, minVersion: '', state: 'ready', update: async () => {} }) }))
 // Settings: a stand-in that holds the REAL card, so a row's path meets the real route. (SettingsPage itself is proven in
 // SettingsPage.whatsNew.test.tsx.)
 vi.mock('./features/settings/SettingsPage', async () => {
