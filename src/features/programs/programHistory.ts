@@ -1,6 +1,5 @@
 import { format, parseISO } from 'date-fns'
 import type { DayOfWeek, Exercise, Mesocycle, ProgramExercise, WeekPlan, WeekPlanSet, WeeklySchedule, WorkoutDay } from '../../types'
-import { groupIntoUnits } from '../../lib/supersetGroups'
 import { STAGE_KINDS, STAGE_KIND_LABELS, resolveStageKind } from '../../lib/plannerVocabulary'
 import type { StageKind } from '../../lib/plannerVocabulary'
 import { headsOnly } from '../gym/setGroupLogic'
@@ -13,10 +12,10 @@ import { finishedWeekCount } from './programsTabLogic'
 // open week, and each workout's card with its exercises in order.
 //
 // What a week stores is what it compares (Defaults 11): which exercises, in what order, how many sets each (warmups counted apart, a staged
-// set's stages never counted: RULES, stage-exclusion), and each set's kind. Tempo, rest and the warmup routine are stored once per program and
-// are not here. A superset is run-wide too, so it never makes a change item; it is shown on the exercise's row (board PR14's "A1 · 3 SETS") from
-// the run copy's blocks, which every week's exercise rows point at (TASKS 66: "A1/A2 for supersets as stored in `v2_week_plan_exercises` + the
-// run copy's blocks").
+// set's stages never counted: RULES, stage-exclusion), and each set's kind. Tempo, rest, the warmup routine and the supersets are stored once per
+// program and are not here: a superset never makes a change item and, since 1.2.1, is not drawn on a row either (SPEC Finished program [20],
+// DECISIONS 193 (a): the run copy's blocks are the run's last grouping, so a label drawn on every week could show a superset in weeks before it
+// was made; board PR14's "A1 · 3 SETS" and chunk 66's labels are gone, and `structureOf` gives every row `superset: null`).
 //
 // "The week before" is the nearest earlier week the run planned (a week nobody planned has no rows, so nothing to compare with: 131), and a
 // workout is compared with the same workout there (the same slot, on a sequence run). An exercise is the same exercise in both weeks when it
@@ -28,7 +27,7 @@ import { finishedWeekCount } from './programsTabLogic'
 // ─── What the module reads (Picks of the app's own types, so the caller's real data fits without a cast) ──────────────────
 
 type SetLike = Pick<WeekPlanSet, 'id' | 'programExerciseId' | 'setNumber' | 'isWarmup' | 'stageKind' | 'parentWeekPlanSetId' | 'stageIndex'>
-type ExerciseLike = Pick<ProgramExercise, 'id' | 'exerciseId' | 'position' | 'supersetBlockId'> & { exercise?: Pick<Exercise, 'name'> }
+type ExerciseLike = Pick<ProgramExercise, 'id' | 'exerciseId' | 'position'> & { exercise?: Pick<Exercise, 'name'> }
 export type HistoryPlan = Pick<WeekPlan, 'workoutDayId' | 'weekNumber' | 'isDeload' | 'sequencePosition'> & {
   sets: readonly SetLike[]
   exercises: readonly ExerciseLike[]
@@ -159,7 +158,7 @@ interface ExerciseStructure {
   /** The catalogue exercise and which occurrence of it this is in the workout: the pairing key between two weeks. */
   key: string
   name: string
-  /** "A1": the superset it is in (letters in the order the workout's supersets come) and its place in it; null when it is in none. */
+  /** Always null since 1.2.1 (SPEC [20], DECISIONS 193 (a)): a finished program's rows show no superset labels. `exerciseMeta` still says "A1" for a label it is given. */
   superset: string | null
   warmups: number
   /** The working sets' kinds, in order. A staged set's stages are not sets of their own. */
@@ -184,17 +183,8 @@ function headKinds(sets: readonly SetLike[]): { warmups: number; kinds: HeadKind
   return { warmups, kinds }
 }
 
-const supersetLetter = (index: number) => (index < 26 ? String.fromCharCode(65 + index) : `#${index + 1}`)
-
 function structureOf(plan: HistoryPlan): ExerciseStructure[] {
   const ordered = [...plan.exercises].sort((a, b) => a.position - b.position)
-  const place = new Map<string, string>()
-  let block = 0
-  for (const unit of groupIntoUnits(ordered)) {
-    if (unit.length < 2) continue
-    const letter = supersetLetter(block++)
-    unit.forEach((member, i) => place.set(member.id, `${letter}${i + 1}`))
-  }
   const seen = new Map<string, number>()
   return ordered.map((exercise) => {
     const occurrence = (seen.get(exercise.exerciseId) ?? 0) + 1
@@ -203,7 +193,7 @@ function structureOf(plan: HistoryPlan): ExerciseStructure[] {
     return {
       key: `${exercise.exerciseId}#${occurrence}`,
       name: exercise.exercise?.name ?? 'Exercise',
-      superset: place.get(exercise.id) ?? null,
+      superset: null,
       warmups,
       kinds,
     }
@@ -364,11 +354,11 @@ export function buildProgramHistory(input: HistoryInput): ProgramHistory {
 }
 
 /**
- * The week the screen opens on (ours, D31): the first whose structure changed, which is the board's picture (it opens on a changed week), else
- * the first week; null when the run planned none.
+ * The week the screen opens on: its first, not the first whose structure changed (SPEC Finished program [25], Adam 2026-10-29). The first week the
+ * run planned, which is week 1 unless week 1 was never planned; null when it planned none.
  */
 export function openingWeek(history: ProgramHistory): number | null {
-  return (history.weeks.find((week) => week.changed) ?? history.weeks[0])?.week ?? null
+  return history.weeks[0]?.week ?? null
 }
 
 // ─── The header and the delete confirm ────────────────────────────────────────────────────────────────────────────────────

@@ -4,12 +4,19 @@ import { render, screen, cleanup, fireEvent, within, act, waitFor } from '@testi
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import type { Mesocycle, Program, RunSchedule, WeeklySchedule } from '../../types'
 import type { StoredMark } from '../../lib/priorityMarks'
+import { densifyPriorities } from '../../lib/priorityTags'
+import type { StoredPriority } from '../../lib/priorityTags'
 import { DAYS, NO_DAYS, SCHEDULE, cutPplPlans, session } from './programHistory.testutil'
 
 // Chunk 66: the finished program screen (TASKS-1.2 "A finished program"; boards PR14 and PR15), through its real components; the hooks that read
 // are stand-ins that answer by the id they are asked for, and every id a hook could be given by mistake (the run copy's program id where the run's
 // id belongs, the saved program the run started from) has data of its own that says so on the screen. The structure itself is
 // `programHistory.test.ts`'s; here: what the screen is made of, where it reads, where its PRIORITIES row leads, and DELETE.
+//
+// Chunk 76 (SPEC 1.2.1 Finished program [24] [25] [20] and PRIORITIES, read-only [1]): the week strip never shrinks (its style, read here; its
+// picture in real Chromium is the capture and the sheet-free layout check), the screen opens on week 1, its rows carry no superset labels, and the
+// PRIORITIES row always opens the one read-only screen, with the header line read from the run copy's marks or, when it has none, the old table's
+// mapped (migration 033: top → Focus, low → Don't care). The old table's answer is the real shape (`densifyPriorities`: all 34 tags).
 //
 // Write-path proofs (the delete; since chunk 75 a full delete through `FullDeleteConfirm`): what is counted and deleted, with which id (the run's own,
 // never its copy's program id or the saved program's), after the press and not before, with the session ids read with the counts; what happens on
@@ -28,7 +35,10 @@ const state = vi.hoisted(() => ({
   marks: {} as Record<string, unknown[]>,
   marksPending: false,
   marksError: false,
-  legacy: {} as Record<string, boolean>,
+  // the old table's rows of a run, by the run's id (Coach's `usePriorityContext`, answered the way `fetchPriorityContext` does: densified)
+  legacy: {} as Record<string, unknown[]>,
+  legacyPending: false,
+  legacyError: false,
   pending: false,
   // what the confirmation's counts read answers (a stand-in for `useFinishedRunCounts`) and what it was asked: [id, enabled]
   counted: true,
@@ -78,13 +88,18 @@ vi.mock('../plan/useProgramPriorities', () => ({
 vi.mock('../coach/usePriorityContext', () => ({
   usePriorityContext: (mesoId: string | null) => {
     state.asked.legacy.push(mesoId)
-    return { data: mesoId ? { anyExplicit: state.legacy[mesoId] === true } : undefined }
+    if (!mesoId) return { data: undefined }
+    if (state.legacyError) return { data: undefined, isError: true, error: new Error('old marks unreadable') }
+    if (state.legacyPending) return { data: undefined }
+    const rows = (state.legacy[mesoId] ?? []) as StoredPriority[]
+    return { data: { mesocycleId: mesoId, ...densifyPriorities(rows) } }
   },
 }))
 
 const { default: FinishedProgramPage } = await import('./FinishedProgramPage')
 
 const mark = (tagValue: string, value: StoredMark['mark']): StoredMark => ({ tagType: 'muscle_group', tagValue, mark: value, updatedAt: '2026-01-01T00:00:00Z' })
+const legacy = (tagValue: string, priority: StoredPriority['priority']): StoredPriority => ({ tagType: 'muscle_group', tagValue, priority, updatedAt: '2026-03-02T09:00:00Z' })
 const run = (over: Partial<Mesocycle> & Pick<Mesocycle, 'id' | 'name' | 'programId'>): Mesocycle => ({
   userId: 'user-1',
   status: 'completed',
@@ -144,9 +159,12 @@ function world() {
     // the saved program's marks, which the planner may have changed since the run started
     'prog-saved-ppl': [mark('quads', 'focus')],
   }
-  state.legacy = { 'meso-old': true }
+  // a run finished before 1.1: no marks on its copy, four-level marks in Coach's table (quads top, chest high, calves low: only two of them are marks)
+  state.legacy = { 'meso-old': [legacy('quads', 'top'), legacy('chest', 'high'), legacy('calves', 'low')] }
   state.marksPending = false
   state.marksError = false
+  state.legacyPending = false
+  state.legacyError = false
   state.mesosLoading = false
   state.mesosError = null
   state.pending = false
@@ -211,15 +229,43 @@ describe('the tiles and the open week', () => {
     expect(tile(7).getAttribute('aria-label')).toBe('WEEK 7 · DELOAD')
   })
 
-  it('it opens on week 3, the first changed week, and a tap opens another: week 4 is the board\'s picture', () => {
+  // Chunk 76 (SPEC [25]): week 1, though the first week whose structure changed is week 3 (the dots above say so)
+  it('it opens on week 1, not on week 3, the first changed week, and a tap opens another: week 4 is the board\'s picture', () => {
     renderAt('meso-cut')
-    expect(tile(3).getAttribute('aria-pressed')).toBe('true')
-    expect(screen.getByText('Changed from week 2')).toBeTruthy()
+    expect(tile(1).getAttribute('aria-pressed')).toBe('true')
+    expect(tile(3).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByText('Started from the program')).toBeTruthy()
+    expect(screen.getByText('WEEK 1 · STRUCTURE')).toBeTruthy()
     fireEvent.click(tile(4))
     expect(tile(4).getAttribute('aria-pressed')).toBe('true')
-    expect(tile(3).getAttribute('aria-pressed')).toBe('false')
+    expect(tile(1).getAttribute('aria-pressed')).toBe('false')
     expect(screen.getByText('WEEK 4 · STRUCTURE')).toBeTruthy()
     expect(screen.getByText('Changed from week 3')).toBeTruthy()
+  })
+
+  it('a program of one week opens on it, and a sequence run on its first cycle', () => {
+    state.plans['meso-cut'] = cutPplPlans().filter((p) => p.weekNumber === 1)
+    renderAt('meso-cut')
+    expect(tile(1).getAttribute('aria-pressed')).toBe('true')
+    cleanup()
+    state.programs = [program('prog-run-cut', { scheduleType: 'sequence' })]
+    state.plans['meso-cut'] = [session(1, 'pull-1', [{ ex: 'lat' }], { sequencePosition: 0 }), session(2, 'pull-1', [{ ex: 'lat', sets: 5 }], { sequencePosition: 0 })]
+    renderAt('meso-cut')
+    expect(screen.getByRole('button', { name: /^CYCLE 1\b/ }).getAttribute('aria-pressed')).toBe('true')
+  })
+
+  // [24]: jsdom lays nothing out, so this reads the declaration; what it does to a screen taller than the phone is the capture's (a 10-week run with tall
+  // cards drawn in real Chromium: `finished-program-cut-ppl-10-weeks.png`, and the layout check in this chunk's report)
+  it('the strip never shrinks: flex-shrink 0 on the weeks\' strip, and on the cycles\' strip of a sequence run', () => {
+    renderAt('meso-cut')
+    const strip = screen.getByLabelText('Weeks of this program')
+    expect(strip.style.flexShrink).toBe('0')
+    expect(strip.style.overflowX).toBe('auto')
+    cleanup()
+    state.programs = [program('prog-run-cut', { scheduleType: 'sequence' })]
+    state.plans['meso-cut'] = [session(1, 'pull-1', [{ ex: 'lat' }], { sequencePosition: 0 })]
+    renderAt('meso-cut')
+    expect(screen.getByLabelText('Cycles of this program').style.flexShrink).toBe('0')
   })
 
   it('week 4: the changes, each with its workout, in the board\'s order and signs', () => {
@@ -235,6 +281,7 @@ describe('the tiles and the open week', () => {
 
   it('week 3: one item for the change that both Push workouts made', () => {
     renderAt('meso-cut')
+    fireEvent.click(tile(3)) // it opens on week 1 since chunk 76
     const text = screen.getByText('Incline Dumbbell Press: 3 → 4 sets')
     expect(text.parentElement!.textContent).toBe('Incline Dumbbell Press: 3 → 4 setsPUSH 1 · PUSH 2')
   })
@@ -260,11 +307,12 @@ describe('the tiles and the open week', () => {
 })
 
 describe('the workout cards (board PR14)', () => {
-  it('week 4: each workout with its weekday, its tag and its exercises in order; the changed rows, the superset and the removed one drawn as the board draws them', () => {
+  // Chunk 76 (SPEC [20], DECISIONS 193 (a)): Seated Cable Row and Face Pull are a superset in this week (the fixture's block), and their rows say no "A1" / "A2"
+  it('week 4: each workout with its weekday, its tag and its exercises in order; the changed rows and the removed one drawn as the board draws them, and no superset labels', () => {
     renderAt('meso-cut')
     fireEvent.click(tile(4))
     const pull = document.querySelector<HTMLElement>('[data-workout="workout-pull-1"]')!
-    expect(pull.textContent).toBe('TUESDAYPull 13 CHANGES' + '01Lat Pulldown3 SETS · 1 DROPSET' + '02Seated Cable RowA1 · 3 SETS' + '03Face PullA2 · 2 SETS' + '04EZ Bar Curl1 WARMUP · 2 SETS' + '—Straight-Arm PulldownREMOVED')
+    expect(pull.textContent).toBe('TUESDAYPull 13 CHANGES' + '01Lat Pulldown3 SETS · 1 DROPSET' + '02Seated Cable Row3 SETS' + '03Face Pull2 SETS' + '04EZ Bar Curl1 WARMUP · 2 SETS' + '—Straight-Arm PulldownREMOVED')
     const rows = Array.from(pull.querySelectorAll<HTMLElement>('[data-state]'))
     expect(rows.map((r) => r.getAttribute('data-state'))).toEqual(['changed', 'same', 'changed', 'same', 'removed'])
     const removed = rows[4]
@@ -341,43 +389,89 @@ describe('where it reads (one break per call pattern): each hook is asked for th
   })
 })
 
-describe('the PRIORITIES row leads by where the run\'s marks are (G50)', () => {
+// Chunk 76 (SPEC 1.2.1 Finished program · PRIORITIES, read-only [1]): every finished program's PRIORITIES row opens the one read-only screen,
+// `/program/finished/:id/priorities`, whichever table its marks are in; Coach's old page (`/meso/:id/priorities`) is linked from nowhere. The header
+// line under PRIORITIES reads the run copy's marks or, when it has none, the old table's, mapped as migration 033 mapped them.
+describe('the PRIORITIES row always opens the read-only screen; its line reads the run copy\'s marks or the old table\'s, mapped', () => {
   const rowLink = () => document.querySelector<HTMLAnchorElement>('[data-priorities-row]')!
 
-  it('marks on the run copy (the new table) → the editor', () => {
+  it('marks on the run copy (the new table) → the screen, and their line', () => {
     renderAt('meso-cut')
+    expect(rowLink().tagName).toBe('A')
     expect(rowLink().getAttribute('href')).toBe('/program/finished/meso-cut/priorities')
+    expect(rowLink().textContent).toBe("PRIORITIES" + "Focus: chest, back · Don't care: calves")
   })
 
-  it('marks only in the old table (a run finished before 1.1) → the completed-run page as it is, and no summary line of ours', () => {
+  it('marks only in the old table (a run finished before 1.1) → the same screen, and the line from the mapped marks: top is Focus, low is Don\'t care, high shows nothing', () => {
     renderAt('meso-old')
-    expect(rowLink().getAttribute('href')).toBe('/meso/meso-old/priorities')
-    expect(rowLink().textContent).toBe('PRIORITIES')
+    expect(rowLink().getAttribute('href')).toBe('/program/finished/meso-old/priorities')
+    expect(rowLink().textContent).toBe("PRIORITIES" + "Focus: quads · Don't care: calves")
+    expect(screen.queryByText(/chest/i)).toBeNull() // the high level, which migration 033 maps to nothing
   })
 
-  it('marks in neither → the editor (a mark can be set on any finished program), the row only its label', () => {
+  it('each old level on its own: top → "Focus: …", low → "Don\'t care: …", high and normal → no line (the row only its label)', () => {
+    const lineOf = (level: StoredPriority['priority']) => {
+      state.legacy = { 'meso-old': [legacy('quads', level)] }
+      const view = renderAt('meso-old')
+      const text = rowLink().textContent
+      view.unmount()
+      return text
+    }
+    expect(lineOf('top')).toBe('PRIORITIES' + 'Focus: quads')
+    expect(lineOf('low')).toBe('PRIORITIES' + "Don't care: quads")
+    expect(lineOf('high')).toBe('PRIORITIES')
+    expect(lineOf('normal')).toBe('PRIORITIES')
+  })
+
+  it('marks in neither table → the same screen, the row only its label', () => {
     renderAt('meso-bare')
     expect(rowLink().getAttribute('href')).toBe('/program/finished/meso-bare/priorities')
     expect(rowLink().textContent).toBe('PRIORITIES')
   })
 
-  it('marks in both → the new table\'s editor (the migration mapped an active run\'s old marks onto it)', () => {
-    state.legacy = { 'meso-cut': true }
+  it('marks in both → the run copy\'s own, in the line and not the old table\'s (the migration copied an active run\'s old marks onto it)', () => {
+    state.legacy = { 'meso-cut': [legacy('quads', 'top'), legacy('hamstrings', 'low')] }
     renderAt('meso-cut')
     expect(rowLink().getAttribute('href')).toBe('/program/finished/meso-cut/priorities')
+    expect(rowLink().textContent).toBe("PRIORITIES" + "Focus: chest, back · Don't care: calves")
+    expect(lastOf(state.asked.legacy)).toBeNull() // and the old table is not even asked
   })
 
-  it('until the marks are read the row is there and leads nowhere; a failed read says so, and still leads nowhere', () => {
+  it('a link from the first paint: nothing it needs is read first, and a failed read says so and still opens the screen (which says why)', () => {
     state.marksPending = true
     renderAt('meso-cut')
-    expect(rowLink().tagName).toBe('DIV')
-    expect(rowLink().getAttribute('aria-disabled')).toBe('true')
+    expect(rowLink().tagName).toBe('A')
+    expect(rowLink().getAttribute('href')).toBe('/program/finished/meso-cut/priorities')
+    expect(rowLink().getAttribute('aria-disabled')).toBeNull()
+    expect(screen.queryByText("Couldn't load priorities.")).toBeNull() // not read yet is not a failure
     cleanup()
     state.marksPending = false
     state.marksError = true
     renderAt('meso-cut')
-    expect(rowLink().tagName).toBe('DIV')
+    expect(rowLink().tagName).toBe('A')
+    expect(rowLink().getAttribute('href')).toBe('/program/finished/meso-cut/priorities')
     expect(screen.getByText("Couldn't load priorities.")).toBeTruthy()
+  })
+
+  it('the old table\'s answer is waited for (no line yet, no failure) and its failure, with no marks on the copy, says so while the row still opens the screen', () => {
+    state.legacyPending = true
+    renderAt('meso-old')
+    expect(rowLink().textContent).toBe('PRIORITIES')
+    expect(screen.queryByText("Couldn't load priorities.")).toBeNull()
+    cleanup()
+    state.legacyPending = false
+    state.legacyError = true
+    renderAt('meso-old')
+    expect(rowLink().getAttribute('href')).toBe('/program/finished/meso-old/priorities')
+    expect(screen.getByText("Couldn't load priorities.")).toBeTruthy()
+  })
+
+  it('Coach\'s old page is linked from nowhere on it', () => {
+    for (const id of ['meso-cut', 'meso-old', 'meso-bare']) {
+      cleanup()
+      renderAt(id)
+      expect(Array.from(document.querySelectorAll('a')).map((a) => a.getAttribute('href')).filter((href) => /^\/meso\//.test(href ?? ''))).toEqual([])
+    }
   })
 })
 

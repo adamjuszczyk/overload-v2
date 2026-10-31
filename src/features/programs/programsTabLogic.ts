@@ -3,6 +3,7 @@ import type { Mesocycle, PlanningType, Program, ScheduleType, WeeklySchedule } f
 import { MUSCLE_GROUP_LABELS, MUSCLE_SUBGROUP_LABELS } from '../../lib/exerciseTags'
 import { buildGroupMarkEntries } from '../../lib/priorityMarks'
 import type { PriorityMark, StoredMark } from '../../lib/priorityMarks'
+import type { PriorityEntry, PriorityLevel } from '../../lib/priorityTags'
 
 // The rules of the PROGRAMS tab (TASKS-1.2 chunk 65; SPEC Screens → PROGRAMS, Programs and runs [1.2], Language "Program everywhere"
 // (C12); boards PR1-PR13b), pure: the words a card or a row says about a program or a run, and where a row leads. The components draw what
@@ -25,24 +26,18 @@ export function plannerPath(programId: string): string {
 
 /**
  * A finished program's row (chunk 66; TASKS 65: "FINISHED: ... → `/program/finished/:id` (66)"). It opened the completed-run priorities
- * page of that run until the finished program screen (PR14) existed; that page is now reached from the screen's PRIORITIES row, for the one
- * kind of run G50 keeps it for (`legacyPrioritiesPath`).
+ * page of that run until the finished program screen (PR14) existed.
  */
 export function finishedProgramPath(mesoId: string): string {
   return `/program/finished/${mesoId}`
 }
 
-/** PR14's PRIORITIES row, for a run whose marks are in the new table: the editor over the run's own copy (chunk 66). */
+/**
+ * PR14's PRIORITIES row, for every finished program (1.2.1, SPEC Finished program · PRIORITIES, read-only [1]): one read-only screen, whichever
+ * table the run's marks are in. Coach's completed-run page (`/meso/:id/priorities`, G50) stays in the code, untouched, and nothing links to it.
+ */
 export function finishedPrioritiesPath(mesoId: string): string {
   return `/program/finished/${mesoId}/priorities`
-}
-
-/**
- * PR14's PRIORITIES row, for a run whose marks exist only in the old table (`v2_coach_meso_tag_priorities`, a run finished before 1.1):
- * today's completed-run priorities page, as it is, wording included (G50; the Coach module's page, frozen).
- */
-export function legacyPrioritiesPath(mesoId: string): string {
-  return `/meso/${mesoId}/priorities`
 }
 
 // ─── The run's week ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -150,6 +145,42 @@ export function markLine(rows: readonly StoredMark[]): string | null {
   const dontCare = markSummary(rows, 'dont_care')
   if (dontCare) parts.push(`Don't care: ${lowerFirst(dontCare)}`)
   return parts.length > 0 ? parts.join(' · ') : null
+}
+
+// ─── A finished program's marks: the run copy's own, or the old table's mapped ────────────────────────────────────────────
+
+/** What a run finished before 1.1 holds: Coach's four-level entries (`PriorityContext.entries`, 34 densified rows), as many as the mapping reads. */
+export type LegacyMarkEntry = Pick<PriorityEntry, 'tagType' | 'tagValue' | 'priority' | 'updatedAt'>
+
+// Migration 033's mapping (SPEC Finished program · PRIORITIES [1]): top → focus, low → dont_care, "the two middle levels" nothing. A table over every
+// level, so a fifth level fails `tsc` here instead of mapping to nothing without a word.
+const LEGACY_LEVEL_MARK: Record<PriorityLevel, PriorityMark | null> = { top: 'focus', low: 'dont_care', high: null, normal: null }
+
+/**
+ * A pre-1.1 run's old marks as 1.1 marks (migration 033's own mapping, applied on the screen because 033 only mapped the runs that were active
+ * when it ran): `top` is FOCUS and `low` is DON'T CARE; `high` and `normal` show nothing, and so does a tag nobody set, which reads normal
+ * (`densifyPriorities`). The tag's type goes with it: six values are both a group and a subgroup (`biceps`, `forearms`, `quads`, `hamstrings`,
+ * `glutes`, `calves`), and `buildGroupMarkEntries` keys on both.
+ */
+export function mapLegacyMarks(entries: readonly LegacyMarkEntry[]): StoredMark[] {
+  const marks: StoredMark[] = []
+  for (const entry of entries) {
+    const mark = LEGACY_LEVEL_MARK[entry.priority]
+    if (mark !== null) marks.push({ tagType: entry.tagType, tagValue: entry.tagValue, mark, updatedAt: entry.updatedAt ?? '' })
+  }
+  return marks
+}
+
+/**
+ * The marks a finished program shows, on its header line and on its PRIORITIES screen: the run copy's own when it holds any (a run from 1.1 on),
+ * else the old table's, mapped (a run finished before 1.1); empty when neither holds any. `undefined` until what decides it has been read: the run
+ * copy's marks and, when it has none, the old table's. Both screens read the same two tables and ask this one function, so a header line and its
+ * screen can't disagree.
+ */
+export function finishedProgramMarks(own: readonly StoredMark[] | undefined, legacy: readonly LegacyMarkEntry[] | undefined): readonly StoredMark[] | undefined {
+  if (own === undefined) return undefined
+  if (own.length > 0) return own
+  return legacy === undefined ? undefined : mapLegacyMarks(legacy)
 }
 
 // ─── Starting and creating ────────────────────────────────────────────────────────────────────────────────────────────────

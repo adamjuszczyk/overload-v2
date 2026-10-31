@@ -199,15 +199,15 @@ describe('exercises added, removed and moved', () => {
   it('board PR14, week 4: Pull 1 lists what was added, then what changed, then what was removed, whatever order the exercises are in; its card reads "3 CHANGES"', () => {
     const before = session(3, 'pull-1', PULL)
     // Lat Pulldown (first) changes, Face Pull (third) is added, Straight-Arm Pulldown (the last of the week before) is gone; Seated Cable Row and
-    // Face Pull are now a superset, which is no change
+    // Face Pull are now a superset, which is no change and, since 1.2.1 (SPEC [20], DECISIONS 193 (a)), no label on their rows either
     const after = session(4, 'pull-1', [{ ex: 'lat', staged: { 3: 'dropset' } }, { ex: 'row', block: 'b' }, { ex: 'face', sets: 2, block: 'b' }, PULL[2]])
     const h = history([before, after])
     expect(week(h, 4).changes.map((c) => `${c.sign} ${c.text}`)).toEqual(['+ Face Pull added', '~ Lat Pulldown set 3 is now a dropset', '− Straight-Arm Pulldown removed'])
     expect(card(h, 4, 'Pull 1').tag).toBe('3 CHANGES')
     expect(card(h, 4, 'Pull 1').rows.map((r) => [r.number, r.name, r.meta, r.state])).toEqual([
       ['01', 'Lat Pulldown', '3 SETS · 1 DROPSET', 'changed'],
-      ['02', 'Seated Cable Row', 'A1 · 3 SETS', 'same'],
-      ['03', 'Face Pull', 'A2 · 2 SETS', 'changed'],
+      ['02', 'Seated Cable Row', '3 SETS', 'same'],
+      ['03', 'Face Pull', '2 SETS', 'changed'],
       ['04', 'EZ Bar Curl', '1 WARMUP · 2 SETS', 'same'],
       ['—', 'Straight-Arm Pulldown', 'REMOVED', 'removed'],
     ])
@@ -258,9 +258,21 @@ describe('what a week stores and what it does not: tempo and supersets never mak
     expect(card(h, 1, 'Legs').rows[0].meta).toBe('3 SETS')
   })
 
-  it('exercises in one superset say where they are on their rows: "A1", "A2", and the next superset is "B1"', () => {
+  // Chunk 76 (SPEC 1.2.1 Finished program [20], DECISIONS 193 (a)): a superset is stored once for the run, so a label on every week could show one in
+  // the weeks before it was made. Chunk 66's "A1", "A2", "B1" are gone: `structureOf` gives every row `superset: null`.
+  it('exercises in a superset carry no label on their rows (a two-member block, and a second block beside it)', () => {
     const h = history([session(1, 'pull-1', [{ ex: 'lat', block: 'b1' }, { ex: 'row', block: 'b1' }, { ex: 'face', sets: 2 }, { ex: 'curl', block: 'b2', sets: 2 }, { ex: 'sap', block: 'b2', sets: 2 }])])
-    expect(card(h, 1, 'Pull 1').rows.map((r) => r.meta)).toEqual(['A1 · 3 SETS', 'A2 · 3 SETS', '2 SETS', 'B1 · 2 SETS', 'B2 · 2 SETS'])
+    expect(card(h, 1, 'Pull 1').rows.map((r) => r.meta)).toEqual(['3 SETS', '3 SETS', '2 SETS', '2 SETS', '2 SETS'])
+    expect(card(h, 1, 'Pull 1').rows.some((r) => /\b[A-Z][12]\b/.test(r.meta))).toBe(false)
+  })
+
+  it('a superset linked in a later week reads the same in every week before and after it: no label in any, and no change item for it', () => {
+    const h = history([
+      session(1, 'pull-1', [{ ex: 'lat' }, { ex: 'row' }]),
+      session(2, 'pull-1', [{ ex: 'lat', block: 'b1' }, { ex: 'row', block: 'b1' }]),
+    ])
+    for (const n of [1, 2]) expect(card(h, n, 'Pull 1').rows.map((r) => r.meta)).toEqual(['3 SETS', '3 SETS'])
+    expect(week(h, 2).changes).toEqual([])
   })
 
   it('a block that has only one member left in the list is not a superset (no label)', () => {
@@ -323,9 +335,20 @@ describe('the tiles: WK, DL and a dot', () => {
     expect(openingWeek(history([]))).toBeNull()
   })
 
-  it('it opens on the first week whose structure changed, else the first week', () => {
-    expect(openingWeek(history([session(1, 'pull-1', PULL), session(2, 'pull-1', PULL), session(3, 'pull-1', [{ ex: 'lat', sets: 5 }]), session(4, 'pull-1', PULL)]))).toBe(3)
-    expect(openingWeek(history([session(2, 'pull-1', PULL), session(3, 'pull-1', PULL)]))).toBe(2)
+  // Chunk 76 (SPEC 1.2.1 Finished program [25], Adam 2026-10-29): it opens on week 1, not on the first week whose structure changed (chunk 66's pick).
+  it('it opens on its first week, whichever week first changed: week 1 when its first changed week is 3', () => {
+    const h = history([session(1, 'pull-1', PULL), session(2, 'pull-1', PULL), session(3, 'pull-1', [{ ex: 'lat', sets: 5 }]), session(4, 'pull-1', PULL)])
+    expect(h.weeks.filter((w) => w.changed).map((w) => w.week)).toEqual([3, 4]) // the fixture does what it says: a later week is the first one that changed
+    expect(openingWeek(h)).toBe(1)
+  })
+
+  it('a run whose first planned week is 2 opens on 2 (the first week it has), and a run of one week on that week', () => {
+    expect(openingWeek(history([session(2, 'pull-1', PULL), session(3, 'pull-1', [{ ex: 'lat', sets: 5 }])]))).toBe(2)
+    expect(openingWeek(history([session(1, 'pull-1', PULL)]))).toBe(1)
+  })
+
+  it('the plans arrive in any order and the first week is the first tile (the weeks are sorted by number)', () => {
+    expect(openingWeek(history([session(4, 'pull-1', PULL), session(3, 'pull-1', PULL), session(1, 'pull-1', PULL)]))).toBe(1)
   })
 })
 
