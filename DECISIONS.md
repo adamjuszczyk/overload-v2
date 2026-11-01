@@ -1265,7 +1265,7 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
 Chunk: 70   Date: 2026-10-30
 Recommendation: keep: both apps are abandoned, nothing reads or writes their rows, and the trigger acts only during a maintenance window Adam opens; such tables can't fail the deploy (chunk 70's review, executed with a stand-in `ns_probe` table under three owners).
 Answer: keep (Adam, 2026-10-30: "Atlas is not a live app, so keep 048's trigger on the ns_* and atlas_* tables").
-Evidence: HISTORY.md "2026-10-30 chunk 70"; `scripts/schema-compare-exclude.txt`; DECISIONS 264. Before the release (to-do): one read-only list of production's public tables with a `user_id` column, so the release expects 40 triggers plus those.
+Evidence: HISTORY.md "2026-10-30 chunk 70"; `scripts/schema-compare-exclude.txt`; DECISIONS 264. Before the release (to-do): one read-only list of production's public tables with a `user_id` column, so the release expects 40 triggers plus those. Done at the release (Adam, 2026-11-01, run sheet 4e): 19 tables — `atlas_connection_requests`, `atlas_connection_settings`, `atlas_user_preferences`, `atlas_widget_layouts`, `ns_blocks`, `ns_day_items`, `ns_day_template_items`, `ns_day_templates`, `ns_habit_entries`, `ns_habits`, `ns_inbox_items`, `ns_journal_entries`, `ns_lines`, `ns_month_focus`, `ns_sheets`, `ns_task_steps`, `ns_tasks`, `ns_tree_nodes`, `ns_week_focus`; so 048's trigger is on 59 tables on production.
 
 
 ## 269 [80] An offline DELETE of a planned set reads as an open row, and a LOG on it leaves a log the workout hides but History counts: does the read also apply the queued change rows?
