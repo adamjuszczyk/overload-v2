@@ -1,6 +1,7 @@
 // Chunk 58a, fix-forward (review 1, finding 2) — what a row's LAST line reads. TASKS 58a: "the reference's set at that position, from
-// today's `ExerciseReference` data"; SPEC "Last time" reference [P1]: deload sessions never count, LAST WEEK is the preceding calendar
-// week's, EARLIER THIS WEEK is apart. So the line reads the session the exercise's reference panel (`ExerciseReference`) calls its
+// today's `ExerciseReference` data" (that panel was replaced by the header's LAST line and sheet, `lastTimeView.ts`, in chunk 58b and its
+// component removed in chunk 77; they read the same reference); SPEC "Last time" reference [P1]: deload sessions never count, LAST WEEK is the
+// preceding calendar week's, EARLIER THIS WEEK is apart. So the line reads the session the exercise's reference calls its
 // primary one, resolved by the same functions it calls (`referenceByExercise.ts`; `hasRealLoggedSet` from the frozen
 // `referenceLogic.ts`, used as it is), and not the latest completed session of the exercise (`useLastSessionLogs`), which differs
 // after a deload session, when the exercise was done earlier this week, and after a session in which every set was skipped.

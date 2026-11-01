@@ -37,6 +37,17 @@ const REBUILT_SCREENS: Record<string, string> = {
   'features/programs/ChangeProgramPage.tsx': 'CHANGE THE PROGRAM',
   'features/planner/PlannerPage.tsx': 'the stepped program planner',
   'features/gym/GymSession.tsx': 'the workout screen',
+  // 1.2.1 (chunk 77): Today's PREVIEW SESSION is drawn in the workout's design and takes the token (its START SESSION); TodayPage.tsx, which opens it,
+  // keeps its current code (NOT_REBUILT below).
+  'features/gym/SessionPreview.tsx': 'PREVIEW SESSION',
+  // 1.2.1 (chunk 71): Settings' WHAT'S NEW. SettingsPage.tsx itself keeps its current code (NOT_REBUILT below); these are the new files it
+  // loads or opens, drawn in the new look, so a place on the accent in them takes the token (the sheet's GOT IT does).
+  'features/settings/WhatsNewCard.tsx': "Settings' WHAT'S NEW card",
+  'features/settings/ReleaseNotesPage.tsx': 'the release notes',
+  'features/settings/AfterUpdateSheet.tsx': 'the sheet after an update',
+  // 1.2.1 (chunk 72): the maintenance screen and the strip an exempt account works under (chunk 73 adds the update screen to this file). Its first
+  // accent site is chunk 73's UPDATE button; the strip is a tint (`--accent-muted`), which is not the accent, and its text stays `--accent`.
+  'features/release/gates.tsx': 'the maintenance and update screens and the strip',
 }
 
 // Components that more than one screen loads, or that sit in the folder of a screen other than the one that loads them, each with the
@@ -60,12 +71,8 @@ const NOT_REBUILT: Record<string, number> = {
   'components/Nav.tsx': 1, // INSTALL, the bottom bar's install strip: app chrome, in no 1.2 screen and on no board
   'features/auth/LoginPage.tsx': 1, // sign-in: Sign in
   'features/gym/CompletedTodayScreen.tsx': 3, // Today, after a session is finished (SPEC: finished session unchanged)
-  'features/gym/ExerciseReference.tsx': 1, // Today's session preview (the workout's cards stopped loading it in chunk 58b: the last-time sheet replaces its panel)
   'features/gym/MissedSessionPrompt.tsx': 1, // Today
-  'features/gym/PlanTargetsPanel.tsx': 1, // Today's session preview (the workout's cards stopped loading it in chunk 58a: the targets are in the rows)
-  'features/gym/PreviewExerciseCard.tsx': 1, // Today's session preview
   'features/gym/SequenceTodayPage.tsx': 1, // Today, a sequence run
-  'features/gym/SessionPreview.tsx': 1, // Today's session preview
   'features/gym/TodayPage.tsx': 2, // Today: START SESSION and GO TO PROGRAMS
   'features/history/HistoryPage.tsx': 1, // History: the picked tab
   'features/history/HistorySessions.tsx': 3, // History: the status and muscle chips
@@ -75,7 +82,6 @@ const NOT_REBUILT: Record<string, number> = {
   'features/library/ReassignSheet.tsx': 2, // Library
   'features/progress/ExercisePicker.tsx': 2, // Progress and History's exercise lists: the muscle chips
   'features/progress/ProgressPage.tsx': 1, // Progress: the picked tab
-  'features/pwa/PwaUpdateNotice.tsx': 1, // the update notice, the app shell's strip
   'features/settings/DeloadRulesEditor.tsx': 1, // Settings: the chips
   'features/settings/SettingsPage.tsx': 1, // Settings: the chips (chunk 49's two rows draw with them)
 }
@@ -149,9 +155,12 @@ describe('text on the accent is --on-accent in the screens 1.2 rebuilds and the 
       expect(folders, folder).toContain(folder)
     }
     // and none of the folders of the screens 1.2 doesn't rebuild
-    for (const folder of ['features/auth', 'features/history', 'features/library', 'features/progress', 'features/pwa', 'features/settings']) {
+    for (const folder of ['features/auth', 'features/history', 'features/library', 'features/progress', 'features/pwa']) {
       expect(folders, folder).not.toContain(folder)
     }
+    // Settings is one of them, with 1.2.1's new files beside SettingsPage.tsx: the token is in the sheet after an update and nowhere else
+    // in that folder (SettingsPage.tsx and DeloadRulesEditor.tsx keep their places on --base: NOT_REBUILT below)
+    expect([...new Set(drawn.filter((site) => site.file.startsWith('features/settings/')).map((site) => site.file))]).toEqual(['features/settings/AfterUpdateSheet.tsx'])
     expect(REBUILT_SITES.length + NOT_REBUILT_SITES.length).toBeGreaterThan(70)
   })
 

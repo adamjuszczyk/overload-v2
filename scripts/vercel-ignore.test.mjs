@@ -151,6 +151,68 @@ test('renaming a build doc (.md to .md, any folder) is skipped', () => {
   }
 });
 
+// 1.2.1 (DECISIONS 262, chunk 70): prototype/ is the clickable prototype, not the app. Every file in it is a .ts, .tsx,
+// .json or .css, so ':(exclude)*.md' alone built the app for each prototype edit. The folder at the repo root is excluded;
+// nothing else is.
+test('a push that changed only files under prototype/ is skipped, whatever their type', () => {
+  const r = repo();
+  try {
+    const deployed = r.commit('app.ts', 'v1');
+    r.commit('prototype/src/App.tsx', 'one');
+    r.commit('prototype/package.json', 'two');
+    r.commit('prototype/src/demo/seed.ts', 'three');
+    assert.equal(run(r.dir, deployed), 0);
+  } finally {
+    rmSync(r.dir, { recursive: true, force: true });
+  }
+});
+
+test('a prototype edit pushed with an app edit, or a design image, is built', () => {
+  const r = repo();
+  try {
+    const deployed = r.commit('app.ts', 'v1');
+    r.commit('prototype/src/App.tsx', 'prototype');
+    r.commit('app.ts', 'v2'); // the app changed too
+    assert.notEqual(run(r.dir, deployed), 0, 'an app edit among prototype edits builds');
+    const deployed2 = r.git('rev-parse', 'HEAD');
+    r.commit('prototype/src/App.tsx', 'prototype again');
+    r.commit('design/1.2.1/built/state.png', 'image');
+    assert.notEqual(run(r.dir, deployed2), 0, 'a design image among prototype edits builds');
+  } finally {
+    rmSync(r.dir, { recursive: true, force: true });
+  }
+});
+
+test('only the prototype/ folder at the repo root is excluded: a nested prototype folder, a longer name and a root file are built', () => {
+  const r = repo();
+  try {
+    const deployed = r.commit('app.ts', 'v1');
+    r.commit('src/prototype/thing.ts', 'nested');
+    assert.notEqual(run(r.dir, deployed), 0, 'src/prototype/ is app code');
+    const d2 = r.git('rev-parse', 'HEAD');
+    r.commit('prototypes/thing.ts', 'longer name');
+    assert.notEqual(run(r.dir, d2), 0, 'prototypes/ is not prototype/');
+    const d3 = r.git('rev-parse', 'HEAD');
+    r.commit('prototype.ts', 'root file');
+    assert.notEqual(run(r.dir, d3), 0, 'a root file named prototype.ts is not under prototype/');
+  } finally {
+    rmSync(r.dir, { recursive: true, force: true });
+  }
+});
+
+test('the .md exclude still holds beside the prototype one, in both places', () => {
+  const r = repo();
+  try {
+    const deployed = r.commit('app.ts', 'v1');
+    r.commit('prototype/README.md', 'prototype doc');
+    r.commit('docs/notes.md', 'doc');
+    r.commit('prototype/src/App.tsx', 'prototype code');
+    assert.equal(run(r.dir, deployed), 0);
+  } finally {
+    rmSync(r.dir, { recursive: true, force: true });
+  }
+});
+
 test('a doc renamed to a non-.md name, or a design image, is built', () => {
   const r = repo();
   try {

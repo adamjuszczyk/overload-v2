@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { StrictMode } from 'react'
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, screen, cleanup, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'

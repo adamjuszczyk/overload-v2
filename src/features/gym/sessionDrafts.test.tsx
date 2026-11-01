@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { renderHook, act, cleanup } from '@testing-library/react'
 import type { AddedSet } from './workoutRules'
 import { clearSessionDrafts, dexieDraftStore, draftIdentity, storedDraftId, usableDrafts, usableLists, type StoredDraft } from './sessionDrafts'

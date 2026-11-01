@@ -1,0 +1,89 @@
+Bulk
+1 · PRIORITIES
+2 · EXERCISES
+3 · VOLUME
+WEEKDAY
+SEQUENCE
+Push 1
+MON
+Pull 1
+MON
+TUE
+WED
+THU
+FRI
+SAT
+SUN
+01
+Lat Pulldown
+REST AFTER 3min 0s
+SUPERSET A · 3 EXERCISES
+02
+Seated Cable Row
+BACK
+UNIT
+INHERIT (KG)
+KG
+LBS
+REST
+−
+GLOBAL
++
+REST AFTER
+−
+NONE
++
+TEMPO
+3-1-1-0
+SUPERSET REST
+WITHIN ROUND
+−
+NO TIMER
++
+AFTER ROUND
+−
+2min 0s
++
+03
+Face Pull
+04
+Rear Delt Fly
+05
+EZ Bar Curl
++
+ADD EXERCISE
+WARMUP ROUTINE
+5 min easy bike
+Band pull-aparts
++
+ADD ITEM
+Push 2
+THU
+Pull 2
+FRI
+Legs
+SAT
++
+ADD WORKOUT
+SAVE
+START
+SEATED CABLE ROW
+Tempo
+NONE
+SET
+DOWN
+−
++
+BOTTOM
+−
++
+UP
+−
++
+TOP
+−
++
+
+Seconds per phase. X is as fast as you can.
+
+SET TEMPO 3-1-1-0

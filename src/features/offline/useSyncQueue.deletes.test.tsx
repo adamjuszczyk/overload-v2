@@ -11,10 +11,12 @@
 // (`queueServer.testutil.ts`). Every case has the writes of other records in the same queue, and asserts they went in the same pass and that only the writes naming the deleted
 // record were dropped.
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { renderHook, act } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { QueueServer } from './queueServer.testutil'
+import { versionCheckAnswers } from '../release/versionGate.testutil'
 import { card, headLog, orderOf, rowKeyed, viewOf } from '../gym/workoutRules.testutil'
 
 interface QueueItem {
@@ -86,6 +88,7 @@ beforeEach(() => {
   world.deviceDeleted = []
   server.reset()
   queryClient.clear()
+  versionCheckAnswers() // the version check has answered: this version may send the queue (chunk 73)
   useOfflineStore.setState({ syncFailures: [], failedIds: new Set(), pendingIds: new Set() })
   errorLog = vi.spyOn(console, 'error').mockImplementation(() => {}) // the queue logs each failed attempt
   // The account's world on the server: one exercise, two sessions in progress.

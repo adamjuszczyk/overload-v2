@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, screen, within, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ProgramExercise, WeekPlan, WorkoutDay, Session, SetLog, Exercise } from '../../types'
@@ -8,8 +9,10 @@ import type { ReferenceSession } from './sessionService'
 // Screen-layer test (Lessons: "a screen-layer test asserting what
 // ExerciseReference receives and shows"; reviewer's note 4: "Swapped-in,
 // extra and superset members all resolve by their own exercise_id") —
-// renders the REAL GymSession -> SupersetBlock/ExerciseCard -> ExerciseReference
-// tree (same precedent as GymSession.superset.test.tsx, trimmed to a
+// renders the REAL GymSession -> SupersetBlock/ExerciseCard -> WorkoutExerciseHeader
+// tree (the `ExerciseReference` panel the quoted lesson names was replaced in
+// chunk 58b by the header's LAST line and sheet, which this test reads, and its
+// component was removed in chunk 77) (same precedent as GymSession.superset.test.tsx, trimmed to a
 // static render — no interaction needed here) with a mocked
 // useExerciseReferenceSessions Map holding FOUR distinctly-keyed,
 // discriminating entries (a plain superset member, its block partner, a
@@ -187,10 +190,10 @@ function renderSession() {
   )
 }
 
-// Chunk 58b: a card says what its exercise's reference is in one line ("LAST = LAST WEEK, TUE ›"), and the sheet its history icon opens lists
-// the numbers. The sheet is a dialog in the page's body, so a card's sheet is opened from the card's own scope and read as the one dialog.
+// Chunk 58b: a card says what its exercise's reference is in one line ("LAST = LAST WEEK, TUE ›"), and the sheet that line opens lists
+// the numbers (chunk 78: the history icon beside the ⋯ is gone, the line and ⋯ → Exercise history open the sheet). The sheet is a dialog in the page's body, so a card's sheet is opened from the card's own scope and read as the one dialog.
 function openSheetOf(exerciseName: string) {
-  fireEvent.click(within(cardScopeFor(exerciseName)).getByRole('button', { name: 'Exercise history' }))
+  fireEvent.click(cardScopeFor(exerciseName).querySelector('[data-last-line]') as HTMLElement)
   return within(screen.getByRole('dialog'))
 }
 

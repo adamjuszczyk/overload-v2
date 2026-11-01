@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 import { queryClient } from '../../lib/queryClient'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settingsStore'
 import { captureRender } from '../../testing/captureRender'
@@ -59,10 +60,11 @@ vi.mock('../../lib/supabase', () => ({
 }))
 vi.mock('../auth/useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' }, signOut: vi.fn() }) }))
 
-// SettingsPage's ABOUT section reads these two vite `define` globals, which
+// SettingsPage's WHAT'S NEW section reads these vite `define` globals, which
 // vitest.config.ts doesn't define (the same stub SettingsPage.deloadRules.test uses).
 vi.stubGlobal('__BUILD_HASH__', 'test')
 vi.stubGlobal('__BUILD_TIME__', '2026-01-01T00:00:00.000Z')
+vi.stubGlobal('__APP_VERSION__', '1.2.1')
 
 const { default: SettingsPage } = await import('./SettingsPage')
 
@@ -113,7 +115,10 @@ function renderPage() {
   return render(
     // The app's own client: useUpdateSettings reads and writes it directly.
     <QueryClientProvider client={queryClient}>
-      <SettingsPage />
+      {/* WHAT'S NEW's rows navigate (chunk 71), so the page sits in a router. */}
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   )
 }

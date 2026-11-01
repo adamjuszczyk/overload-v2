@@ -7,7 +7,9 @@
 // The finish must send the queue first, and when queued writes for the
 // session are still left (the flush failed) it must queue itself behind them
 // instead of writing from an incomplete read.
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
+import { versionCheckAnswers } from '../release/versionGate.testutil'
 import { renderHook } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -104,6 +106,9 @@ const queuedSet = (id: string, loggedAt: string, isSkipped: boolean): QueueItem 
   payload: { id, session_id: 's1', logged_at: loggedAt, is_skipped: isSkipped },
   createdAt: loggedAt,
 })
+
+// The version check has answered: this version may send the queue (chunk 73).
+beforeEach(() => versionCheckAnswers())
 
 afterEach(() => {
   state.queue = []

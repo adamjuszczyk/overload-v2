@@ -5,6 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { queryClient } from '../../lib/queryClient'
 import { captureRender } from '../../testing/captureRender'
+import { pickTempo } from '../../components/pickers/tempoPicker.testutil'
 import { useSettingsStore } from '../settings/settingsStore'
 import type { Exercise, MuscleGroup, Mesocycle, Program } from '../../types'
 import {
@@ -374,7 +375,8 @@ describe('SAVE sends exactly the op list planProgramChange returns for the draft
     const sheet = dialog('Lat Pulldown')
     for (let i = 0; i < 6; i++) fireEvent.click(within(sheet).getByRole('button', { name: 'Rest: more' })) // 1:30
     for (let i = 0; i < 3; i++) fireEvent.click(within(sheet).getByRole('button', { name: 'Rest after: more' })) // 0:45
-    fireEvent.change(within(sheet).getByLabelText('Tempo'), { target: { value: '3-0-1-0' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Tempo for Lat Pulldown' })) // the tempo picker (1.2.1 item 3), SET: 3-0-1-0
+    pickTempo(dialog('Tempo'), '3-0-1-0')
     fireEvent.click(within(sheet).getByRole('button', { name: 'LBS' }))
     fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }))
     expect(screen.getByText('REST 1:30')).toBeTruthy()
@@ -955,7 +957,8 @@ describe('draws boards PL1, PL2, PL3, PL7, PL8 and PL9', () => {
     click('+ ADD EXERCISE')
     await pickInSheet('Add exercise', 'Add Cable Curl')
     click('Cable Curl: rest, tempo, unit')
-    fireEvent.change(within(dialog('Cable Curl')).getByLabelText('Tempo'), { target: { value: '3-0-1-0' } })
+    fireEvent.click(within(dialog('Cable Curl')).getByRole('button', { name: 'Tempo for Cable Curl' }))
+    pickTempo(dialog('Tempo'), '3-0-1-0')
     fireEvent.click(within(dialog('Cable Curl')).getByRole('button', { name: 'Close' }))
     captureRender('change-program-page', container)
   })

@@ -1,35 +1,38 @@
 # Overload — Decisions
 
+*2026-10-30 (BUILD.md 2.1, step 3): this file is now a record only. New decisions are raised as decision cards (RULES.md, "Decision cards") and recorded here as entries once answered; no entry is ever rewritten. "Waiting on Adam" below is the 1.2 process's inbox as it last stood (2026-10-28) and is no longer maintained; the answers of 2026-10-30 are entries 250–267 (written in the older layout before BUILD.md reached the setup session; they stay as written).*
+
+*Entries from 268 on use BUILD.md 2.1's format:*
+```
+## [n] [The ask, one line]
+Chunk: [n]   Date: [date]
+Recommendation: [one line]
+Answer: [Adam's, as given to the coordinator]
+Evidence: [short; or a pointer to HISTORY.md]
+```
+*Answered entries stay, so the same question is never asked twice. "For the release" keeps every flagged migration, one line each.*
+
 ## Waiting on Adam
-*Rewritten at every boundary. Last: 2026-10-27, the release prep (the 046 counts file merged, #239; the migrations PR #240 and the release PR #241 open; the update notes and the run sheet).*
-- *The release is ready for you: every step, command and what it must print is in `docs/release-1.2-run-sheet.md`, in your order. Nothing is merged into master.*
-- *Your vibe check on staging (2026-10-27) was the "what's new in 1.2" tour: your seven items are on the 1.2.1 list as you gave them, and nothing was flagged for 1.2 beyond the four checks below.*
-- *RC44 is done: run by you on production, 2026-10-27, zero rows (none of your active week-dependent sequence runs hits 203's case).*
-- *The four checks (245–248): none can write wrong data and none is an unintended 1.1 regression, so none blocks the release. Each has a recommendation for you below.*
+*Rewritten at every boundary. Last: 2026-10-28, Adam's answers to 249 (1.2.1 item 1 decided; the read-only count of runs deleted the old way, point 3, is yours to run); before it, his correction of 1.2.1 item 1 and the check of what hangs off a finished program (249).*
+- *1.2 is released: #240 and #241 are merged, and your smoke test passed on your phone (2026-10-28).*
+- *The tag and the GitHub Release (step 8) are yours: this environment's git proxy refused the tag push (HTTP 403) and its GitHub tools can't create a release. Nothing was worked around; no tag exists on GitHub yet.*
 - *Tests owed: none.*
 
 What waits on you, in order:
-1. **The release, steps 3–7** (TASKS-1.2 "Release"; blocks the release). Every command and what it must print: `docs/release-1.2-run-sheet.md`, in your order (backup → before counts → your yes on 046 → step 5 → after counts → step 6 → smoke test → the P rows).
-   - Step 5 is **PR #240**: the migrations 042–047 and their four probe specs, off `master`, `migration-replay` green. Its merge is your yes on 046 (DECISIONS 202). It merges only after the backup (`supabase db dump --linked`: roles, schema, data, right before step 5, your words of 2026-10-27; the dashboard's daily backup as a second copy) and the before counts (`scripts/release-046-counts.sql`, #239, with `scripts/live-counts.sql` as the record).
-   - Step 6 is **PR #241**, `staging` → `master`: a merge commit, never squashed, only after step 5's deploy is verified. The update notes (`docs/release-1.2-notes.md`) are its body.
-   - A time when nobody is training (step 4), from #240's merge to #241's deploy.
-   - The release-wide `check-migration` (step 2) flags exactly the 15 statements in "For the release" (042–047). Nothing new to decide: the one blocking decision is your merge of #240.
-   - RC44 is done (zero rows). R5's two read-only queries are information, not gates (optional, in the run sheet).
-   - On Windows, `probe-live-columns.mjs` run plainly prints nothing and exits 0 (its main guard never matches a `C:\` path). The run sheet's probe lines work around it; the script itself is unchanged.
-2. **The four vibe-check items** (none blocks; each executed, verdict NOT A BLOCKER):
-   - **245** — CHANGE THE PROGRAM gives a workout several weekdays, the planner one. Several days per workout is SPEC's own 1.2 rule ("Workouts that share one plan"), and Plan, `v2_plan_week`, Today's scheduler and `v2_run_schedules` all handle it; a save can't break planning. 1.1: create the same (one day), no running edit at all. Recommended: (a), leave.
-   - **246** — an existing 3+ superset edited and saved keeps every member the edit didn't split or remove, in order. The gap: a superset can't take the exercise below it in CHANGE THE PROGRAM (only a free exercise above can join it), so a split that leaves a superset above can't be joined again before SAVE. 1.1 couldn't change a running program's supersets at all. Recommended: (a), SUPERSET on a superset's last member, for 1.2.1.
-   - **247** — a save changes every not-done session from the current week on, week 5 included (by SPEC: "including a week already planned forward"): removed, swapped and added exercises and the order land there; that week's numbers on kept sets stay; Plan marks only the first week after a done one. 1.1 had no such screen. Recommended: (a), leave; your 1.2.1 "from the week being viewed" covers the start week.
-   - **248** — no ratings-only edit after finishing: 1.1 had none either (its finished-session screen and History are byte-identical to 1.2's), and SPEC holds "Edit button for energy, pump and notes that does not reopen the session" for phase 2; nothing removed it. Recommended: (a), leave.
-3. **After step 6:** the 30 rows marked P, on production, on your account, as part of your training (step 7; each a checkbox in the run sheet's section 8): RC1, RC2, RC3, RC5, RC6, RC7, RC10, RC11, RC12, RC13, RC16, RC19, RC20, RC22, RC23, RC24, RC27, RC28, RC29, RC30, RC31, RC32, RC33, RC34, RC36, RC38, RC39, RC41, RC42 and RC43. RC42 (COACH and its sidebar, yours only) moved here from the staging check (your words, 2026-10-27), with RC43's COACH tab.
-4. **Re-seed:** none is needed for the release or for any checklist row. `staging-smoke.mjs` reads 49 of 51 until one: the test account's "in-progress session" (0 since RC36 completed the seed's) and the stable account's "the run is a stable weekday program" (2 run copies since RC20 and RC21). Its stable "week 1 done (3 completed sessions)" still passes: it counts the account's completed sessions, which are the finished run's three, so it has not described the active run (a fresh week 1, nothing done) since RC20 and fails only if those sessions go. Re-seed (and paste 046) before the next review that must read the smoke 51 of 51; nothing planned before the release does.
+1. **Step 8: tag `v1.2.0` and publish the GitHub Release** (blocks nothing else). From any clone, on Windows:
+   - `git fetch origin`
+   - `git tag -a v1.2.0 -m "Overload 1.2" 5e1d6a022d1be40feda068821bfa6c26161a5ce5` (#241's merge commit; `git rev-parse origin/master` prints the same sha)
+   - `git push origin v1.2.0`
+   - `git switch master` and `git pull` (the notes as on master), then `gh release create v1.2.0 --verify-tag --title "Overload 1.2" --notes-file docs/release-1.2-notes.md` (not a draft, not a prerelease). Or on GitHub: Releases → Draft a new release → tag `v1.2.0` → title "Overload 1.2" → paste `docs/release-1.2-notes.md` → "Set as a pre-release" unticked → Publish release.
+   - Don't let the web form create the tag: it makes a lightweight one, not the annotated "Overload 1.2".
+2. **The P rows** (step 7), on production, on your account, as part of your training over the coming days (each a checkbox in the run sheet's section 8). The 30 rows: RC1, RC2, RC3, RC5, RC6, RC7, RC10, RC11, RC12, RC13, RC16, RC19, RC20, RC22, RC23, RC24, RC27, RC28, RC29, RC30, RC31, RC32, RC33, RC34, RC36, RC38, RC39, RC41, RC42 and RC43. RC42 (COACH and its sidebar) and RC43's COACH tab are yours only. A row that fails goes to the 1.2.1 list, or to a fix if it writes wrong data.
+3. **The read-only orphan count (point 3 of your 249 answers): done.** You ran it on production on 2026-10-28 and it returned no rows: no run copy without a run and no session left with no run on your account, so no cleanup is needed (DECISIONS 249).
+4. **The 1.2.1 list** ("1.2.1 list" below): 220–238 and 243 as built, each with its 1.2.1 change named; your seven vibe-check items; your four items of 2026-10-28 (delete a program, What's new, maintenance mode, required updates; item 1 corrected by you the same day and decided by your answers to 249: a full delete of a finished run in one database function, and a "deleted" mark on a saved program); 246's recommendation (a), SUPERSET on a superset's last member. What goes in, and in what order, is yours.
+5. **The four vibe-check items** (none blocks; each executed, verdict NOT A BLOCKER): 245, (a) leave; 246, (a) for 1.2.1; 247, (a) leave; 248, (a) leave. Their long form: HISTORY.md, "2026-10-28 release steps 8–9", the old "Waiting on Adam".
+6. **BUILD.md's rewrite** (TASKS-1.2 "Release", step 9; your sequence, step 8): what staging taught. BUILD.md is not in the repo.
+7. **Re-seed:** none is needed. `staging-smoke.mjs` reads 49 of 51 until one (no in-progress session on the test account since RC36; two stable run copies since RC20 and RC21). Re-seed (and paste 046) before the next review that must read the smoke 51 of 51.
 
-The release:
-- 121 is closed with your output (2026-10-27): production's migration history is intact.
-- The update notes' lines for 239–242 are in "For the release"; 240's wording is yours (its line says plainly what 1.1's flows could reach). 243 has a "known in 1.2, fixed in 1.2.1" line there.
-- The update notes are final: `docs/release-1.2-notes.md`. They hold every [1.2] rule with its status and the row that checked it, and the Superseded list checked line by line (each removed 1.1 label absent from the 1.2 bundle). They also hold the fixed, known and not-built lines, the 1.2.1 list and what is carried.
-
-Decisions that block a chunk: none.
+Decisions that block a chunk: none. 249 was answered on 2026-10-28 (1.2.1 item 1 decided; "1.2.1 list").
 
 Decisions for your review pass on staging (none blocks; 220–238 are on the 1.2.1 list):
 - **218** — board W1's row caption with the earlier-this-week numbers ("MON 17.5 × 15 @ 1" beside LAST) is in neither 58a's nor 58b's scope and isn't built; SPEC's "those too (W16, W17)" is met by the sheet and the card line's "· ALSO MON". Recommended: (a), add it (one span in the row's LAST line from the sessions the line already reads). Blocks: nothing (display).
@@ -70,6 +73,7 @@ To-dos:
 - **045** — chunk 53 (#183): `v2_plan_week` with the 1.2 copy rules. `check-migration` exit 1 on three statements, each "not on the safe list": `create or replace function v2_plan_week(…)`, `grant execute on function v2_plan_week(uuid, integer) to authenticated` and `notify pgrst, 'reload schema'`. A function only: `compare-schema.mjs` on replay snapshots before and after it finds 2 differences, both the function's body; no row changes; the rollback is 041's block verbatim (its md5 proven in the review). Live on staging since #183's deploy (R2: PLAN FORWARD planned the test account's week 4 and the stable account's week 3 with structure and no numbers). From step 5's deploy to step 6, 1.1's app plans its weeks through it (structure, no numbers: Release, step 4).
 - **046** — chunk 53 (#183): 149's data migration, which changes rows (DECISIONS 149 (c), Adam 2026-10-16; numbered 046 by Adam, 2026-10-20, DECISIONS 196). It reaches production only through Release step 5, after the manual backup and Adam's yes. `check-migration` exit 1 on one statement, "not on the safe list": its `do $$ … $$` block (the scan names the block, not the two `update v2_program_exercises` inside it). **Blocking**, and the decision names this: it changes existing rows of every user's active week-dependent runs on production, Adam's friend's included (the run copies' `week_only`, `removed_at` and `position`, only on rows that differ; a second run changes 0). Where it goes (Adam, 2026-10-20, DECISIONS 202): in step 5's migrations PR (042–047), which merges only after the manual backup and Adam's explicit yes on 046; the merge is the consent. Before the yes, scoped to his `user_id`: RC44's read-only count of his runs that hit 203's sequence-run case, and the before counts and fingerprint (Release, step 3). The production reading is `scripts/release-046-counts.sql` (#239, `6bfe372`; the staging tool, `rehearse-046.mjs --staging`, refuses production): one read-only SELECT, every table it reads filtered to his id. It was built and proven on a replay (000–045 + seed, before and after 046): on staging-sequence, 7 changes on 6 rows move only its run row and the all-rows md5; the test account and his id read identical. It has not yet been run on production. How to run it: `docs/release-1.2-run-sheet.md`, sections 2 and 5. The CLI line is `npx --yes supabase@2.119.0 db query --linked -f <the file> -o json > release-046-before.json` right before step 5's merge, and `> release-046-after.json` right after its deploy; or paste it into the SQL editor. Rehearsed on 183 replayed 1.1-shaped worlds, on the branch's seed and on staging through #183's deploy (after Adam's re-seed from the branch's seed, 204 (a)): `rehearse-046.mjs --staging` read 7 changes on 6 rows on staging-sequence before the merge (0 on the test and stable accounts), and after the deploy `--compare` found exactly those and nothing else, with a second run changing nothing. Rollback: the backup.
 - **047** — chunk 59 (#206, `3d2c7fa`): `v2_session_exercise_swaps.moved_sets`, the swap's record of which sets moved (Adam's answer to 46r's Q5, DECISIONS 183; numbered 047 by Adam, 2026-10-20, DECISIONS 196). `check-migration` exit 1 on one statement, `notify pgrst, 'reload schema'` ("not on the safe list"); the column statement is not flagged. Add-only: one nullable `jsonb` column with no default, no backfill, no check, index, policy or grant; the review's grep of the file without comments finds no update, delete, drop, insert or default. On the review's replay in staging's order (000–046, the seed, 046 pasted), every one of the 42 tables read the same before and after (the new column left out) and the seed's one swap row read NULL, while a copy with a default, one with a backfill and one that writes a set log each failed. Live on staging since #206's deploy: the column probe reads `200 []`, and the seed's swap row reads `moved_sets` null. It goes in step 5's migrations PR with 042–046.
+- **048** — chunk 70 (#253, `5d4add6`): the release state, the maintenance check and the two deletes. `check-migration origin/staging` exit 1 on 17 statements, all "not on the safe list": `drop policy if exists` on the new table's own policy, `revoke all on v2_app_status`, the 7 `create or replace function`, the `do` block that creates `v2_maintenance_check` on every public table with a `user_id` (40 on the replay and staging; production also has Northstar's `ns_*` and Atlas's `atlas_*` tables, so more there: decision card of 2026-10-30, release batch), 3 `revoke execute` and 3 `grant execute`, `notify pgrst`; the column passes as add-only. No existing row changes: on a seeded 047 replay all 42 tables (1,077 rows) read identical before and after, `deleted_at` null on every program; a second apply keeps a changed status row. Not destructive; forward-only.
 - **Release-wide check** (Release, step 2; 2026-10-27, staging `6bfe372` against master `a3ffbe8`): `node scripts/check-migration.mjs origin/master` exits 1 with 15 flags, all in 042–047. They are the same statements as the lines above, one for one: 042 ×3, 043 ×5, 044 ×2, 045 ×3, 046 ×1, 047 ×1. Nothing new: the one blocking decision covering them is Adam's merge of the migrations PR (#240) after the backup and his yes on 046 (DECISIONS 202).
 - Update notes: Coach may skip analysing the one week in which a run's weekdays change (DECISIONS 159, Adam 2026-10-16).
 - Update notes: on a sequence run, a repeated workout whose slots were edited differently in 1.1's week view plans the earlier slot's next cycle from the program, which matches the later slot's week; nothing stored is lost (DECISIONS 203, Adam 2026-10-20).
@@ -141,6 +145,24 @@ To-dos:
 - rest bar shows the workout is complete once all sets are logged or skipped
 - CHANGE THE PROGRAM from the week being viewed, not only the current week.
 
+*Adam, 2026-10-28: "add to the 1.2.1 list". His four items, word for word, each with what it touches:*
+
+1. *Corrected by Adam, 2026-10-28 ("correction to 1.2.1 item 1, and no hotfix"), word for word:*
+   a) Delete a program from YOUR PROGRAMS: a confirmation, then it's removed. Allowed whether or not it has finished runs (each run keeps its own copy, so their history is untouched); refused while a run of it is active.
+   b) DELETE THIS FINISHED PROGRAM (and History's program-filter delete) stays, but becomes a full delete: the run, its weeks and plan, and its sessions and logged sets, so its results leave History and every stat. The confirmation states exactly what goes ("Deletes N sessions and N logged sets. This can't be undone.") with a red button. Check what else hangs off those sessions (swaps, session analyses, Coach notes and analyses) and propose what goes with them; I decide before it's built.
+   DATA chunk, full review.
+   - *Decided (DECISIONS 249, Adam, 2026-10-28).* The rule: anything that only describes this run goes; anything mixed with other runs stays. Row numbers are 249's table (HISTORY.md, "2026-10-28 DECISIONS 249 answered").
+     - **(b)** One database function, one transaction, in the proposal's order: the run's sessions (their logs, swaps, change rows and session analyses go by cascade), then the run (its weeks and plan go by cascade), then its copy program (it can't go first: `v2_mesocycles.program_id` is no action), with the explicit deletes of rows 13–15 in the same transaction. Refused unless the run is the caller's own and `completed`. Goes: rows 1–12, 22, and 13 (Coach's program analysis of the run), 14 (Coach notes on its sessions), 15 (weekly analyses of weeks holding only its sessions, found by value in `input_snapshot`). Stays: rows 16–21, as proposed (no "includes a deleted program" line). Row 22 on the phone: each session's queued writes dropped (`dropQueuedWritesNamingSession`), History, exercise progress, meso progress and Coach's lists refreshed. The confirmation names what goes, with counts.
+     - **(a)** A "deleted" mark on the saved program (a migration), not a row delete. YOUR PROGRAMS and every saved-program picker leave marked rows out. No re-linking: runs' `source_program_id` and their copies' `source_workout_day_id` stay as they are, so "all time" history stays whole. Refused while a run of it is active, enforced in the database function, not only in the app.
+     - *Touches:* a migration (the full-delete function; the mark and the function that sets it), both delete paths of (b) and their confirmation, YOUR PROGRAMS and every saved-program picker for (a), and the phone's queue. Today's DELETE (`deleteMeso`) deletes the run row only: its weeks and planned sets go, its sessions and logs stay cut loose, its copy program is left behind.
+     - *Runs deleted the old way before it* (point 3): their sessions have no run, so a delete by run can't find them. Adam's read-only count comes first; cleanup is decided after he sees it ("Waiting on Adam").
+2. "What's new" in Settings: every release with its date and notes, newest first; the newest notes show once after an update. Seed it with 1.2's notes.
+   - *Touches:* Settings (a WHAT'S NEW section), a notes list shipped with the app seeded from `docs/release-1.2-notes.md`, and a "notes seen" mark on the phone so the newest show once after an update.
+3. Maintenance mode: one flag shows a maintenance screen and blocks writes, enforced in the database as well, so offline-queued writes wait and send after maintenance ends. Releases turn it on before the backup and off after the smoke test.
+   - *Touches:* a migration (the flag, and a database check that refuses every write while it is on) and server config; the offline queue (`useSyncQueue` must hold a write refused for maintenance and send it after, not drop it or count it failed); the release run sheet (on before the backup, off after the smoke).
+4. Required updates: each release sets a minimum version; an older app shows a full-screen "Update to continue" in the current design and can't be used until it updates. Unsent offline writes must survive the update. Replaces the optional RELOAD banner.
+   - *Touches:* a migration or server config (where each release's minimum version lives, readable before sign-in); the PWA update path (`src/features/pwa/`, replacing `PwaUpdateNotice`'s RELOAD banner); the offline queue (the Dexie queue's unsent writes must survive the update and still send).
+
 ## Tests owed
 *Every missing-proof failure the reviewer merges (behaviour verified right, a test missing), one line each: chunk, PR, the test missing. One tests-only builder run before the release checklist adds them all, the way 176 does (RULES.md, "The 1.2 tests-owed rule").*
 
@@ -172,6 +194,11 @@ To-dos:
 - **queue-fix 230** (#230), M8 (a cleanup the phone's database refuses is logged; History's delete resolves): done, #232 (`useSyncQueue.deletes.test.tsx`).
 - **queue-fix 230** (#230), M11 (a cleanup cut short after one removal has removed the session's finish first): done, #232 (`useSyncQueue.deletes.test.tsx`).
 - **queue-fix 230** (#230), M12 and M13 (a recovered log, and each write the session cleanup drops, loses its pending-sync marker): done, #232 (`useSyncQueue.deletes.test.tsx`).
+
+- **70** (#253): optional — a re-runnable `scripts/` proof of 048's functions (the builder's proof2 S1–S6 and its 31-break runner, now only in the build's scratchpad), like `apply-ops-proof.mjs` for 043, with stdout and stderr read apart and a comment-only control; so 74, 75 or a later migration can re-prove them.
+- **75** (#265): `finishedRun.queue.test.tsx`'s "a pass already running…" also asserts the run's queued notes the running pass still held are refused (23503), are not on the server and are not queued again (the review's scratch probe passes on the branch; not committed).
+- **73** (#266), in `src/features/release/useRequiredUpdate.test.tsx`: (1) the update check refused fails at once (fake timers, `registration.update` rejected, `advance(1)` → false, no reload; today's test passes B7g at the 20 s cap); (2) a worker that turns redundant fails at once (same shape; B7j); (3) one attempt at a time by count (two unawaited presses, `advance(0)`, `registration.update` called once; today's test hangs under B7h).
+- The 1.2.1 tests-owed run (#275, 2026-10-31) added 75's one and 73's three owed tests (and one for an already-redundant worker), each failing under its named break by an assertion; 70's optional 048 proof was skipped (its kit is in the build's scratchpad).
 
 ## Format for all new entries
 
@@ -1081,6 +1108,226 @@ When an entry is answered or done, it shrinks to three lines (what, answer, date
   - A mandatory rating missing at finish leads to "the finished-session edit" (:1010-1011, P2).
   - Planned for phase 2, never in 1.2's scope, and removed by no DECISIONS entry.
 - **Probe (the real module):** `FinishScreen.write.test.tsx` passed in the scratch copy of staging. It includes "a reopened session pressed with nothing changed writes back what it already held", so CONTINUE SESSION then COMPLETE keeps the ratings and the note. Nothing is written wrong.
+
+### 249 1.2.1 item 1: what goes with a finished program's full delete, and what a saved program's delete touches (Adam's correction, 2026-10-28; executed on a local replay)
+- What: what goes with DELETE THIS FINISHED PROGRAM's full delete (22 rows of dependents, executed on a local replay), and what a saved program's delete from YOUR PROGRAMS does to its runs' links.
+- Answer: (Adam, 2026-10-28) "(b) Full delete as proposed, rows 1–12 and 22, plus 13, 14 and 15 (Coach program analysis, Coach notes, weekly analyses of weeks holding only the run's sessions). Rule: anything that only describes this run goes; anything mixed with other runs stays. 16–21 stay as proposed; no "includes a deleted program" line. One database function, one transaction, in your order, refused unless the run is mine and completed. The confirmation names what goes, with counts. (a) Saved-program delete = a "deleted" mark, not a row delete and no re-linking: YOUR PROGRAMS and every saved-program picker leave marked rows out; runs' links (source_program_id, source_workout_day_id) stay as they are, so "all time" history stays whole. Refused while a run of it is active, enforced in the database function, not only the app. Point 3: give me the read-only count for my account only (run copies with no run, and the sessions on their days). Cleanup is decided after I see it. Record as DECISIONS 249 and update 1.2.1 item 1." Recorded in "1.2.1 list", item 1; point 3's count is in "Waiting on Adam". The table of rows 1–22, the probe and the full text: HISTORY.md, "2026-10-28 DECISIONS 249 answered".
+- Point 3 (the read-only orphan count, Adam's account only): run by Adam on production, 2026-10-28: no rows. Nothing was left behind by earlier deletes; no cleanup needed.
+- Date: 2026-10-28
+
+### 250 The old root `TASKS.md` was phase 1's plan: renamed `TASKS-phase-1.md`, not `TASKS-1.2-final.md` (1.2.1 setup, TASKS question 1)
+**Ask:** keep the name the planning session chose?
+**Recommendation:** keep `TASKS-phase-1.md` (the file's own title is "phase 1"; it matches `RETRO-phase-1.md`; 1.2's chunks are in `TASKS-1.2.md`).
+**Blocks:** nothing.
+**Options:** (a) keep; (b) another name, one `git mv`.
+**Answer:** (Adam, 2026-10-30) (a).
+**Evidence:** TASKS.md, "Questions for Adam", 1.
+
+### 251 [8a] The confirmation's wording said "runs", which the wording guard forbids (TASKS question 2)
+**Ask:** "It leaves YOUR PROGRAMS. Its finished runs stay in History." fails `scripts/check-wording.test.mjs` (SPEC Language [1.2] C12).
+**Recommendation:** "Its finished programs stay in History.", no allowlist entry.
+**Blocks:** chunk 74's wording.
+**Options:** (a) reword; (b) allowlist the line.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** the guard's `run` family; TASKS.md, 2.
+
+### 252 [8b] What "N logged sets" counts (TASKS question 3)
+**Ask:** which rows the confirmation's set count names.
+**Recommendation:** History's count: a head row, not skipped, not a warmup; stages never counted (as `v2_finished_run_counts` is drafted and proven).
+**Blocks:** chunk 70's function.
+**Options:** (a) History's count; (b) every log row.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** `v2_history_session_summary`'s `set_count` (035); the replay proof `2|2|3|3|1`.
+
+### 253 [10] "Inside every RPC that writes": triggers only, the two new functions check explicitly (TASKS question 4)
+**Ask:** edit the five existing functions to assert maintenance, or rely on the table triggers that fire inside them?
+**Recommendation:** triggers only (proven: seven callable functions refused `OL001` on the replay), plus the explicit check at the top of `v2_delete_saved_program` and `v2_delete_finished_run`; `v2_apply_ops`, `v2_plan_week`, `v2_start_run`, `v2_copy_program` and `reassign_exercise_history` untouched.
+**Blocks:** chunk 70's migration.
+**Options:** (a) as recommended; (b) `create or replace` the five with an assertion.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** TASKS.md, "Scratch proofs".
+
+### 254 [10] Maintenance can't be flipped on staging by the reviewer (TASKS question 5)
+**Ask:** how the maintenance screens and refusal are proven when only Adam can write `v2_app_status`.
+**Recommendation:** the refusal on the replay, the screens on the real staging app with the status request intercepted (Playwright, no write); one real flip on Adam's list; the seed exempts the test account only, so one flip shows both the strip (test) and the screen (stable).
+**Blocks:** chunk 72's staging check.
+**Options:** (a) as recommended; (b) a staging-only write path (rejected: staging would differ from production).
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** `v2_app_status`'s revokes; TASKS.md, 5.
+
+### 255 [10] Signed out, maintenance shows the screen (TASKS question 6)
+**Ask:** before sign-in there is no account to exempt: the screen, or the login page?
+**Recommendation:** the gate wraps the login page too; signing in still works (an auth write, never refused), and an exempt account then gets the strip.
+**Blocks:** chunk 72's gate.
+**Options:** (a) the screen; (b) the login page, the gate after sign-in.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** TASKS.md, 6.
+
+### 256 [9] The once-sheet opens over the first signed-in screen (TASKS question 7)
+**Ask:** when the app opens on the login page, where the notes sheet opens.
+**Recommendation:** over the first signed-in screen, never over the login page.
+**Blocks:** chunk 71.
+**Options:** (a) after sign-in; (b) over the login page too.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** TASKS.md, 7.
+
+### 257 [11] What "Couldn't update" means and how long UPDATE waits (TASKS question 8)
+**Ask:** the failure condition and the wait for the new service worker.
+**Recommendation:** offline, or the update check rejects, or no new worker has activated within 20 s → the error line and TRY AGAIN; the reload waits for in-flight writes as today's RELOAD does.
+**Blocks:** chunk 73.
+**Options:** (a) as recommended; (b) reload at once and let the old bundle show the screen again.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** `usePwaUpdate.ts` (autoUpdate, skipWaiting, clientsClaim); TASKS.md, 8.
+
+### 258 [11] After UPDATE's reload the rest timer and typed-but-unlogged numbers are lost, as after RELOAD (TASKS question 9; Facts to verify 4)
+**Ask:** accept for 1.2.1?
+**Recommendation:** accept; the session, its logged rows, the drafts and the added sets come back; the timer's survival is a later item.
+**Blocks:** nothing.
+**Options:** (a) accept; (b) persist the rest timer in 1.2.1.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** `restTimerStore` is in-memory; `useActiveSession` and chunk 63's Dexie tables; TASKS.md, Facts 4.
+
+### 259 [6] WORKOUT COMPLETE only when at least one working set or stage exists (TASKS question 10)
+**Ask:** `current === null` is also true of a session with no sets at all.
+**Recommendation:** the bar says WORKOUT COMPLETE only when at least one working set or stage exists; an empty workout keeps today's bar.
+**Blocks:** chunk 78.
+**Options:** (a) as recommended; (b) WORKOUT COMPLETE on an empty workout too.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** 46r's `currentSet`; TASKS.md, 10.
+
+### 260 [8a] A deleted program's planner address is refused (TASKS question 11)
+**Ask:** `/program/:programId` reads by id and would open a deleted program.
+**Recommendation:** refuse like a run copy, "This program was deleted."
+**Blocks:** chunk 74.
+**Options:** (a) refuse; (b) allow.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** `PlannerPage.tsx`'s `isRunCopy`; TASKS.md, Facts 1.
+
+### 261 [16] [17] One DATA chunk for both queue fixes (TASKS question 12)
+**Ask:** SPEC Rules 6 names 238 (1) and 243 separately.
+**Recommendation:** one DATA S chunk (80): both are the phone's reads of the queue's deletes; a second small DATA chunk costs a second full review.
+**Blocks:** nothing.
+**Options:** (a) one chunk; (b) two.
+**Answer:** (Adam, 2026-10-30) (a).
+**Evidence:** TASKS.md, chunk 80.
+
+### 262 Vercel's ignoreCommand excludes `prototype/` (TASKS question 13)
+**Ask:** the renames are covered (`.md` to `.md`), `prototype/` is not, so every prototype edit triggers a build.
+**Recommendation:** add `':(exclude)prototype/*'` with a test in `vercel-ignore.test.mjs`, in chunk 70.
+**Blocks:** nothing.
+**Options:** (a) add it in chunk 70; (b) leave it.
+**Answer:** (Adam, 2026-10-30) (a).
+**Evidence:** `scripts/vercel-ignore.test.mjs` (the rename case passes; 379/379); the command's length ≈ 195 of 256 with the exclude.
+
+### 263 Fact 7 on real data: Adam's read-only line on production (TASKS question 14; to-do, Adam's)
+**Ask:** row 15's query is proven on the replay against the builder's shape (`input_snapshot.sessions[].id`); staging holds no weekly analysis; production's rows are Adam's.
+**Recommendation:** before chunk 70 merges, in the SQL editor on his account: `select jsonb_object_keys(input_snapshot) from v2_coach_week_analyses where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' limit 1;` and `select input_snapshot -> 'sessions' -> 0 from v2_coach_week_analyses where user_id = '12e79b69-9891-4f53-a7cf-650edd83659f' limit 1;`, the keys (not the values) pasted here. **When:** before chunk 70 merges.
+**Blocks:** only row 15's exact query if the keys differ.
+**Options:** (a) run it; (b) accept the code-derived shape.
+**Answer:** (Adam, 2026-10-30) (a), his to run; left as a to-do.
+**Evidence:** `weekAnalysisInput.ts`; TASKS.md, Facts 7.
+**Done (Adam, 2026-10-30, later the same day, on production, his account only):** `input_snapshot`'s keys are `phase`, `occurrences`, `avgFormRating`, `bySubgroup`, `week`, `byPattern`, `sessions`, `avgPumpRating`, `notes`, `memory`, `avgEnergyRating`, `weightTrend`; the keys of `input_snapshot -> 'sessions' -> 0` are `mesocycleName`, `pumpRating`, `energyRating`, `date`, `workoutDayName`, `status`, `dayOfWeek`, `id`, `isDeload`, `weekNumber`. So row 15's match on `sessions[].id` holds on real data; chunk 70's merge is no longer blocked by it.
+
+### 264 The `exercises` table (shared with Northstar) gets the maintenance trigger (TASKS question 15)
+**Ask:** include it among the 40 tables?
+**Recommendation:** keep it: the app writes it (the Library); only writes made with a signed-in JWT during maintenance are refused; Northstar is abandoned and nothing here reads or writes its rows.
+**Blocks:** nothing.
+**Options:** (a) include; (b) exclude.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** the catalog query on the replay; TASKS.md, Facts 2.
+
+### 265 The 1.2.1 release notes: the data file is the source of truth (TASKS question 16)
+**Ask:** where the notes are written and which copy wins.
+**Recommendation:** `src/data/releaseNotes.ts`'s 1.2.1 entry is written at the release (step 1); `docs/release-1.2.1-notes.md` is the longer form and the release PR's body, written from it.
+**Blocks:** nothing.
+**Options:** (a) the data file first; (b) the docs file first.
+**Answer:** (Adam, 2026-10-30) (a). Written into SPEC.md.
+**Evidence:** SPEC "Release notes"; TASKS.md, Release step 1.
+
+### 266 Seed additions for [8b]'s and [10]'s staging checks, one re-seed after chunk 70 (TASKS question 17)
+**Ask:** add Coach rows on the finished STG Full Body run and the exempt test account to the seed?
+**Recommendation:** yes, in chunk 70 (TASKS.md, "Seed"); one re-seed by Adam after 70's deploy.
+**Blocks:** chunks 72 and 75's staging checks until the re-seed.
+**Options:** (a) the seed; (b) the reviewer inserts the rows by API in each check.
+**Answer:** (Adam, 2026-10-30) (a).
+**Evidence:** staging's test account owns no Coach rows (read 2026-10-30).
+
+### 267 Every 1.2.1 chunk report records its context figure and its cost-weighted total (TASKS question 18)
+**Ask:** the estimate's plan share used 1.2's per-chunk context budgets as a proxy because the two units were never recorded side by side.
+**Recommendation:** every chunk report carries both figures (RULES.md, "Usage"), and Adam notes the weekly % before and after each chunk, so the next TASKS converts without a proxy.
+**Blocks:** nothing.
+**Options:** (a) record both; (b) keep the proxy.
+**Answer:** (Adam, 2026-10-30) (a).
+**Evidence:** TASKS.md, "Estimate".
+
+
+## 268 048's maintenance trigger on production's Northstar `ns_*` and Atlas `atlas_*` tables: keep it or drop it there
+Chunk: 70   Date: 2026-10-30
+Recommendation: keep: both apps are abandoned, nothing reads or writes their rows, and the trigger acts only during a maintenance window Adam opens; such tables can't fail the deploy (chunk 70's review, executed with a stand-in `ns_probe` table under three owners).
+Answer: keep (Adam, 2026-10-30: "Atlas is not a live app, so keep 048's trigger on the ns_* and atlas_* tables").
+Evidence: HISTORY.md "2026-10-30 chunk 70"; `scripts/schema-compare-exclude.txt`; DECISIONS 264. Before the release (to-do): one read-only list of production's public tables with a `user_id` column, so the release expects 40 triggers plus those.
+
+
+## 269 [80] An offline DELETE of a planned set reads as an open row, and a LOG on it leaves a log the workout hides but History counts: does the read also apply the queued change rows?
+Chunk: 80   Date: 2026-10-30
+Recommendation: (a) the read also applies the session's queued `v2_session_set_changes` upserts with `withChangeRecords`'s matching (read-only, a third line beyond SPEC Rule 6's two); (b) only the two lines, the staging check narrowed to UNLOG and an added set's DELETE, the planned-set shape recorded as known. Recommend (a): Rule 6's two lines alone make the planned-set case worse (setDelete.ts:8-9's "never").
+Answer: (a) (Adam, 2026-10-30): "The workout's read also applies the queued deletion records (read-only; nothing in the queue changes), with a break-proven test of the offline planned-set delete then LOG case (the set stays hidden, and History/Volume don't count it). Record it in SPEC.md's Rule 6 as a third line for [17]." Written into SPEC.md Rule 6. Chunk 80 is unblocked.
+Evidence: HISTORY.md "2026-10-30 independent gap pre-read of chunks 72, 73, 75 and 80", 80-1.
+
+## 270 [10] Signed out during maintenance the screen covers the login page, so an exempt account can't sign in (SPEC "signing in still works", DECISIONS 255)
+Chunk: 72   Date: 2026-10-30
+Recommendation: (b) a small SIGN IN action on the signed-out maintenance screen only, because SPEC decides behaviour; (a) as drawn, with "be signed in first" on 1.2.2's run sheet. Built as (b) unless Adam says otherwise; non-blocking (unused until 1.2.2).
+Answer: as built (b), SIGN IN on the signed-out screen (Adam, 2026-10-31, release card: "All as built, pending my vibe check (dislikes come separately)").
+Evidence: HISTORY.md pre-read, 72-3.
+
+## 271 [10] [11] A direct write refused `OL001` doesn't bring the maintenance screen up until the next hourly read
+Chunk: 72   Date: 2026-10-30
+Recommendation: any response with `code === 'OL001'` re-reads `['v2_appStatus']` at once (the queue's catch and one `MutationCache` `onError`), so the run sheet's "within a minute" holds and an old app stops writing at once; otherwise the run sheet's line changes. Built as recommended; non-blocking.
+Answer: as built (Adam, 2026-10-31, release card: all as built, pending his vibe check).
+Evidence: HISTORY.md pre-read, 72-4.
+
+## 272 [8b] A Coach note queued offline on a deleted run's session survives the full delete, unlinked
+Chunk: 75   Date: 2026-10-30
+Recommendation: drop such queued notes in the full delete (249 row 14 says the run's notes go); or accept it as rare (Adam's account only). Built as the drop unless Adam says otherwise; non-blocking.
+Answer: as built, the drop (Adam, 2026-10-31, release card: all as built, pending his vibe check).
+Evidence: HISTORY.md pre-read, 75-5.
+
+## 273 Independent gap pre-read of 72, 73, 75 and 80: the non-blocking findings go into each chunk's brief
+Chunk: 72, 73, 75, 80   Date: 2026-10-30
+Recommendation: the coordinator puts each chunk's findings (72-1/2/5/6, 73-1 to 73-7, 75-1 to 75-8, 80-2 to 80-5) into its builder's and reviewer's brief as readings and scope additions; only 80-1 is a card (269).
+Answer: Adam asked for the pre-read and this handling (2026-10-30: "only a question that blocks a chunk becomes a decision card").
+Evidence: HISTORY.md "2026-10-30 independent gap pre-read of chunks 72, 73, 75 and 80".
+
+
+## 274 The prototype no longer builds: chunk 75 removed `useDeleteMeso`, which the prototype's FinishedProgramPage override imports (dead code)
+Chunk: 75   Date: 2026-10-31
+Recommendation: (a) delete the dead lines in `prototype/src/overrides/FinishedProgramPage.tsx` (one import name, one call, the unused `remove()` block; 21 lines; the review's patch makes the prototype build and pass 9/9, no DEMO state changes); (b) leave it broken until the release. Recommend (a), applied with the tests-owed run before the release's screen comparison. Non-blocking: batch 2's builders view the prototype from a pre-75 checkout (`c846229`).
+Answer: (a), in the 1.2.1 notes PR, with 275's amendment (Adam, 2026-10-31, release card).
+Evidence: HISTORY.md "2026-10-31 chunk 75"; the patch is in the coordinator's scratchpad (`prototype-fix.patch`), restated in HISTORY.
+
+
+## 275 The 1.2.1 release batch: the non-blocking questions raised during the build, each built as recommended
+Chunk: 71–80, the final review   Date: 2026-10-31
+Recommendation: take every recommendation as built (one line each below); the open entries 270, 271, 272 and 274 are answered with this batch.
+Answer: all as built, pending Adam's vibe check; dislikes come separately (Adam, 2026-10-31, release card). The 1.2.1 notes: drafted by an agent from what was built, Adam edits.
+Evidence: each item's chunk section in HISTORY.md. The items:
+- 71: two lines of 1.2's notes reworded to pass the wording guard ("A stable program takes…"; `"Program" everywhere, "cues", "change the program".`), where SPEC says word for word. 71: the version test asserts the app is not older than the seeded `min_version` (TASKS says equal; 1.2.2 raises the row by SQL).
+- 79: SUPERSET on a last member with a superset below merges the two; a stored tempo past 20 steps to 20; the CURRENT PROGRAM card shows no days until the week's schedule is read.
+- 72: A no SIGN OUT on the maintenance screen (signing out wipes the queue it promises to keep); B two direct workout writes (`writeSetChanges`, the CUES write) don't re-read the status on `OL001` (leave; one line each otherwise); C the release run sheet's "every phone shows the screen within a minute" is reworded (an idle phone sees it within the hour); D a failed status read after an "on" answer keeps the screen (keep).
+- 74: `v2_start_run` ignores `deleted_at`, so a START sheet older than 5 minutes can start a deleted program (leave; a later migration in the next-version notes).
+- 75: a failed count read shows "Couldn't count what goes." with DELETE off; the phone's offline copy of the deleted sessions is not cleared (its one reader never matches them).
+- 73: A a suite-wide test default for the version (`vitest.setup.ts`); 1 the update screen also covers the sign-in page, no SIGN IN; 2 the queue is held while `v2_app_status` can't be read, so 048 must be live first (the run sheet keeps the production read of `v2_app_status` as its gate).
+- 78: an exercise added by + ADD EXERCISE has no sets, so WORKOUT COMPLETE stays until its first + ADD SET.
+- 80: the third line applies only queued `deleted` rows; a `retyped` / `pending_stages` row queued offline whose first send fails reads undone until the next pass (apply-all in the next-version notes).
+- Final review: SPEC [8b] says the full delete "goes back to PROGRAMS"; from History's filter the built app stays on History with the filter reset (TASKS 75's scope); keep as built.
+- 274 (amended by the tests-owed run and the final review): the prototype fix also drops or adjusts `prototype/test/workout.test.tsx`'s "preview: new design" assertion of 'TARGET RIR' (its "1.2 today" state renders the real, rebuilt preview since chunk 77); with both, the prototype builds and passes its smoke.
+
+
+## 276 The 1.2.1 vibe check on staging: like, dislike, confused
+Chunk: the release   Date: 2026-10-31
+Recommendation: —
+Answer: Adam, 2026-10-31: liked all 11 stops (01 What's new, 02 PREVIEW SESSION, 03 exercise headers, 04 warmup rows, 05 workout complete, 06 programs, 07 planner, 08 CHANGE THE PROGRAM, 09 finished program, 10 priorities, 11 full delete); disliked none, so nothing goes to the next-version notes from it; confused by 12, the maintenance flip: not checked on a second account, and the screen showed with a delay — explained: the app reads the flag at start, on return to the foreground and hourly, while the database refuses writes at once (SPEC [10], Rule 3); no change. Release card decision 1 confirmed: every display choice stays as built.
+Evidence: DECISIONS 254, 271, 275 (72's card C).
 
 ### 155 The display follow-up's own display choices (provisional, D31)
 - What: three display choices of the display follow-up (#135) with no exact word from Adam: (a) a picker switched to a segment the set doesn't have starts from the boards' examples (12 → RANGE 8–10, 6–9 → NUMBER 8); (b) the typed boxes (a number past the bounds held to the nearest one, an emptied box back to its number); (c) the cues sheet's rows keep wrapping a long cue.

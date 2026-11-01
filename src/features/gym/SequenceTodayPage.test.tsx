@@ -8,6 +8,7 @@
 // is replaced wholesale with a canned SequenceSchedulerData per test, and
 // every write hook is a spy asserting its exact call arguments.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import type { Mesocycle, WorkoutDay, Session } from '../../types'
 import type { SequenceSchedulerData } from './useSequenceScheduler'

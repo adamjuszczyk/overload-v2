@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import BottomSheet from '../../components/BottomSheet'
 import { StepperPill, hairline } from '../../components/pickers/pickerControls'
 import { REST_MAX_SECONDS, formatRestClock, stepRest } from '../../components/pickers/pickerLogic'
-import { normaliseTempo } from '../../lib/plannerVocabulary.js'
+import TempoPicker from '../../components/pickers/TempoPicker'
 import type { WeightUnit } from '../../types'
 
 // Chunk 51a (TASKS-1.2; boards PL2 "Exercise ⋯: rest, tempo, unit", PL3 "Superset member ⋯", PL9 "Warmup routine and rest states"):
@@ -16,8 +16,9 @@ import type { WeightUnit } from '../../types'
 // is mounted to open it and unmounted to close it (BottomSheet's contract), and is mounted outside clickable parents.
 //
 // Not on the boards, so provisional under D31: MOVE UP / MOVE DOWN at the foot of the sheet, TASKS 51a's "⋯ fallback" for the drag
-// that reorders the list; the tempo box is a text field (16 px, so iOS doesn't zoom) that writes every valid value at once and
-// shows PL9's refusal ("Use 4 fields, e.g. 3-1-1-0 (X allowed)") for a half-typed one, keeping the last valid value in the draft.
+// that reorders the list. The TEMPO row opens the tempo picker (1.2.1 item 3; SPEC Tempo picker: "the same picker replaces its TEMPO text box and
+// its refusal line"): the row says the tempo set on the exercise, or "—", and the picker hands back `normaliseTempo`'s text or null, which the
+// draft takes. PL9's refusal for a half-typed tempo is gone with the text box.
 
 export interface ExerciseSheetMember {
   /** `A`: the superset's letter (SUPERSET A). */
@@ -51,8 +52,6 @@ export interface ChangeProgramExerciseSheetProps {
   onMoveDown: () => void
   onClose: () => void
 }
-
-export const TEMPO_REFUSAL = 'Use 4 fields, e.g. 3-1-1-0 (X allowed)'
 
 const ROW_STYLE: CSSProperties = {
   minHeight: 56,
@@ -111,62 +110,46 @@ function RestPill({
   )
 }
 
-function TempoRow({ value, onChange }: { value: string | null; onChange: (tempo: string | null) => void }) {
-  // The text is the box's own until it is valid: the draft only ever holds a tempo `planProgramChange` would take.
-  const [text, setText] = useState(value ?? '')
-  const [invalid, setInvalid] = useState(false)
-  function type(next: string) {
-    setText(next)
-    if (next.trim() === '') {
-      setInvalid(false)
-      onChange(null)
-      return
-    }
-    const tempo = normaliseTempo(next)
-    setInvalid(tempo === null)
-    if (tempo !== null) onChange(tempo)
-  }
+// The TEMPO row: the tempo set on the exercise, or "—", and a tap opens the tempo picker. A pick that is the tempo already there asks for nothing.
+// The picker is a second sheet over this one (the stack BottomSheet keeps: Escape and Tab belong to the one on top).
+function TempoRow({ name, value, onChange }: { name: string; value: string | null; onChange: (tempo: string | null) => void }) {
+  const [open, setOpen] = useState(false)
   return (
-    <div style={{ ...ROW_STYLE, flexDirection: 'column', alignItems: 'stretch', justifyContent: 'center', gap: 6 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <span style={ROW_LABEL_STYLE}>TEMPO</span>
-        <input
-          aria-label="Tempo"
-          aria-invalid={invalid}
-          value={text}
-          placeholder="—"
-          autoComplete="off"
-          autoCapitalize="characters"
-          spellCheck={false}
-          onChange={(e) => type(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur()
+    <Row label="TEMPO">
+      <button
+        type="button"
+        aria-label={`Tempo for ${name}`}
+        onClick={() => setOpen(true)}
+        style={{
+          flex: '0 0 auto',
+          width: 166,
+          height: 44,
+          boxSizing: 'border-box',
+          borderRadius: 10,
+          ...hairline('var(--border)'),
+          background: 'var(--surface)',
+          textAlign: 'center',
+          fontFamily: 'var(--font-mono)',
+          fontWeight: 700,
+          fontSize: 13,
+          color: value === null ? 'var(--text-muted)' : 'var(--text-primary)',
+          cursor: 'pointer',
+        }}
+      >
+        {value ?? '—'}
+      </button>
+      {open && (
+        <TempoPicker
+          exerciseName={name}
+          value={value}
+          onSubmit={(tempo) => {
+            if (tempo !== value) onChange(tempo)
+            setOpen(false)
           }}
-          style={{
-            flex: '0 0 auto',
-            width: 166,
-            height: 44,
-            boxSizing: 'border-box',
-            borderRadius: 10,
-            ...hairline(invalid ? 'var(--error)' : 'var(--border)'),
-            borderWidth: invalid ? 2 : 1,
-            background: 'var(--surface)',
-            textAlign: 'center',
-            fontFamily: 'var(--font-mono)',
-            fontWeight: 700,
-            // 16 px: iOS zooms into a smaller field on focus (chunk 40's choice for every input in a sheet).
-            fontSize: 16,
-            color: 'var(--text-primary)',
-            outline: 'none',
-          }}
+          onClose={() => setOpen(false)}
         />
-      </div>
-      {invalid && (
-        <span role="alert" style={{ fontSize: 12, lineHeight: 1.4, color: 'var(--error)', textAlign: 'right' }}>
-          {TEMPO_REFUSAL}
-        </span>
       )}
-    </div>
+    </Row>
   )
 }
 
@@ -244,7 +227,7 @@ export default function ChangeProgramExerciseSheet(p: ChangeProgramExerciseSheet
           <Row label="REST AFTER">
             <RestPill label="Rest after" value={p.restAfterSeconds} emptyText="NONE" onChange={p.onRestAfterChange} />
           </Row>
-          <TempoRow value={p.tempo} onChange={p.onTempoChange} />
+          <TempoRow name={p.exerciseName} value={p.tempo} onChange={p.onTempoChange} />
           <UnitRow value={p.weightUnit} onChange={p.onUnitChange} />
           {p.member && (
             <>

@@ -17,6 +17,7 @@
 // concern. Also separate from GymSession.d30.test.tsx: nothing here touches
 // gymsession-d30-render.html or its test.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, fireEvent, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { WorkoutDay, WeekPlan, Session, WarmupRoutineItem } from '../../types'

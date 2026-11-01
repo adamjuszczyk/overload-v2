@@ -1,0 +1,11 @@
+@import "../../src/styles/global.css";
+@import "../../src/styles/tokens.css";
+@source "../../../overload-v2/src";
+@source "./";
+
+/* The artifact host's own base styles are unlayered, so they beat the app's
+   @layer base. Restate the app's base here, unlayered, so the page background,
+   colour scheme and body font follow the app's theme. */
+:root { color-scheme: dark; }
+:root[data-theme="light"] { color-scheme: light; }
+html, body { background: var(--base); color: var(--text-primary); font-family: var(--font-sans); font-size: 16px; }

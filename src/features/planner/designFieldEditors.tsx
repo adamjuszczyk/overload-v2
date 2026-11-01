@@ -15,17 +15,17 @@ import {
 import { moveWarmupItem } from '../programs/warmupRoutineService'
 import { MenuButton, MenuAction, MENU_PANEL_STYLE } from '../plan/planMenu'
 import { formatRestTime } from '../../lib/formatRestTime'
-import { normaliseTempo } from '../../lib/plannerVocabulary.js'
 import { CAPTION, IconButton, MONO, ruleAbove } from './plannerChrome'
 
-// The design-field editors of the planner's step 2 (StepExercises.tsx): a rest stepper, the tempo field, the weight-unit chips, a block's round
-// rests, the warmup routine, and the superset link toggle CHANGE THE PROGRAM's cards also use.
+// The design-field editors of the planner's step 2 (StepExercises.tsx): a rest stepper, the weight-unit chips, a block's round rests, the warmup
+// routine, and the superset link toggle CHANGE THE PROGRAM's cards also use. (The tempo field was here until 1.2.1 chunk 79: the TEMPO row opens the
+// tempo picker, `components/pickers/TempoPicker.tsx`, and the planner's `TempoField` and CHANGE THE PROGRAM's sheet draw the row.)
 //
 // Chunk 30 (TASKS-1.1 "Rest, tempo, grouping, the routine and units in the Structure view (run-wide)") moved them here from StepExercises.tsx so
 // Plan's STRUCTURE view could show the same editors; that view is gone (Plan's program tab went in chunk 33, its structure rows in chunk 54a), and
 // the planner and CHANGE THE PROGRAM (the link toggle alone) are the users left. Chunk 68 draws the planner's editors as boards PP2, PP2e and PP2f do:
-// 44 px controls on a two-column row (the label, then the control), the unit as one segmented box, a field that is set in the muted accent, a
-// tempo that is refused with its message under the box, the warmup items as rows with the three arrows at their right. Every field keeps its
+// 44 px controls on a two-column row (the label, then the control), the unit as one segmented box, a field that is set in the muted accent, the
+// warmup items as rows with the three arrows at their right. Every field keeps its
 // props and what it calls back with; the writes are the callers' and are unchanged.
 //
 // What the second user added stays optional, and a caller that passes none of it gets the planner's markup:
@@ -97,90 +97,6 @@ export function RestStepper({
           +
         </button>
       </div>
-    </div>
-  )
-}
-
-// ─── Tempo (chunk 17 — SPEC.md "Tempo") ─────────────────────────────────────
-// Same tap-to-edit text-input pattern StepVolume.tsx's rep boxes use for their own parsed free-text design field, inside the same labelled row
-// RestStepper uses just above (so the three sit as one column of controls). Validated by plannerVocabulary.ts's normaliseTempo (chunk 2) — the one
-// parser for this format anywhere in the app; an invalid entry turns the box's outline red and says why under it (PP2e: "Use 4 fields, e.g. 3-1-1-0
-// (X allowed)") and writes nothing, never closing the editor so the message stays visible until fixed. Clearing the field (blank, trimmed) writes
-// null, the same "no override" meaning REST/REST AFTER give an empty stepper. A tempo that is set is drawn in the muted accent (PP2e: TEMPO · SAVED).
-export function TempoEditor({
-  value,
-  disabled,
-  onChange,
-}: {
-  value: string | null
-  disabled: boolean
-  onChange: (tempo: string | null) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [text, setText] = useState('')
-  const [error, setError] = useState('')
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (editing) inputRef.current?.focus()
-  }, [editing])
-
-  function startEditing() {
-    if (disabled) return
-    setText(value ?? '')
-    setError('')
-    setEditing(true)
-  }
-
-  function commit() {
-    const trimmed = text.trim()
-    if (trimmed === '') {
-      setEditing(false)
-      setError('')
-      if (value !== null) onChange(null)
-      return
-    }
-    const normalised = normaliseTempo(trimmed)
-    if (normalised === null) {
-      // Refused — stays in edit mode with the raw input still showing, the message right below it; nothing is written (reviewer's note).
-      setError('Use 4 fields, e.g. 3-1-1-0 (X allowed)')
-      return
-    }
-    setEditing(false)
-    setError('')
-    if (normalised !== value) onChange(normalised)
-  }
-
-  const set = value !== null
-  return (
-    <div style={FIELD_ROW}>
-      <span style={LABEL}>TEMPO</span>
-      {editing ? (
-        <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <input
-            ref={inputRef}
-            value={text}
-            onChange={(e) => { setText(e.target.value); if (error) setError('') }}
-            onBlur={commit}
-            onKeyDown={(e) => { if (e.key === 'Enter') inputRef.current?.blur() }}
-            placeholder="3-1-1-0"
-            aria-label="Tempo"
-            style={{ ...MONO, width: '100%', height: 44, boxSizing: 'border-box', borderRadius: 8, borderWidth: 2, borderStyle: 'solid', borderColor: error ? 'var(--error)' : 'var(--accent)', background: 'var(--surface)', padding: '0 12px', fontSize: 16, color: 'var(--text-primary)', outline: 'none' }}
-          />
-          {error && <span style={{ fontSize: 13, lineHeight: 1.4, color: 'var(--error)' }}>{error}</span>}
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={startEditing}
-          disabled={disabled}
-          style={{ ...MONO, height: 44, boxSizing: 'border-box', borderRadius: 8, ...hairline(set ? 'var(--accent)' : 'var(--border)'), background: set ? 'var(--accent-muted)' : 'var(--surface)', padding: '0 14px', textAlign: 'left', fontSize: 13, fontWeight: set ? 700 : 600, color: set ? 'var(--accent)' : 'var(--text-dim)', cursor: disabled ? 'default' : 'pointer' }}
-        >
-          {/* '—' (not "NONE" — RestStepper's own REST AFTER already uses that exact text for a different, rest-specific meaning in this same column;
-              reusing it here would make the two ambiguous to anything querying by text, this file's own tests included). */}
-          {value ?? '—'}
-        </button>
-      )}
     </div>
   )
 }
@@ -302,7 +218,7 @@ export function EveryWeekLabel() {
 // (chunk 30) is the same editor under the standing UI rule: each item is its text (tap to edit) and a ⋯ holding MOVE UP / MOVE DOWN / REMOVE
 // instead of the three arrows the planner's rows carry; an empty routine shows its ADD ITEM and no "NO WARMUP ITEMS YET"; and `readOnly` (a past
 // week) is just the list. The caller of that variant brings the header and the card around it. Never gated by volumeReadOnly — no such prop at
-// all, same posture RestStepper/TempoEditor already take above.
+// all, same posture RestStepper already takes above.
 export function WarmupRoutineEditor({
   workoutDayId,
   variant = 'rows',
@@ -442,7 +358,7 @@ export function WarmupRoutineEditor({
   )
 }
 
-// One item row — tap-to-edit text (same pattern TempoEditor above uses), plus the arrows and the trash PP2 draws at its right. A blank commit is
+// One item row — tap-to-edit text, plus the arrows and the trash PP2 draws at its right. A blank commit is
 // refused — the editor just closes, re-showing item.body (the last saved value), same "trimmed falsy => no write, no forced revert needed since
 // nothing local held the stale text" posture WorkoutCard's own saveName already takes for a workout's own name.
 function WarmupItemRow({

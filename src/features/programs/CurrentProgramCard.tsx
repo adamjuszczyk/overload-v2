@@ -2,8 +2,11 @@ import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronRight, Pencil } from 'lucide-react'
 import type { Mesocycle, Program } from '../../types'
+import { useToday } from '../../hooks/useToday'
 import { useProgramPriorities } from '../plan/useProgramPriorities'
-import { CHANGE_PROGRAM_PATH, PRIORITIES_PATH, markSummary, programTypesLine, startedLine } from './programsTabLogic'
+import { useRunSchedule } from '../plan/useRunSchedule'
+import { scheduleForWeek } from './runSchedule'
+import { CHANGE_PROGRAM_PATH, PRIORITIES_PATH, markSummary, programTypesLine, startedLine, weekOfRun } from './programsTabLogic'
 
 // PR1's CURRENT PROGRAM card (chunk 65; TASKS-1.2 "The PROGRAMS tab"; SPEC Screens → PROGRAMS: "CURRENT PROGRAM card (name, week, start date,
 // types, FOCUS / DON'T CARE → PR5, EDIT PROGRAM → CHANGE THE PROGRAM, FINISH → PR6/PR7)"): the week (the cycle on a sequence run) in a chip and
@@ -16,9 +19,15 @@ import { CHANGE_PROGRAM_PATH, PRIORITIES_PATH, markSummary, programTypesLine, st
 // since have changed. Display choices no board settles, provisional under D31: a row is drawn only for a mark that is set (an unset feature
 // shows nothing: the standing UI rule), so a run with no marks has neither; the chip waits for a sequence run's cycle (it is read, not
 // guessed) and is left out until it is known; the types line waits for the run's program.
+//
+// "N days a week" counts the days of the week the run is in (1.2.1 item 19; SPEC "PROGRAMS · CURRENT PROGRAM card": `scheduleForWeek`, as Today and Plan
+// do), not the run copy's newest `schedule`: a change of days made in CHANGE THE PROGRAM starts next week, and the run copy holds it from the save. The
+// rows are the run's `v2_run_schedules` (`useRunSchedule`, the entry Today and Plan share); a run with none is in the run copy's days in every week.
+// Display choice no board or SPEC line settles, provisional under D31: until the rows have been read the line says nothing about days, rather than a
+// number from the run copy that may be the wrong week's.
 
 export interface CurrentProgramCardProps {
-  meso: Pick<Mesocycle, 'name' | 'programId' | 'startDate'>
+  meso: Pick<Mesocycle, 'id' | 'name' | 'programId' | 'startDate'>
   /** The run's own program (its copy), which says what the types are; undefined until read. */
   program: Pick<Program, 'scheduleType' | 'planningType' | 'schedule'> | undefined
   /** "WEEK 2" (a weekday run) or "CYCLE 2" (a sequence run), or null while a sequence run's cycle isn't known. */
@@ -73,6 +82,13 @@ export default function CurrentProgramCard({ meso, program, chip, onFinish }: Cu
   const focus = marks.data ? markSummary(marks.data, 'focus') : null
   const dontCare = marks.data ? markSummary(marks.data, 'dont_care') : null
 
+  // The weekdays in force in the run's current week. Only a weekday run has any, so only one reads the rows (a sequence run's line names no days).
+  const today = useToday()
+  const weekdayRun = program !== undefined && (program.scheduleType ?? 'weekday') === 'weekday'
+  const scheduleRows = useRunSchedule(weekdayRun ? meso.id : undefined).data
+  // [] is an answer (no rows: the run copy's days in every week); undefined is "not read yet".
+  const daysInForce = program && scheduleRows !== undefined ? scheduleForWeek(scheduleRows, program.schedule, weekOfRun(today, meso.startDate)) : null
+
   return (
     <>
       <div
@@ -114,7 +130,7 @@ export default function CurrentProgramCard({ meso, program, chip, onFinish }: Cu
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.05em', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
             <span>{startedLine(meso.startDate)}</span>
-            {program && <span>{programTypesLine(program)}</span>}
+            {program && <span>{programTypesLine(program, false, daysInForce)}</span>}
           </div>
         </div>
 

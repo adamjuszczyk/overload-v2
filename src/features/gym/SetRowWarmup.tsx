@@ -1,17 +1,22 @@
 // Chunk 58a — a warmup's row (SPEC "Warmup sets": "weight and reps, both optional; plus a rest timer. Nothing else."; boards W1, W2b
 // "WARMUPS AS ROWS" and "WARMUPS AS A TICK LIST"). A warmup never takes part in the current set or the lock (G54), so its row is always
-// typable and its LOG logs at once. A logged warmup can be corrected (rows mode) or removed (both modes: in tick mode that is "untick").
+// typable and its LOG logs at once. A logged warmup can be corrected (rows mode: the pen) or taken back (both modes: in tick mode that is "untick").
 // Chunk 61 (board W2b "EDITING A WARMUP"): the pen opens `SetEditPanel` (weight and reps, SET TYPE, UNLOG, DELETE, CANCEL, SAVE), whose DELETE asks W9
-// (`onAskDelete`) and deletes the set from the session; the ✕ and the tick's untick are today's removal of the log, kept until chunk 63's UNLOG.
+// (`onAskDelete`) and deletes the set from the session.
+// Chunk 78 (SPEC 1.2.1 [12], [13], [15]; DECISIONS 222 (b), 228 (a), 233 (a)): an open warmup is drawn like any open row that isn't the current set (a
+// muted W, an outlined LOG); in rows mode it has the set's ⋯, whose sheet holds SET TYPE and DELETE SET and nothing else (a warmup has no cues, form,
+// unit override or skip); a logged warmup has no ✕ (the pen's panel has UNLOG and DELETE), and the tick list's untick is an unlog (chunk 63's, through
+// `menu.unlog`: no confirm, the numbers kept as a draft, logging again undoes it), never a delete.
 import { useEffect, useRef, useState } from 'react'
-import { Check, Pencil } from 'lucide-react'
+import { Check, MoreVertical, Pencil } from 'lucide-react'
 import type { SetLog, WeekPlanSet, WeightUnit } from '../../types'
 import type { ResolvedRow, SetDraft } from './workoutRules'
 import type { LogParams } from './useExerciseCardState'
 import { resolveEditedWeightKg, toDisplayWeight, toStorageWeight } from '../../lib/weightUnit'
 import SetEditPanel from './SetEditPanel'
+import SetOptionsSheet from './SetOptionsSheet'
 import type { RowMenu } from './SetRowCurrent'
-import { typeRowText } from './setOptionsView'
+import { optionsEyebrow, typeRowText } from './setOptionsView'
 import { RowLabel, SyncMark, boxStyle, rowFrame } from './setRowParts'
 import { rowDefaults } from './workoutRowView'
 
@@ -24,10 +29,9 @@ interface SetRowWarmupProps {
   restElapsed: () => number | null
   onLog: (params: LogParams) => void
   onUpdate: (changes: { weight: number | null; reps: number | null }) => void
-  onDelete: () => void
-  /** DELETE in the edit panel (board W2b): the row asks W9 before the set is deleted. */
+  /** DELETE in the edit panel (board W2b) and in an open warmup's ⋯ (chunk 78): the row asks W9 before the set is deleted. */
   onAskDelete: () => void
-  /** The row's menu (chunk 62): the panel's SET TYPE row opens the type picker through it, and a type picked for a numberless warmup waits in it for SAVE (152). Chunk 63: its UNLOG. */
+  /** The row's menu (chunk 62): the panel's SET TYPE row (and, since chunk 78, the ⋯'s) opens the type picker through it, and a type picked for a numberless warmup waits in it for SAVE (152). Chunk 63: its UNLOG, which the tick list's untick is. */
   menu?: RowMenu
   /** The numbers this phone kept when the warmup was unlogged (chunk 63): the boxes (and a tick's LOG) start from them, grey until typed in. */
   draft?: SetDraft | null
@@ -36,7 +40,7 @@ interface SetRowWarmupProps {
 const MONO = 'var(--font-mono)'
 const WARMUP = { kind: 'warmup' } as const
 
-export default function SetRowWarmup({ row, planned, log, unit, display, restElapsed, onLog, onUpdate, onDelete, onAskDelete, menu, draft = null }: SetRowWarmupProps) {
+export default function SetRowWarmup({ row, planned, log, unit, display, restElapsed, onLog, onUpdate, onAskDelete, menu, draft = null }: SetRowWarmupProps) {
   const defaults = rowDefaults(planned, unit)
   const draftWeight = draft?.weight != null ? String(toDisplayWeight(draft.weight, draft.enteredUnit ?? unit)) : ''
   const draftReps = draft?.reps != null ? String(draft.reps) : ''
@@ -59,7 +63,7 @@ export default function SetRowWarmup({ row, planned, log, unit, display, restEla
     setGrey((g) => (g[field] ? { ...g, [field]: false } : g))
   }
   const [isEditing, setIsEditing] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [showMore, setShowMore] = useState(false)
 
   // Both optional (SPEC, verbatim): an empty box is simply null, never a validation error.
   function handleLog() {
@@ -127,23 +131,15 @@ export default function SetRowWarmup({ row, planned, log, unit, display, restEla
       )
     }
 
-    const removal = confirmDelete ? (
-      <>
-        <button type="button" onClick={() => setConfirmDelete(false)} className="flex-shrink-0 text-xs font-bold px-2 rounded" style={{ height: 28, color: 'var(--text-muted)', border: '1px solid var(--border)', fontFamily: MONO }}>CANCEL</button>
-        <button type="button" onClick={onDelete} className="flex-shrink-0 text-xs font-bold px-2 rounded" style={{ height: 28, backgroundColor: 'color-mix(in srgb, var(--error) 15%, transparent)', color: 'var(--error)', fontFamily: MONO }}>DELETE</button>
-      </>
-    ) : null
-
     if (display === 'tick') {
       return (
         <div style={rowFrame({ backgroundColor: 'var(--surface)' })} data-row-key={row.key} data-row-state="logged">
           <RowLabel text="W" />
           <span className="flex-1 text-xs font-bold" style={{ color: 'var(--text-muted)', fontFamily: MONO, letterSpacing: '0.06em' }}>WARMUP · DONE</span>
-          {removal ?? (
-            <button type="button" onClick={() => setConfirmDelete(true)} className="flex-shrink-0 flex items-center justify-center rounded" style={{ width: 28, height: 28, backgroundColor: 'var(--accent)', color: 'var(--on-accent)' }} aria-label="Untick warmup">
-              <Check size={14} />
-            </button>
-          )}
+          {/* Chunk 78 (DECISIONS 233 (a)): the untick is an unlog, with no confirm; logging again undoes it. */}
+          <button type="button" onClick={() => menu?.unlog?.()} className="flex-shrink-0 flex items-center justify-center rounded" style={{ width: 28, height: 28, backgroundColor: 'var(--accent)', color: 'var(--on-accent)' }} aria-label="Untick warmup">
+            <Check size={14} />
+          </button>
         </div>
       )
     }
@@ -160,16 +156,10 @@ export default function SetRowWarmup({ row, planned, log, unit, display, restEla
             'DONE'
           )}
         </span>
-        {removal ?? (
-          <>
-            <button type="button" onClick={() => setIsEditing(true)} className="flex-shrink-0 flex items-center justify-center" style={{ width: 28, height: 28, color: 'var(--text-muted)' }} aria-label="Edit set">
-              <Pencil size={13} />
-            </button>
-            <button type="button" onClick={() => setConfirmDelete(true)} className="flex-shrink-0 text-xs" style={{ height: 28, padding: '0 4px', color: 'var(--text-muted)', fontFamily: MONO, fontSize: 9 }} aria-label="Delete set">
-              ✕
-            </button>
-          </>
-        )}
+        {/* Chunk 78 (DECISIONS 233 (a)): no ✕ here; the pen's panel has UNLOG and DELETE. */}
+        <button type="button" onClick={() => setIsEditing(true)} className="flex-shrink-0 flex items-center justify-center" style={{ width: 28, height: 28, color: 'var(--text-muted)' }} aria-label="Edit set">
+          <Pencil size={13} />
+        </button>
         <SyncMark logId={log.id} />
       </div>
     )
@@ -195,17 +185,51 @@ export default function SetRowWarmup({ row, planned, log, unit, display, restEla
   return (
     <div className="space-y-1" data-row-key={row.key} data-row-state="unlogged">
       <div className="flex items-center gap-2">
-        <RowLabel text="W" accent />
+        {/* Chunk 78 (DECISIONS 222 (b)): like any open row that isn't the current set (a warmup never is: G54) — a muted W and an outlined LOG, as `SetRowCurrent` draws them. */}
+        <RowLabel text="W" />
         <div className="flex-1 relative" style={{ minWidth: 64 }}>
           <input type="text" inputMode="decimal" aria-label="Weight" value={weight} onChange={typed('weight', setWeight)} data-draft={grey.weight ? 'true' : undefined} className="w-full" style={boxStyle({ paddingRight: 28, fontSize: 16, ...(grey.weight ? { color: 'var(--text-muted)' } : {}) })} />
           <span className="absolute text-xs pointer-events-none" style={{ right: 6, bottom: 8, color: 'var(--text-muted)', fontFamily: MONO, fontSize: 10 }}>{unit}</span>
         </div>
         <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>×</span>
         <input type="text" inputMode="numeric" aria-label="Reps" placeholder={defaults.repsHint} value={reps} onChange={typed('reps', setReps)} data-draft={grey.reps ? 'true' : undefined} style={boxStyle({ width: 48, flexShrink: 0, fontSize: 16, ...(grey.reps ? { color: 'var(--text-muted)' } : {}) })} />
-        <button type="button" onClick={handleLog} className="flex-shrink-0 rounded-lg font-black text-sm tracking-wider" style={{ height: 44, padding: '0 12px', minWidth: 112, backgroundColor: 'var(--accent)', color: 'var(--on-accent)', fontFamily: MONO }}>
+        <button
+          type="button"
+          onClick={handleLog}
+          className="flex-shrink-0 rounded-lg font-black whitespace-nowrap"
+          style={{ height: 44, padding: '0 8px', minWidth: 56, backgroundColor: 'var(--surface)', color: 'var(--text-primary)', boxShadow: 'inset 0 0 0 1px var(--border-strong)', fontFamily: MONO, fontSize: 12, letterSpacing: '0.1em' }}
+        >
           LOG
         </button>
+        {/* Chunk 78 (SPEC [13], DECISIONS 228 (a)): the set's ⋯ on an open warmup, rows mode: SET TYPE and DELETE SET, so a set made a Warmup by mistake can be made Normal again, or deleted, before it is logged. */}
+        <button type="button" onClick={() => setShowMore(true)} className="flex-shrink-0 flex items-center justify-center" style={{ width: 20, height: 44, color: 'var(--text-muted)' }} aria-label="Set options" aria-expanded={showMore}>
+          <MoreVertical size={16} />
+        </button>
       </div>
+      {showMore && (
+        <SetOptionsSheet
+          eyebrow={optionsEyebrow(row)}
+          typeText={typeRowText(WARMUP)}
+          onSetType={
+            menu === undefined
+              ? undefined
+              : () => {
+                  setShowMore(false)
+                  menu.openSetType()
+                }
+          }
+          cuesText={null}
+          onCues={() => {}}
+          form={null}
+          unit={null}
+          onSkip={null}
+          onDelete={() => {
+            setShowMore(false)
+            onAskDelete()
+          }}
+          onClose={() => setShowMore(false)}
+        />
+      )}
     </div>
   )
 }

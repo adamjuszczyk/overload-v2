@@ -19,7 +19,10 @@
 --     yet the seed creates it with a random password nobody knows; the
 --     password that works is set on the staging branch by Adam (CONTEXT.md,
 --     "Accounts") and kept in the cloud environment's secret
---     STAGING_TEST_PASSWORD.
+--     STAGING_TEST_PASSWORD. Since 1.2.1 (migration 048) it is the one
+--     account exempt from maintenance (v2_app_status.exempt_user_ids): one
+--     flip of maintenance on staging shows the strip on it and the screen on
+--     staging-stable, which is not exempt.
 --   staging-other@example.com     never signs in (random password nobody
 --     knows): owns a small program, run, session, logs, a note and a mark, so
 --     verify-rls run as the test account has foreign rows it must not see
@@ -72,7 +75,16 @@
 --   STG Full Body     saved, weekday, STABLE, one workout on two weekdays
 --                     (G14); its run finished (1.1-era: marks in
 --                     v2_program_priorities), last week a deload. Also owned
---                     by staging-stable, as an active run.
+--                     by staging-stable, as an active run. Since 1.2.1 the
+--                     finished run also carries five Coach rows for the full
+--                     delete's counts (v2_finished_run_counts reads 3 analyses
+--                     and 1 note on it): a note and a session analysis on its
+--                     first session, a program analysis, a weekly analysis
+--                     naming only its sessions of week 1, and a control weekly
+--                     analysis naming its last session and the active run's
+--                     first (a mixed week: the full delete leaves it, and the
+--                     count leaves it out). See "Coach rows on the finished
+--                     run" below.
 --   STG PPL           saved; its run finished BEFORE 1.1: marks only in the
 --                     old v2_coach_meso_tag_priorities table (G50), plan rows
 --                     with RIR only, legacy null-kind dropset logs (D30), an
@@ -124,7 +136,8 @@
 -- platform's defaults, read from production's image (supabase/postgres
 -- 17.6.1.155, pg_default_acl): role postgres's new tables, sequences and
 -- functions in public are granted to anon, authenticated and service_role.
--- The migrations rely on that (only 000 grants explicitly, and none revoke),
+-- The migrations rely on that (only 000 grants explicitly, and none revoke a table's privileges
+-- before 048's v2_app_status; see the block after the grants),
 -- so without this the app's tables answer 42501 on staging (seen 2026-10-14:
 -- v2_programs denied to anon and authenticated). RLS still decides which
 -- rows anyone sees. This file runs on the staging branch only, so production
@@ -137,6 +150,20 @@ grant usage on schema public to anon, authenticated, service_role;
 grant all on all tables in schema public to anon, authenticated, service_role;
 grant all on all sequences in schema public to anon, authenticated, service_role;
 grant all on all functions in schema public to anon, authenticated, service_role;
+
+-- 1.2.1 (migration 048): v2_app_status is read by anyone and written by nobody through the API, and its revokes say so. The blanket
+-- grants above hand the API roles ALL on it again. RLS alone would still stop every write, but silently (an update or a delete matches
+-- no row and answers 200 / 204; production answers 42501), so its grants are put back as the migration made them. A branch that has
+-- not applied 048 has no such table. (The functions 048's revokes closed to anon are open again here too: each refuses an anon caller
+-- itself, with auth.uid() null, so only the answer differs from production's.)
+do $grants$
+begin
+  if to_regclass('public.v2_app_status') is not null then
+    revoke all on public.v2_app_status from public, anon, authenticated, service_role;
+    grant select on public.v2_app_status to anon, authenticated, service_role;
+  end if;
+end
+$grants$;
 
 do $seed$
 declare
@@ -187,6 +214,9 @@ declare
   qp_rot uuid; qw_ra uuid; qw_rb uuid; qw_rc uuid; m_q uuid;
   -- the check after each numbers copy (weeks 2-3 of STG Upper/Lower, cycle 2 of STG Rotation)
   cp_total int; cp_found int; cp_differ int; cp_weights int; cp_reps int; cp_by_pset int;
+  -- the Coach rows on the finished STG Full Body run (1.2.1): its first and last sessions, the active run's first, week 1's Monday,
+  -- and the two weekly analyses' rosters
+  cf_first uuid; cf_last uuid; cf_ul uuid; cf_ws date; cf_ul_ws date; cf_run jsonb; cf_mixed jsonb;
 begin
   -- ── Guard ────────────────────────────────────────────────────────────────
   if exists (select 1 from auth.users where id = c_prod_marker) then
@@ -918,6 +948,65 @@ begin
   update v2_set_logs set exercise_id = e_leg_press, weight = 180
   where session_id = s and exercise_id = e_squat and not is_warmup;
 
+  -- ── Coach rows on the finished run (1.2.1, chunk 70; the full delete [8b], DECISIONS 249 rows 10 and 13-15) ────────────
+  -- The test account owned no Coach rows, so the confirmation's Coach lines and the delete's explicit deletes had nothing to
+  -- count or remove. Written the way the app writes them: `content` is empty (nothing reads it here), and a weekly analysis's
+  -- input_snapshot carries the session roster weekAnalysisInput.ts builds (`sessions[].id`, beside `week` and `occurrences`).
+  -- The run is finished and stays so: chunk 75 counts it as this account and deletes only its own throwaway runs, on
+  -- staging-empty. The five rows, on STG Full Body's run:
+  --   a note and a session analysis on its first session; a program analysis of the run;
+  --   a weekly analysis of week 1 naming only the run's sessions of that week (the full delete removes it);
+  --   a control weekly analysis naming the run's last session and the active run's first (it stays, and the count leaves it
+  --   out). The seed's two runs never share a calendar week, so the control's mixed week is synthetic; it sits under the
+  --   Monday of the active run's first week.
+  perform set_config('request.jwt.claim.sub', t::text, true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', t::text, 'role', 'authenticated')::text, true);
+  select id into cf_first from v2_sessions where mesocycle_id = m_fb order by date, id limit 1;
+  select id into cf_last from v2_sessions where mesocycle_id = m_fb order by date desc, id desc limit 1;
+  select id into cf_ul from v2_sessions where mesocycle_id = m_ul order by date, id limit 1;
+  select start_date into cf_ws from v2_mesocycles where id = m_fb;   -- a Monday: the run's week 1
+  select start_date into cf_ul_ws from v2_mesocycles where id = m_ul;   -- a Monday: the active run's week 1
+  select jsonb_agg(roster.item order by roster.date, roster.id) filter (where roster.mesocycle_id = m_fb and roster.date >= cf_ws and roster.date < cf_ws + 7),
+         jsonb_agg(roster.item order by roster.date, roster.id) filter (where roster.id in (cf_last, cf_ul))
+    into cf_run, cf_mixed
+    from (select s2.id, s2.date, s2.mesocycle_id,
+                 jsonb_build_object('id', s2.id, 'date', s2.date, 'dayOfWeek', lower(to_char(s2.date, 'FMDay')),
+                                    'workoutDayName', wd.name, 'status', s2.status, 'isDeload', wp.is_deload,
+                                    'mesocycleName', mz.name, 'weekNumber', wp.week_number,
+                                    'energyRating', s2.energy_rating, 'pumpRating', s2.pump_rating) as item
+            from v2_sessions s2
+            left join v2_workout_days wd on wd.id = s2.workout_day_id
+            left join v2_week_plans wp on wp.id = s2.week_plan_id
+            left join v2_mesocycles mz on mz.id = s2.mesocycle_id
+           where s2.user_id = t) roster;
+  -- Refuse an empty roster (DECISIONS 219's lesson): a weekly analysis with no sessions is not one the full delete finds, and
+  -- "both empty" would read as a pass.
+  if cf_first is null or cf_last is null or cf_ul is null or cf_ws is null or cf_ul_ws is null
+     or coalesce(jsonb_array_length(cf_run), 0) = 0 or coalesce(jsonb_array_length(cf_mixed), 0) <> 2 then
+    raise exception 'seed.sql stopped and rolled everything back: the Coach rows on STG Full Body''s finished run found no sessions to name (first %, last %, active run''s first %, week 1 starts %, week 1 roster %, mixed roster %).',
+      cf_first, cf_last, cf_ul, cf_ws, coalesce(jsonb_array_length(cf_run), 0), coalesce(jsonb_array_length(cf_mixed), 0);
+  end if;
+  insert into v2_coach_notes (user_id, body, session_id)
+  values (t, 'Leg press felt heavy today (synthetic note for the full delete''s check).', cf_first);
+  insert into v2_coach_session_analyses (user_id, session_id, content, input_snapshot, model)
+  values (t, cf_first, '{}', '{}', 'seed');
+  insert into v2_coach_meso_analyses (user_id, mesocycle_id, meso_name, meso_start_date, meso_end_date, content, input_snapshot, model)
+  select t, mf.id, mf.name, mf.start_date, mf.end_date, '{}', '{}', 'seed' from v2_mesocycles mf where mf.id = m_fb;
+  insert into v2_coach_week_analyses (user_id, week_start, content, input_snapshot, model) values
+    (t, cf_ws, '{}',
+     jsonb_build_object('week', jsonb_build_object('weekStart', cf_ws, 'weekEnd', cf_ws + 6), 'sessions', cf_run, 'occurrences', '[]'::jsonb), 'seed'),
+    (t, cf_ul_ws, '{}',
+     jsonb_build_object('week', jsonb_build_object('weekStart', cf_ul_ws, 'weekEnd', cf_ul_ws + 6), 'sessions', cf_mixed, 'occurrences', '[]'::jsonb), 'seed');
+
+  -- ── Maintenance (1.2.1, migration 048): the test account is exempt ────────────────────────────────────────────────────
+  -- The staging accounts' ids predate the seed on staging, so the exempt id is read by email (t, above). One flip of maintenance
+  -- on staging then shows the strip on this account and the screen on staging-stable. Only exempt_user_ids is set: Adam's flip
+  -- (maintenance, min_version) is left as it is. The seed also runs on a branch that has not applied 048 yet, which has no such
+  -- table. A re-seed while maintenance is ON is refused (OL001) at the seed's first write as the other account: turn it off first.
+  if to_regclass('public.v2_app_status') is not null then
+    update v2_app_status set exempt_user_ids = array[t], updated_at = now() where id;
+  end if;
+
   raise notice 'staging seed: % programs, % runs, % sessions, % set logs for %; % set logs for %',
     (select count(*) from v2_programs where user_id = t), (select count(*) from v2_mesocycles where user_id = t),
     (select count(*) from v2_sessions where user_id = t), (select count(*) from v2_set_logs where user_id = t), c_email,
@@ -937,4 +1026,4 @@ $seed$;
 notify pgrst, 'reload schema';
 
 -- Whoever changes this seed changes the version below, so a wrong seed shows in the result pane the moment it runs.
-select 'overload seed 2026-10-26 seed-fix 219' as seed_version;
+select 'overload seed 2026-10-30 chunk 70' as seed_version;

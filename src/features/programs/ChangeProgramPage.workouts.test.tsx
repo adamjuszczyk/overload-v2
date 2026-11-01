@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { queryClient } from '../../lib/queryClient'
+import { pickTempo } from '../../components/pickers/tempoPicker.testutil'
 import { useSettingsStore } from '../settings/settingsStore'
 import type { Exercise, MuscleGroup, Mesocycle, PlanningType, Program, ScheduleType } from '../../types'
 import {
@@ -703,21 +704,22 @@ describe.each([
 // ─── The cards: SUPERSET, UNLINK and the toggle between members ────────────────────────────────────────────────────────────────
 
 describe('SUPERSET, UNLINK and the toggle between two members', () => {
-  // The exercises that offer SUPERSET are the single ones that have an exercise below them.
+  // The exercises that offer SUPERSET are the single ones that have an exercise below them and, since 1.2.1 (item 18, DECISIONS 246 (a)), the last member
+  // of a superset that has one: Lateral Raise, Face Pull and Dip. No other member has it, and nothing at the foot of the list (Calf Raise).
   const LINKS: ReadonlyArray<{ wk: string; press: string; fresh?: string[]; joins?: string; offered: string[] }> = [
-    { wk: 'push', press: 'pe-bench', joins: 'blk-push', offered: ['pe-bench'] },
-    { wk: 'pull', press: 'pe-bcurl', fresh: ['pe-bcurl', 'pe-shrug'], offered: ['pe-bcurl'] },
+    { wk: 'push', press: 'pe-bench', joins: 'blk-push', offered: ['pe-bench', 'pe-lateral'] },
+    { wk: 'pull', press: 'pe-bcurl', fresh: ['pe-bcurl', 'pe-shrug'], offered: ['pe-face', 'pe-bcurl'] },
     { wk: 'legs', press: 'pe-squat', fresh: ['pe-squat', 'pe-rdl'], offered: ['pe-squat', 'pe-rdl'] },
     { wk: 'legs', press: 'pe-rdl', joins: 'blk-legs', offered: ['pe-squat', 'pe-rdl'] },
-    { wk: 'arms', press: 'pe-curl', joins: 'blk-arms', offered: ['pe-curl', 'pe-skull'] },
-    { wk: 'arms', press: 'pe-skull', fresh: ['pe-skull', 'pe-wrist'], offered: ['pe-curl', 'pe-skull'] },
+    { wk: 'arms', press: 'pe-curl', joins: 'blk-arms', offered: ['pe-curl', 'pe-dip', 'pe-skull'] },
+    { wk: 'arms', press: 'pe-skull', fresh: ['pe-skull', 'pe-wrist'], offered: ['pe-curl', 'pe-dip', 'pe-skull'] },
   ]
   it.each(LINKS)('SUPERSET on $press in $wk links it with the one below', async ({ wk: wkId, press: row, fresh, joins, offered }) => {
     const wk = UNEVEN_WORKOUTS.find((w) => w.id === wkId)!
     await open()
     const before = world
     goTo(wk)
-    // the buttons the cards offer: single exercises with something below them, and no member of a superset
+    // the buttons the cards offer: single exercises with something below them, and the last member of a superset with something below it
     const offers = screen.queryAllByRole('button', { name: /^Link .* with the exercise below$/ }).map((b) => (b.getAttribute('aria-label') ?? '').replace(/^Link (.*) with the exercise below$/, '$1'))
     expect(offers).toEqual(namesOf(wk, offered))
     click(`Link ${nameOf(wk, row)} with the exercise below`)
@@ -729,6 +731,81 @@ describe('SUPERSET, UNLINK and the toggle between two members', () => {
       const block = wk.exercises.filter((x) => x.block === joins).map((x) => x.row)
       expect(blockHeaders()).toEqual(['SUPERSET A'])
       await saveAndExpect(before, (e) => withBlock(e, wk.id, [row, ...block], joins!))
+    }
+  })
+
+  // The last member of a superset links the exercise below into it (1.2.1 item 18): the block gains one member, keeps its id and its two rests, and
+  // the exercise joined is the only row SAVE writes.
+  const LAST_MEMBERS: ReadonlyArray<{ wk: string; press: string; below: string; block: string }> = [
+    { wk: 'push', press: 'pe-lateral', below: 'pe-pushdown', block: 'blk-push' },
+    { wk: 'pull', press: 'pe-face', below: 'pe-bcurl', block: 'blk-pull' },
+    { wk: 'arms', press: 'pe-dip', below: 'pe-skull', block: 'blk-arms' },
+  ]
+  it.each(LAST_MEMBERS)('SUPERSET on $press, the last member of the superset in $wk, links $below into it', async ({ wk: wkId, press: row, below, block }) => {
+    const wk = UNEVEN_WORKOUTS.find((w) => w.id === wkId)!
+    await open()
+    const before = world
+    goTo(wk)
+    click(`Link ${nameOf(wk, row)} with the exercise below`)
+    // one superset still, one member more, in the same order
+    expect(blockHeaders()).toEqual(['SUPERSET A'])
+    expect(cardKeys()).toEqual(rowsOf(wk))
+    const members = [...wk.exercises.filter((x) => x.block === block).map((x) => x.row), below]
+    await saveAndExpect(before, (e) => withBlock(e, wk.id, members, block))
+    // the rows say the same: the superset's rests are the block's own, and the joined exercise carries its block
+    const rows = world.db.v2_program_exercises
+    expect(members.map((m) => rows.find((r) => r.id === m)!.superset_block_id)).toEqual(members.map(() => block))
+    const updatedRows = sent().filter((o) => o.op === 'update' && o.table === 'v2_program_exercises').map((o) => o.id)
+    expect(updatedRows).toEqual([below])
+  })
+
+  // With a superset right below, the last member's SUPERSET joins the two (`planLinkToggle`, as the planner's link between two supersets does): the
+  // upper superset keeps its id and its two rests, and the lower one's members take them. Pull: Biceps Curl and Shrug make a superset of their own first.
+  it('SUPERSET on the last member of a superset with another superset right below it merges the two into the upper one, which keeps its id and its rests', async () => {
+    const wk = UNEVEN_WORKOUTS.find((w) => w.id === 'pull')!
+    await open()
+    const before = world
+    goTo(wk)
+    click('Link Biceps Curl with the exercise below')
+    expect(blockHeaders()).toEqual(['SUPERSET A', 'SUPERSET B'])
+    click('Link Face Pull with the exercise below')
+    expect(blockHeaders()).toEqual(['SUPERSET A'])
+    expect(cardKeys()).toEqual(rowsOf(wk))
+    await saveAndExpect(before, (e) => withBlock(e, wk.id, rowsOf(wk), 'blk-pull'))
+    // the two rows that joined are the only ones written, and the block's own rests are untouched
+    expect(sent().filter((o) => o.op === 'update' && o.table === 'v2_program_exercises').map((o) => o.id)).toEqual(['pe-bcurl', 'pe-shrug'])
+    expect(sent().filter((o) => o.table === 'v2_program_superset_blocks')).toEqual([])
+  })
+
+  it('a superset split before SAVE is joined again from the part above it, and SAVE has nothing to send: Row and Pulldown, then Face Pull, are the trio again', async () => {
+    const wk = UNEVEN_WORKOUTS.find((w) => w.id === 'pull')!
+    await open()
+    goTo(wk)
+    // the second toggle splits Face Pull off the end of the trio: Row + Pulldown stay a superset, Face Pull is on its own
+    fireEvent.click(screen.getAllByRole('button', { name: /SUPERSET — TAP TO UNLINK/ })[1])
+    expect(blockHeaders()).toEqual(['SUPERSET A'])
+    expect(screen.queryAllByRole('button', { name: /SUPERSET — TAP TO UNLINK/ })).toHaveLength(1)
+    // nothing before this offered the part above the split a way back; its last member does
+    expect(screen.queryByRole('button', { name: 'Link Barbell Row with the exercise below' })).toBeNull()
+    click('Link Lat Pulldown with the exercise below')
+    expect(blockHeaders()).toEqual(['SUPERSET A'])
+    expect(screen.queryAllByRole('button', { name: /SUPERSET — TAP TO UNLINK/ })).toHaveLength(2)
+    click('SAVE CHANGES')
+    await screen.findByText('AT PLAN')
+    expect(h.rpc).not.toHaveBeenCalled()
+  })
+
+  it('no superset offers SUPERSET on a member with another member below it, and nothing at the foot of the list offers it', async () => {
+    await open()
+    for (const wk of UNEVEN_WORKOUTS) {
+      goTo(wk)
+      wk.exercises.forEach((x, i) => {
+        // offered when there is an exercise below that is not already in this exercise's superset
+        const below = wk.exercises[i + 1]
+        const expectOffer = below !== undefined && !(x.block && below.block === x.block)
+        const offered = screen.queryByRole('button', { name: `Link ${x.name} with the exercise below` }) !== null
+        expect({ wk: wk.id, row: x.row, offered }).toEqual({ wk: wk.id, row: x.row, offered: expectOffer })
+      })
     }
   })
 
@@ -1102,7 +1179,7 @@ describe('an exercise’s ⋯ writes to the exercise it was opened on', () => {
     row: string
     rest: [number, number | null] // presses of more (+) or less (-), and the rest it ends on
     restAfter: [number, number | null]
-    tempo: string // typed; '' clears it
+    tempo: string // picked in the tempo picker (SET and the four boxes); '' is NONE
     unit: 'DEFAULT' | 'KG' | 'LBS'
   }
   // The first and the last exercise of each workout, each with its own presses. Starting values are the world's (UNEVEN_WORKOUTS).
@@ -1137,7 +1214,9 @@ describe('an exercise’s ⋯ writes to the exercise it was opened on', () => {
       expect(within(sheet).getByText(x.block ? `${wk.name.toUpperCase()} · SUPERSET A` : wk.name.toUpperCase())).toBeTruthy()
       for (let i = 0; i < Math.abs(c.rest[0]); i++) fireEvent.click(within(sheet).getByRole('button', { name: c.rest[0] > 0 ? 'Rest: more' : 'Rest: less' }))
       for (let i = 0; i < Math.abs(c.restAfter[0]); i++) fireEvent.click(within(sheet).getByRole('button', { name: c.restAfter[0] > 0 ? 'Rest after: more' : 'Rest after: less' }))
-      fireEvent.change(within(sheet).getByLabelText('Tempo'), { target: { value: c.tempo } })
+      // the tempo picker (1.2.1 item 3): the row opens it, NONE or SET with the four boxes, the footer writes it into the draft
+      fireEvent.click(within(sheet).getByRole('button', { name: `Tempo for ${x.name}` }))
+      pickTempo(dialog('Tempo'), c.tempo)
       fireEvent.click(within(sheet).getByRole('button', { name: c.unit }))
       closeDialog(x.name)
     }

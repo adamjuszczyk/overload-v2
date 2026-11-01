@@ -18,6 +18,7 @@ function makeChain(result: { data?: unknown; error?: unknown }) {
     insert: vi.fn(() => chain),
     update: vi.fn(() => chain),
     eq: vi.fn(() => chain),
+    is: vi.fn(() => chain),
     order: vi.fn(() => chain),
     single: vi.fn(() => Promise.resolve(result)),
     then: (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
@@ -149,7 +150,7 @@ describe('v2_programs.deload_rules is not read (chunk 48)', () => {
     expect(columns.trim()).not.toBe('*')
     expect(columns).not.toContain('deload_rules')
     // ... and still every column Program is built from (nothing the app reads was dropped).
-    for (const column of ['id', 'user_id', 'name', 'schedule', 'created_at', 'updated_at', 'kind', 'planning_type', 'schedule_type']) {
+    for (const column of ['id', 'user_id', 'name', 'schedule', 'created_at', 'updated_at', 'kind', 'planning_type', 'schedule_type', 'deleted_at']) {
       expect(columns.split(',').map((c) => c.trim()), column).toContain(column)
     }
   })

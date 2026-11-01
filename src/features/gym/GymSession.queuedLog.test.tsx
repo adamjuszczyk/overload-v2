@@ -8,6 +8,8 @@
 // The state each test starts from is what an offline LOG leaves: the log is queued on the phone (its id pending, SYNC) and not on the server. The phone is online again, and the
 // pass that sends it fails once with the session's reads going through.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
+import { versionCheckAnswers } from '../release/versionGate.testutil'
 import { render, cleanup, act, fireEvent, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
@@ -205,6 +207,7 @@ beforeEach(() => {
   serverLogs = [toLog(loggedRow(1, '2026-01-05T10:05:00Z'))]
   queue = [{ id: nextQueueId++, table: 'v2_set_logs', operation: 'upsert', payload: loggedRow(2, '2026-01-05T10:10:00Z'), createdAt: '2026-01-05T10:10:00.000Z' }]
   queryClient.clear()
+  versionCheckAnswers() // the version check has answered: this version may send the queue (chunk 73)
   queryClient.setDefaultOptions({ queries: { retry: false, refetchOnWindowFocus: false } })
   useOfflineStore.setState({ syncFailures: [], failedIds: new Set(), pendingIds: new Set(['log-2']) })
 })

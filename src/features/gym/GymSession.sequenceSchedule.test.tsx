@@ -9,6 +9,7 @@
 // SAME underlying data, under the two scheduleType values GymSession can
 // now be given.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ProgramExercise, WeekPlan, WorkoutDay, Session } from '../../types'
@@ -113,7 +114,8 @@ function renderSession(scheduleType?: 'weekday' | 'sequence') {
 
 // Chunk 58b: the card's "LAST = …" line and the sheet it opens (boards W6, W16) say what the inline panel said; the header's eyebrow names
 // the cycle and slot of a sequence run (board W4).
-const openSheet = () => fireEvent.click(screen.getByRole('button', { name: 'Exercise history' }))
+// (the sheet opens from the card's LAST line: chunk 78 removed the history icon from the workout's header)
+const openSheet = () => fireEvent.click(document.querySelector('[data-last-line]') as HTMLElement)
 const panelTitles = () => Array.from(document.querySelectorAll('[data-last-panel]')).map((el) => (el as HTMLElement).dataset.lastPanel)
 
 describe("GymSession — the last-time line and sheet, and the header, under the two scheduleType values (chunk 25, reviewer's note 5; chunk 58b)", () => {

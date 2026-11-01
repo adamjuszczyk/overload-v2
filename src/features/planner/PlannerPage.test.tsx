@@ -341,6 +341,114 @@ describe('PlannerPage — a run\'s copy is refused (chunk 33)', () => {
   })
 })
 
+// Chunk 74 (1.2.1 item 8a; SPEC Screens → Programs · YOUR PROGRAMS: "A deleted program opened by its address (the planner's /program/:programId, which
+// reads by id) is refused like a run's copy: 'This program was deleted.'", DECISIONS 260). The row stays, marked, so the route's id still finds it, and
+// the planner never opens it. The planner reads `usePrograms()`, which is unfiltered (a run's copy has to be found by its id), so the refusal reads the
+// program's own `deletedAt`; the START sheet's list goes through the same test YOUR PROGRAMS' list does.
+describe('PlannerPage — a deleted program is refused (chunk 74)', () => {
+  const DELETED_AT = '2026-10-30T20:15:00+00:00'
+  const DELETED_MESSAGE = 'This program was deleted.'
+
+  function renderPlannerAt(id: string) {
+    return render(
+      <MemoryRouter initialEntries={[`/program/${id}`]}>
+        <Routes>
+          <Route path="/program/:programId" element={<PlannerPage />} />
+          <Route path="/program" element={<LocationProbe />} />
+          <Route path="/plan" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  it('says "This program was deleted." with the way back, and renders no step, no editor, no Save/Start, not the name', () => {
+    programs = [program({ deletedAt: DELETED_AT, schedule: MONDAY_SCHEDULE })]
+    workoutDays = [WORKOUT_DAY]
+    renderPlanner()
+
+    expect(screen.getByText(DELETED_MESSAGE)).toBeTruthy()
+    expect(screen.getByText('BACK TO PROGRAMS')).toBeTruthy()
+    for (const gone of ['STEP PRIORITIES', 'STEP EXERCISES', 'STEP VOLUME', '1 · PRIORITIES', '2 · EXERCISES', '3 · VOLUME', 'SAVE', 'START', 'My Program']) {
+      expect(screen.queryByText(gone), gone).toBeNull()
+    }
+    // it is not the run's-copy refusal either
+    expect(screen.queryByText("This is the current program's copy")).toBeNull()
+  })
+
+  it('refuses it whatever its planning type, and whatever it schedules (nothing is started or edited from here)', () => {
+    for (const planningType of ['stable', 'week_dependent'] as const) {
+      programs = [program({ deletedAt: DELETED_AT, planningType, schedule: MONDAY_SCHEDULE })]
+      workoutDays = [WORKOUT_DAY]
+      const { unmount } = renderPlanner()
+      expect(screen.getByText(DELETED_MESSAGE)).toBeTruthy()
+      expect(screen.queryByText('STEP PRIORITIES')).toBeNull()
+      expect(screen.queryByText('START')).toBeNull()
+      unmount()
+    }
+    expect(startRunMutateAsyncMock).not.toHaveBeenCalled()
+  })
+
+  it('the way back goes to the real /program route', () => {
+    programs = [program({ deletedAt: DELETED_AT })]
+    renderPlanner()
+
+    fireEvent.click(screen.getByText('BACK TO PROGRAMS'))
+
+    expect(screen.getByText('AT /program')).toBeTruthy()
+  })
+
+  it('does not refuse a saved program that was never marked: deletedAt null, or not there at all', () => {
+    programs = [program({ deletedAt: null })]
+    const first = renderPlanner()
+    expect(screen.queryByText(DELETED_MESSAGE)).toBeNull()
+    expect(screen.getByText('STEP PRIORITIES')).toBeTruthy()
+    first.unmount()
+
+    const bare = program()
+    delete (bare as { deletedAt?: Program['deletedAt'] }).deletedAt
+    programs = [bare]
+    renderPlanner()
+    expect(screen.queryByText(DELETED_MESSAGE)).toBeNull()
+    expect(screen.getByText('STEP PRIORITIES')).toBeTruthy()
+  })
+
+  it('refuses the program the ROUTE names: with two programs, the deleted one is refused and the other opens', () => {
+    programs = [program({ id: 'prog-1', name: 'Still Here' }), program({ id: 'prog-2', name: 'Gone', deletedAt: DELETED_AT })]
+
+    const gone = renderPlannerAt('prog-2')
+    expect(screen.getByText(DELETED_MESSAGE)).toBeTruthy()
+    expect(screen.queryByText('STEP PRIORITIES')).toBeNull()
+    gone.unmount()
+
+    renderPlannerAt('prog-1')
+    expect(screen.queryByText(DELETED_MESSAGE)).toBeNull()
+    expect(screen.getByText('STEP PRIORITIES')).toBeTruthy()
+  })
+})
+
+describe("PlannerPage — START's list leaves a deleted program out (chunk 74)", () => {
+  it("W: the sheet lists the saved programs that are still there: not a deleted one, and (as before) not a run's copy", () => {
+    programs = [
+      program({ id: 'prog-2', name: 'Strength', schedule: MONDAY_SCHEDULE }),
+      program({ id: 'prog-1', name: 'Hypertrophy', schedule: MONDAY_SCHEDULE }),
+      program({ id: 'prog-3', name: 'Old Block', schedule: MONDAY_SCHEDULE, deletedAt: '2026-10-30T20:15:00+00:00' }),
+      program({ id: 'prog-4', name: 'Cut', schedule: MONDAY_SCHEDULE, deletedAt: null }),
+      program({ id: 'run-1', name: 'Running copy', kind: 'run', schedule: MONDAY_SCHEDULE }),
+    ]
+    workoutDays = [WORKOUT_DAY]
+    renderPlanner()
+
+    fireEvent.click(screen.getByText('START'))
+
+    expect(screen.getAllByRole('radio')).toHaveLength(3)
+    for (const name of ['Strength', 'Hypertrophy', 'Cut']) expect(screen.getByRole('radio', { name }), name).toBeTruthy()
+    expect(screen.queryByText('Old Block')).toBeNull()
+    expect(screen.queryByText('Running copy')).toBeNull()
+    // ... and this program is still the one picked
+    expect(screen.getByRole('radio', { name: 'Hypertrophy' }).getAttribute('aria-checked')).toBe('true')
+  })
+})
+
 // Chunk 33 (SPEC Programs and runs [P1.1], G39: "Starting a run needs a
 // schedule: at least one workout on a weekday (weekday), or one workout in the
 // sequence (sequence). Start isn't possible without one."; DECISIONS 85,

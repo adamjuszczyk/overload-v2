@@ -46,7 +46,7 @@ export interface RowMenu {
   clearHeldType: () => void
   saveHeldType: (numbers: TypedNumbers) => Promise<void>
   /**
-   * UNLOG (chunk 63): the edit panel's button. `unlog` sends it; `unlogNote` is the words under a disabled button ("Log its drops first"), null when the set can be unlogged.
+   * UNLOG (chunk 63): the edit panel's button. `unlog` sends it; `unlogNote` is the words under a disabled button ("Unlog its drops first"), null when the set can be unlogged.
    * Left out, the panel's UNLOG is drawn disabled and says nothing.
    */
   unlog?: () => void
@@ -60,6 +60,8 @@ interface SetRowCurrentProps {
   resolvedUnit: WeightUnit
   /** "52.5 × 10 @ 1": last time's set at this place ('' when there is none or this is a drop). */
   lastLine: string
+  /** "MON 32.5 × 8 @ 1": the same set from the most recent earlier session this week, drawn after LAST (chunk 78; SPEC 1.2.1 [21]); '' for none. */
+  alsoLine?: string
   /** Last time is still being read (board W3b "LOADING LAST TIME…"): the boxes don't wait for it, they hold the plan's targets. */
   lastLoading?: boolean
   /** Last time could not be read (board W2: "COULDN'T LOAD LAST WEEK" with RETRY): drawn on the current row only. */
@@ -108,6 +110,7 @@ export default function SetRowCurrent({
   planned,
   resolvedUnit,
   lastLine,
+  alsoLine = '',
   lastLoading = false,
   lastFailed = false,
   onRetryLast,
@@ -442,7 +445,7 @@ export default function SetRowCurrent({
       )}
 
       <CueLine tags={tags} compact={!isCurrent} />
-      <LastLine text={lastLine} loading={lastLoading} failed={lastFailed} onRetry={onRetryLast} />
+      <LastLine text={lastLine} also={alsoLine} loading={lastLoading} failed={lastFailed} onRetry={onRetryLast} />
     </div>
   )
 }

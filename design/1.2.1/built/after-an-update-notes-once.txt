@@ -1,0 +1,120 @@
+SETTINGS
+
+SETTINGS
+
+APPEARANCE
+
+THEME
+
+DARK
+LIGHT
+
+ACCENT COLOUR
+
+REST TIMER
+
+Show rest timer
+
+TARGET DURATION
+
+2:00
+Vibrate when rest ends
+
+WORKOUT
+
+Log sets in order
+
+Off: LOG never asks.
+
+SET TIMING
+
+Measure set time
+
+AUTO-FINISH SESSION
+
+Auto-finish session
+
+AFTER X MINUTES OF INACTIVITY
+
+UNITS
+
+WEIGHT UNIT
+
+KG
+LBS
+
+WARMUP SETS
+
+DISPLAY
+
+ROWS
+TICK
+
+PLANNING
+
+DROPS AND STAGES COUNT AS
+
+WHOLE SET = 1
+EACH DROP = 1
+EACH DROP = ½
+
+For Plan's VOLUME sheet. History and Progress count as before.
+
+DELOAD RULES
+
+Sets
+Weight
+Reps
+RIR
+
+ACCOUNT
+
+SIGN OUT
+
+WHAT'S NEW
+
+1.2.1
+THIS VERSION
+1 NOV 2026
+1.2
+28 OCT 2026
+
+BUILD test · Jan 1, 2026 12:00
+
+UPDATED · 1 NOV 2026
+OVERLOAD 1.2.1
+
+PROGRAMS
+
+Delete a saved program from YOUR PROGRAMS. The one you're running can't be deleted until you finish it. Its finished programs stay in History.
+Deleting a finished program now removes everything in it: sessions, sets and its Coach notes. You see what goes before you confirm.
+Both deletes need a connection and can't be undone.
+A finished program opens on week 1, and its PRIORITIES are read-only.
+
+THE WORKOUT
+
+PREVIEW SESSION now looks like the workout itself.
+Once every set is logged or skipped, the rest bar says WORKOUT COMPLETE with a FINISH button.
+The LAST line also shows the same set from earlier this week.
+Warmup rows work like any other row: ⋯ on an open one, the pen on a logged one.
+The history icon is gone: tap the LAST line, or ⋯ → HISTORY.
+
+PLANNER
+
+Supersets move as one with ↑ ↓.
+TEMPO has a picker: four boxes, 0–20 or X. No more typing dashes.
+In CHANGE THE PROGRAM, a split superset can be joined again.
+
+THE APP
+
+WHAT'S NEW in Settings lists every release. A new version's notes open once.
+A BACK SOON screen while Overload is updated. Offline changes are kept and sent after.
+Old versions ask you to update before you continue. Unsent changes are kept.
+
+FIXED
+
+Unlogging, deleting or renumbering a set offline shows as done right away.
+A planned set deleted offline stays gone.
+A finished program's week strip no longer disappears on long weeks.
+"N days a week" on CURRENT PROGRAM counts this week's days.
+GOT IT

@@ -13,6 +13,7 @@
 // program sets it reads (fetchProgramSets keeps returning such rows), and the resolved rest
 // timer target after each log. Same harness as GymSession.restChain.test.tsx.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ProgramExercise, ProgramSet, ProgramSupersetBlock, WeekPlan, WeekPlanSet, WorkoutDay, Session, SetLog } from '../../types'

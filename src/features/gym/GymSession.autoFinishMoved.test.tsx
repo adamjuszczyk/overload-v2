@@ -5,6 +5,7 @@
 // ("a set added in the session and never logged doesn't hold it, as today"), and the same session with the moved sets logged finishes (the harness's control). The review's first finding
 // (64's review 1, F1) is the second describe: the open drop of a moved planned dropset (its head logged on the swap's card) and a moved planned warmup hold it as the same sets unmoved do.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { Session, SessionSetChangeRecord, SetLog, WeekPlanSet } from '../../types'

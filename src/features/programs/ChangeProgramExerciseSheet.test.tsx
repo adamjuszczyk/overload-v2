@@ -4,12 +4,15 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { useState } from 'react'
 import { captureRender } from '../../testing/captureRender'
 import type { WeightUnit } from '../../types'
-import ChangeProgramExerciseSheet, { TEMPO_REFUSAL, type ChangeProgramExerciseSheetProps } from './ChangeProgramExerciseSheet'
+import { pickTempo } from '../../components/pickers/tempoPicker.testutil'
+import ChangeProgramExerciseSheet, { type ChangeProgramExerciseSheetProps } from './ChangeProgramExerciseSheet'
 
-// Chunk 51a: the sheet behind an exercise's ⋯ (boards PL2 and PL3; PL9's rest and tempo states). It writes nothing: each control asks
+// Chunk 51a: the sheet behind an exercise's ⋯ (boards PL2 and PL3; PL9's rest states). It writes nothing: each control asks
 // its callback for the next value, which is what the tests read. The rest rule is chunk 39's `stepRest` (15 s a step, 10:00 at most,
-// "−" at 0:15 back to not set), the tempo rule is `normaliseTempo` (4 fields, X allowed), and what the sheet adds is the states: GLOBAL
-// / NONE when not set, the end stop at 10:00, and PL9's refusal for a half-typed tempo.
+// "−" at 0:15 back to not set), and what the sheet adds is the states: GLOBAL / NONE when not set and the end stop at 10:00.
+// Since 1.2.1 (chunk 79, SPEC Tempo picker [3]) the TEMPO row opens the tempo picker over the sheet in place of a text box and PL9's
+// refusal for a half-typed tempo: the picker's own rules (four boxes, `normaliseTempo`'s text) are proven in TempoPicker.test.tsx, and
+// here what the row asks its callback for.
 
 afterEach(() => cleanup())
 
@@ -90,35 +93,74 @@ describe('PL2: an exercise’s sheet', () => {
     expect((screen.getByRole('button', { name: 'Rest after: more' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('TEMPO: a valid tempo is passed on at once, normalised; blank clears it', () => {
-    const p = props()
-    render(<ChangeProgramExerciseSheet {...p} />)
-    const box = screen.getByLabelText('Tempo')
-    fireEvent.change(box, { target: { value: 'x-0-1-0' } })
-    expect(p.onTempoChange).toHaveBeenLastCalledWith('X-0-1-0')
-    fireEvent.change(box, { target: { value: '' } })
-    expect(p.onTempoChange).toHaveBeenLastCalledWith(null)
-    expect(screen.queryByText(TEMPO_REFUSAL)).toBeNull()
-  })
-
-  it('PL9: a tempo that is not valid yet shows the refusal and writes nothing; finishing it clears the refusal', () => {
-    const p = props()
-    render(<ChangeProgramExerciseSheet {...p} />)
-    const box = screen.getByLabelText('Tempo')
-    fireEvent.change(box, { target: { value: '3-0-1' } })
-    expect(screen.getByRole('alert').textContent).toBe('Use 4 fields, e.g. 3-1-1-0 (X allowed)')
-    expect(box.getAttribute('aria-invalid')).toBe('true')
-    expect(p.onTempoChange).not.toHaveBeenCalled()
-    fireEvent.change(box, { target: { value: '3-0-1-0' } })
-    expect(screen.queryByRole('alert')).toBeNull()
-    expect(box.getAttribute('aria-invalid')).toBe('false')
-    expect(p.onTempoChange).toHaveBeenCalledTimes(1)
-    expect(p.onTempoChange).toHaveBeenCalledWith('3-0-1-0')
-  })
-
-  it('a tempo already set is in the box', () => {
+  it('TEMPO: the row says the tempo set on the exercise, or —, and no text box is left in the sheet', () => {
+    render(<ChangeProgramExerciseSheet {...props()} />)
+    expect(screen.getByRole('button', { name: 'Tempo for Lat Pulldown' }).textContent).toBe('—')
+    expect(screen.queryByRole('textbox')).toBeNull()
+    cleanup()
     render(<ChangeProgramExerciseSheet {...props({ tempo: '3-1-1-0' })} />)
-    expect((screen.getByLabelText('Tempo') as HTMLInputElement).value).toBe('3-1-1-0')
+    expect(screen.getByRole('button', { name: 'Tempo for Lat Pulldown' }).textContent).toBe('3-1-1-0')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('TEMPO: a tap opens the tempo picker over the sheet, named for the exercise, on the tempo the exercise has', () => {
+    render(<ChangeProgramExerciseSheet {...props({ tempo: '3-1-1-0' })} />)
+    expect(screen.queryByRole('dialog', { name: 'Tempo' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Tempo for Lat Pulldown' }))
+    const picker = screen.getByRole('dialog', { name: 'Tempo' })
+    expect(within(picker).getByText('Lat Pulldown')).toBeTruthy()
+    expect((within(picker).getByRole('textbox', { name: 'Down seconds' }) as HTMLInputElement).value).toBe('3')
+    expect(within(picker).getByRole('button', { name: 'SET TEMPO 3-1-1-0' })).toBeTruthy()
+    // the exercise's sheet is still there under it
+    expect(screen.getByRole('dialog', { name: 'Lat Pulldown' })).toBeTruthy()
+  })
+
+  it.each([
+    ['SET on an exercise with no tempo: the start tempo', null, '3-0-1-0', '3-0-1-0'],
+    ['a tempo changed in one box', '3-1-1-0', '3-1-X-0', '3-1-X-0'],
+    ['NONE on an exercise that has one: null', '3-1-1-0', '', null],
+  ] as const)('TEMPO: %s is asked of the callback once, and the picker closes', (_name, from, pick, asked) => {
+    const p = props({ tempo: from })
+    render(<ChangeProgramExerciseSheet {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Tempo for Lat Pulldown' }))
+    pickTempo(screen.getByRole('dialog', { name: 'Tempo' }), pick)
+    expect(p.onTempoChange).toHaveBeenCalledTimes(1)
+    expect(p.onTempoChange).toHaveBeenCalledWith(asked)
+    expect(screen.queryByRole('dialog', { name: 'Tempo' })).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Lat Pulldown' })).toBeTruthy()
+  })
+
+  it('TEMPO: a valid pick is never asked as null (a tempo of four fields reaches the draft whole)', () => {
+    const p = props({ tempo: null })
+    render(<ChangeProgramExerciseSheet {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Tempo for Lat Pulldown' }))
+    pickTempo(screen.getByRole('dialog', { name: 'Tempo' }), '2-0-X-1')
+    expect(p.onTempoChange).not.toHaveBeenCalledWith(null)
+    expect(p.onTempoChange).toHaveBeenCalledWith('2-0-X-1')
+  })
+
+  it('TEMPO: a pick that is the tempo already there asks for nothing, and the picker closes', () => {
+    const p = props({ tempo: '3-1-1-0' })
+    render(<ChangeProgramExerciseSheet {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Tempo for Lat Pulldown' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Tempo' })).getByRole('button', { name: 'SET TEMPO 3-1-1-0' }))
+    expect(p.onTempoChange).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: 'Tempo' })).toBeNull()
+  })
+
+  it('TEMPO: closing the picker (×, Escape) asks for nothing and leaves the exercise’s sheet open; Escape then closes the sheet', () => {
+    const p = props({ tempo: '3-1-1-0' })
+    render(<ChangeProgramExerciseSheet {...p} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Tempo for Lat Pulldown' }))
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Tempo' })).getByRole('button', { name: 'Close' }))
+    expect(screen.queryByRole('dialog', { name: 'Tempo' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Tempo for Lat Pulldown' }))
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Tempo' })).toBeNull()
+    expect(p.onClose).not.toHaveBeenCalled() // Escape belonged to the picker, the sheet on top
+    expect(p.onTempoChange).not.toHaveBeenCalled()
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    expect(p.onClose).toHaveBeenCalledTimes(1)
   })
 
   it.each<[string, WeightUnit | null]>([
@@ -193,14 +235,21 @@ describe('PL3: a superset member’s sheet', () => {
   })
 })
 
-describe('draws PL9’s rest and tempo states', () => {
-  it('a rest that is set, one at 10:00, and a tempo that is not valid yet', () => {
+describe('draws PL9’s rest states, and the tempo picker over the sheet', () => {
+  it('a rest that is set, one at 10:00, and a tempo that is set (PL9’s refusal for a half-typed tempo went with the text box)', () => {
     function Harness() {
       const [rest, setRest] = useState<number | null>(45)
-      return <ChangeProgramExerciseSheet {...props({ restSeconds: rest, restAfterSeconds: 600, onRestChange: setRest })} />
+      return <ChangeProgramExerciseSheet {...props({ restSeconds: rest, restAfterSeconds: 600, tempo: '3-0-1-0', onRestChange: setRest })} />
     }
     render(<Harness />)
-    fireEvent.change(screen.getByLabelText('Tempo'), { target: { value: '3-0-1' } })
+    expect(screen.getByRole('button', { name: 'Tempo for Lat Pulldown' }).textContent).toBe('3-0-1-0')
     captureRender('change-program-rest-tempo-states', document.body)
+  })
+
+  it('the tempo picker over the exercise’s sheet (CHANGE THE PROGRAM; not drawn in the prototype)', () => {
+    render(<ChangeProgramExerciseSheet {...props({ tempo: '3-1-1-0' })} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Tempo for Lat Pulldown' }))
+    expect(screen.getAllByRole('dialog')).toHaveLength(2)
+    captureRender('change-program-tempo-picker', document.body)
   })
 })

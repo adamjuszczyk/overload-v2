@@ -6,6 +6,7 @@
 // scripts/check-wording.test.mjs. Two empty states, told apart by whether any program is saved; the button goes to the PROGRAMS
 // tab's route (`/program`, App.tsx: Plan opened on PROGRAMS) in both.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { SchedulerResult } from '../../types'

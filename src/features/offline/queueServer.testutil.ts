@@ -43,6 +43,16 @@ export class QueueServer {
   refused: string[] = []
   /** A request fails with a network error this many more times: `upsert <table>:<id>`, `patch <table>:<id>` or `delete <table>:<id>`. */
   failing = new Map<string, number>()
+  /**
+   * Chunk 72 (SPEC.md 1.2.1, Maintenance [10]; migration 048). While it is on, the database refuses every WRITE a signed-in, non-exempt caller makes with
+   * `OL001` (hint `maintenance`), as PostgREST answers it (an HTTP 400 that supabase-js hands back as `{ error: { code: 'OL001', … } }`). The check is
+   * 048's statement-level BEFORE trigger, which fires when the statement ARRIVES: before any row is looked at, so before a foreign key is checked
+   * (a log naming a session the server no longer holds is refused `OL001`, not `23503`), and also for a delete that names no row. Reads are never
+   * refused. Every refusal is recorded in `requests` as `<tag> -> OL001` and in `maintenanceRefused`.
+   */
+  maintenance = false
+  /** The writes the server refused for maintenance, as their request tags. */
+  maintenanceRefused: string[] = []
   private held = new Map<string, { reached: () => void; released: Promise<void> }>()
 
   table(name: string): Map<string, Row> {
@@ -64,6 +74,8 @@ export class QueueServer {
     this.refused.length = 0
     this.failing.clear()
     this.held.clear()
+    this.maintenance = false
+    this.maintenanceRefused.length = 0
     this.onSessionRead = null
   }
 
@@ -100,9 +112,19 @@ export class QueueServer {
     }
   }
 
+  /** 048's refusal, in the shape the app reads (`code`, never the message), or null while maintenance is off. Called first by every write, before anything about its rows. */
+  private refusal(tag: string) {
+    if (!this.maintenance) return null
+    this.requests.push(`${tag} -> OL001`)
+    this.maintenanceRefused.push(tag)
+    return { error: { code: 'OL001', message: 'Overload is being updated. Writes are refused until maintenance is off.', details: null, hint: 'maintenance' } }
+  }
+
   private async upsert(table: string, row: Row) {
     const tag = `upsert ${table}:${row.id as string}`
     await this.gate(tag)
+    const refused = this.refusal(tag)
+    if (refused) return refused
     // A key the row names that the server no longer holds is refused whatever the connection does; the network fails a request that would otherwise have been answered.
     for (const key of KEYS[table] ?? []) {
       const value = row[key.column]
@@ -121,6 +143,8 @@ export class QueueServer {
   private async patch(table: string, patch: Row, id: string) {
     const tag = `patch ${table}:${id}`
     await this.gate(tag)
+    const refused = this.refusal(tag)
+    if (refused) return refused
     if (this.fails(tag)) return { error: { message: 'Failed to fetch' } }
     const row = this.get(table, id)
     this.requests.push(`${tag} ${JSON.stringify(patch)} -> ${row ? '1 row' : '0 rows'}`)
@@ -132,6 +156,9 @@ export class QueueServer {
     const id = filters.length === 1 && filters[0][0] === 'id' ? (filters[0][1] as string) : null
     const tag = id ? `delete ${table}:${id}` : `delete ${table} where ${filters.map(([c, v]) => `${c}=${String(v)}`).join(',')}`
     await this.gate(tag)
+    // Refused whether or not any row matches: a statement-level trigger fires for a delete that finds nothing too.
+    const refused = this.refusal(tag)
+    if (refused) return refused
     if (id && this.fails(tag)) return { error: { message: 'Failed to fetch' } }
     const matches = [...this.table(table).values()].filter((row) => filters.every(([column, value]) => row[column] === value))
     this.requests.push(`${tag} -> ${matches.length} row${matches.length === 1 ? '' : 's'}`)

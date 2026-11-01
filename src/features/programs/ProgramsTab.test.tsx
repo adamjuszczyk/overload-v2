@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, screen, cleanup, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom'
 import { addDays, format, getDay, parseISO } from 'date-fns'
@@ -31,8 +32,10 @@ const state = vi.hoisted(() => ({
   today: '',
   workoutDays: {} as Record<string, unknown[]>,
   sequenceItems: {} as Record<string, unknown[]>,
+  // the run's `v2_run_schedules` rows: [] is an answer (none), undefined is not read yet
+  schedules: [] as unknown[] | undefined,
 }))
-const calls = vi.hoisted(() => ({ priorities: [] as Array<string | null>, cycle: [] as Array<[string, string]> }))
+const calls = vi.hoisted(() => ({ priorities: [] as Array<string | null>, cycle: [] as Array<[string, string]>, schedule: [] as Array<string | undefined> }))
 const completeMesoMock = vi.hoisted(() => vi.fn())
 const completeState = vi.hoisted(() => ({ isPending: false }))
 const startRunMock = vi.hoisted(() => vi.fn())
@@ -47,6 +50,8 @@ vi.mock('./usePrograms', () => ({
   useSavedPrograms: () => state.saved,
   usePrograms: () => state.programs,
   useCreateProgram: () => ({ mutateAsync: createProgramMock, isPending: false }),
+  // chunk 74: DELETE's own cases are ProgramsTab.deleteSaved.test.tsx's; this file only needs the hook to exist
+  useDeleteSavedProgram: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useWorkoutDays: (programId: string) => ({ data: programId ? state.workoutDays[programId] : undefined }),
   useSequenceItems: (programId: string) => ({ data: programId ? state.sequenceItems[programId] : undefined }),
 }))
@@ -60,6 +65,13 @@ vi.mock('../plan/useSequenceCurrentCycle', () => ({
   useSequenceCurrentCycle: (mesoId: string, programId: string) => {
     calls.cycle.push([mesoId, programId])
     return state.cycle
+  },
+}))
+// The card reads the run's weekday rows (1.2.1 item 19): the stand-in records which run it was asked for, so a card that asks for the wrong one fails.
+vi.mock('../plan/useRunSchedule', () => ({
+  useRunSchedule: (mesoId: string | undefined) => {
+    calls.schedule.push(mesoId)
+    return { data: mesoId === undefined ? undefined : state.schedules }
   },
 }))
 vi.mock('../../hooks/useToday', () => ({ useToday: () => state.today }))
@@ -78,9 +90,11 @@ beforeEach(() => {
   state.cycle = { cycle: 2, failed: false, error: null }
   state.workoutDays = {}
   state.sequenceItems = {}
+  state.schedules = []
   completeState.isPending = false
   calls.priorities.length = 0
   calls.cycle.length = 0
+  calls.schedule.length = 0
 })
 afterEach(() => {
   cleanup()
@@ -258,7 +272,7 @@ describe('PR1 — a program running', () => {
     expect(screen.getByText("DON'T CARE")).toBeTruthy()
   })
 
-  it('YOUR PROGRAMS: each saved program with its types in capitals, OPEN and START; RUNNING only on the program the run started from', () => {
+  it('YOUR PROGRAMS: each saved program with its types in capitals, OPEN, START and DELETE (chunk 74); RUNNING only on the program the run started from', () => {
     running()
     state.saved = { data: [SAVED_PPL, SAVED_UL, SAVED_SAME_NAME] }
     renderTab()
@@ -269,6 +283,7 @@ describe('PR1 — a program running', () => {
     for (const id of ['prog-ppl', 'prog-ul', 'prog-ppl-2']) {
       expect(within(programRow(id)).getByText('OPEN')).toBeTruthy()
       expect(within(programRow(id)).getByText('START')).toBeTruthy()
+      expect(within(programRow(id)).getByText('DELETE')).toBeTruthy()
     }
     // RUNNING follows the run's source program (an id), not a name that happens to match
     expect(within(programRow('prog-ppl')).getByText('RUNNING')).toBeTruthy()
@@ -344,6 +359,111 @@ describe('PR1 — a program running', () => {
     state.today = day(14) // Monday
     renderTab()
     expect(within(section('CURRENT PROGRAM')).getByText('WEEK 3')).toBeTruthy()
+  })
+})
+
+// ─── "N days a week" counts the week in force (1.2.1 item 19; SPEC "PROGRAMS · CURRENT PROGRAM card"; DECISIONS 190 (a)) ───────────────────────────
+
+// The run's days were four a week, were changed in week 2 to start in week 3 (three), and again to start in week 5 (two): the run copy holds the newest
+// (two), the rows hold all three (`from_week` 1, 3 and 5), and the saved program it started from has five. Each week's answer is a different number, so the
+// card's line says which of the four sources it read.
+describe('the CURRENT PROGRAM card counts the days of the week in force (1.2.1 item 19)', () => {
+  const TWO_DAYS: WeeklySchedule = { ...NO_DAYS, monday: 'wd-a', thursday: 'wd-b' }
+  const THREE_DAYS: WeeklySchedule = { ...NO_DAYS, monday: 'wd-a', wednesday: 'wd-c', friday: 'wd-d' }
+  const row = (fromWeek: number, schedule: WeeklySchedule) => ({ id: `rs-${fromWeek}`, userId: 'user-1', mesocycleId: 'meso-active', fromWeek, schedule, createdAt: '' })
+  const ROWS = [row(1, FOUR_DAYS), row(3, THREE_DAYS), row(5, TWO_DAYS)]
+  const line = () => within(section('CURRENT PROGRAM')).getByText(/^Weekdays · stable/).textContent
+
+  function changed(rows: unknown[] = ROWS) {
+    running()
+    state.programs = { data: [{ ...RUN_COPY, schedule: TWO_DAYS }, SAVED_PPL, SAVED_UL] }
+    state.schedules = rows
+  }
+
+  it('the weeks and days of this world are printed: Mondays 2026-10-05, 10-12, 10-19, 10-26 and 11-02 start weeks 1 to 5', () => {
+    const mondays = [0, 7, 14, 21, 28].map((offset) => format(parseISO(day(offset)), 'yyyy-MM-dd EEE'))
+    expect(mondays).toEqual(['2026-10-05 Mon', '2026-10-12 Mon', '2026-10-19 Mon', '2026-10-26 Mon', '2026-11-02 Mon'])
+    expect([FOUR_DAYS, THREE_DAYS, TWO_DAYS, FIVE_DAYS].map((s) => Object.values(s).filter(Boolean).length)).toEqual([4, 3, 2, 5])
+  })
+
+  it('week 2 counts the week-2 days (four), though the run copy holds the newest (two): a change that starts in week 3 is not this week’s', () => {
+    changed()
+    state.today = day(9) // Wednesday of week 2
+    renderTab()
+    expect(within(section('CURRENT PROGRAM')).getByText('WEEK 2')).toBeTruthy()
+    expect(line()).toBe('Weekdays · stable · 4 days a week')
+  })
+
+  it('week 3 counts three, week 4 still three, week 5 two: the row with the greatest from_week at or before the week', () => {
+    for (const [offset, week, days] of [[16, 3, '3 days'], [23, 4, '3 days'], [30, 5, '2 days']] as const) {
+      changed()
+      state.today = day(offset)
+      renderTab()
+      expect(within(section('CURRENT PROGRAM')).getByText(`WEEK ${week}`)).toBeTruthy()
+      expect(line()).toBe(`Weekdays · stable · ${days} a week`)
+      cleanup()
+    }
+  })
+
+  it('the week turns over on Monday: Sunday of week 2 still counts four, Monday of week 3 counts three', () => {
+    changed()
+    state.today = day(13) // Sunday 2026-10-18
+    renderTab()
+    expect(line()).toBe('Weekdays · stable · 4 days a week')
+    cleanup()
+    state.today = day(14) // Monday 2026-10-19
+    renderTab()
+    expect(line()).toBe('Weekdays · stable · 3 days a week')
+  })
+
+  it('the rows may come in any order', () => {
+    changed([row(5, TWO_DAYS), row(1, FOUR_DAYS), row(3, THREE_DAYS)])
+    state.today = day(16)
+    renderTab()
+    expect(line()).toBe('Weekdays · stable · 3 days a week')
+  })
+
+  it('a run with no rows is in the run copy’s days in every week', () => {
+    changed([])
+    state.today = day(9)
+    renderTab()
+    expect(line()).toBe('Weekdays · stable · 2 days a week')
+  })
+
+  it('until the rows are read the line says nothing about days, not the run copy’s number; the rest of the line is there', () => {
+    changed()
+    state.schedules = undefined // not read yet (an empty list would be an answer)
+    renderTab()
+    expect(line()).toBe('Weekdays · stable')
+    cleanup()
+    // and the days appear once they are read
+    changed()
+    renderTab()
+    expect(line()).toBe('Weekdays · stable · 3 days a week')
+  })
+
+  it('the rows are the RUN’s: the stand-in is asked for the run’s id, and a sequence run, which has no weekdays, is asked for none', () => {
+    changed()
+    renderTab()
+    expect(calls.schedule.length).toBeGreaterThan(0)
+    expect(new Set(calls.schedule)).toEqual(new Set(['meso-active']))
+    cleanup()
+    calls.schedule.length = 0
+    running()
+    const seqCopy = program({ id: 'prog-run', name: 'Rotation', kind: 'run', scheduleType: 'sequence', planningType: 'week_dependent', schedule: FIVE_DAYS })
+    state.programs = { data: [seqCopy] }
+    state.mesos = { data: [{ ...ACTIVE, name: 'Rotation' }] }
+    renderTab()
+    expect(within(section('CURRENT PROGRAM')).getByText('Sequence · week-dependent')).toBeTruthy()
+    expect(new Set(calls.schedule)).toEqual(new Set([undefined]))
+  })
+
+  it('YOUR PROGRAMS rows keep counting the saved program’s own days, whatever the run’s rows say', () => {
+    changed()
+    state.today = day(9)
+    renderTab()
+    expect(within(programRow('prog-ppl')).getByText('WEEKDAYS · STABLE · 5 DAYS A WEEK')).toBeTruthy() // the program the run started from
+    expect(within(programRow('prog-ul')).getByText('WEEKDAYS · WEEK-DEPENDENT · 4 DAYS A WEEK')).toBeTruthy()
   })
 })
 
@@ -832,10 +952,12 @@ describe('absence — the old page\'s words are gone from every state (Checks th
     expect(screen.queryByRole('button', { name: /trash/i })).toBeNull()
   })
 
-  it('and no row of the tab has a delete control (a finished run is deleted from its own page, chunk 66)', () => {
+  it('and no finished program on the tab has a delete control (it is deleted from its own page, chunk 66); YOUR PROGRAMS\' rows have DELETE since chunk 74 (ProgramsTab.deleteSaved.test.tsx)', () => {
     running()
     renderTab()
     expect(screen.queryByLabelText(/delete/i)).toBeNull()
+    expect(within(section('FINISHED')).queryByText(/delete/i)).toBeNull()
+    expect(within(section('CURRENT PROGRAM')).queryByText(/delete/i)).toBeNull()
   })
 })
 

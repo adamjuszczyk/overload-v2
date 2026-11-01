@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './lib/queryClient'
@@ -13,6 +13,8 @@ import SessionTypeHistoryPage from './features/history/SessionTypeHistoryPage'
 import PlannerPage from './features/planner/PlannerPage'
 import LibraryPage from './features/library/LibraryPage'
 import SettingsPage from './features/settings/SettingsPage'
+import ReleaseNotesPage from './features/settings/ReleaseNotesPage'
+import AfterUpdateSheet from './features/settings/AfterUpdateSheet'
 import CoachPage from './features/coach/CoachPage'
 import MesoPrioritiesPage from './features/coach/MesoPrioritiesPage'
 import PrioritiesEditor from './features/plan/PrioritiesEditor'
@@ -21,13 +23,17 @@ import FinishedProgramPage from './features/programs/FinishedProgramPage'
 import FinishedProgramPriorities from './features/programs/FinishedProgramPriorities'
 import Nav from './components/Nav'
 import Toast from './features/notifications/Toast'
-import PwaUpdateNotice from './features/pwa/PwaUpdateNotice'
+import { useServiceWorker } from './features/pwa/useServiceWorker'
 import StagingBadge from './components/StagingBadge'
 import { useAccentColour } from './hooks/useAccentColour'
 import { useSettings } from './features/settings/useSettings'
 import { useSyncQueueInit, useSyncQueueRunner } from './features/offline/useSyncQueue'
 import SyncFailedNotice from './features/offline/SyncFailedNotice'
 import { useSeedDefaultExercisesIfEmpty } from './features/library/useExercises'
+import { MaintenanceScreen, MaintenanceStrip, UpdateRequiredScreen } from './features/release/gates'
+import { useGate } from './features/release/useAppStatus'
+import { useRequiredUpdate } from './features/release/useRequiredUpdate'
+import { APP_VERSION } from './lib/version'
 
 function SyncManager() {
   useSyncQueueInit()
@@ -37,21 +43,37 @@ function SyncManager() {
 }
 
 export default function App() {
+  // 1.2.1 (chunk 73; SPEC Update to continue [11]) — the service worker's registration and its update checks, once, here, whatever the app is
+  // showing. A stale bundle on the login screen is just as real a problem as one mid-workout, and a registration that lived in the signed-in shell
+  // (or behind a gate) would be gone exactly when the update screen, which replaces the shell, needs it for UPDATE (the gap pre-read's 73-5).
+  // Nothing is drawn: the RELOAD banner is gone, the new code installs in the background, and the update screen decides whether the old one may
+  // still be used.
+  useServiceWorker()
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          {/* Unconditional on auth state — a stale bundle on the login
-              screen is just as real a problem as one mid-workout, and
-              registering the update check here (rather than only once
-              authenticated) means it can't be blocked on a test/verification
-              path that needs to reach a logged-in screen. */}
-          <PwaUpdateNotice />
           <StagingBadge />
           <AppRoutes />
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>
+  )
+}
+
+// 1.2.1 (chunk 72; DECISIONS 270) — what a visitor who is not signed in sees: the sign-in page, and over it the maintenance screen while maintenance is on.
+// "Signing in still works" (SPEC), so an account that is exempt can still sign in and then gets the strip: the screen's small SIGN IN action opens the
+// sign-in page. Signing in is an auth write the maintenance check never touches. A visitor who signs in and is not exempt is signed in and sees the
+// screen without the action. The choice to sign in is this component's own state, so it ends with it (a later sign-out starts from the screen again).
+// The sign-in page is the same element, in the same place, whether maintenance is on (the visitor asked for it) or off, so maintenance ending while
+// someone types does not start the page again and lose what they typed.
+function SignedOutEntry({ maintenance }: { maintenance: boolean }) {
+  const [signingIn, setSigningIn] = useState(false)
+  if (maintenance && !signingIn) return <MaintenanceScreen onSignIn={() => setSigningIn(true)} />
+  return (
+    <Routes>
+      <Route path="*" element={<LoginPage />} />
+    </Routes>
   )
 }
 
@@ -65,6 +87,12 @@ export default function App() {
 export function AppRoutes() {
   const { user, loading } = useAuth()
   const { data: settings } = useSettings()
+  // 1.2.1 (chunk 72; SPEC Maintenance [10]) — what the release state asks of this account: the maintenance screen, the strip an exempt account
+  // works under, or nothing (also when it is unread or the phone is offline: the app works as usual).
+  const gate = useGate()
+  // 1.2.1 (chunk 73; SPEC Update to continue [11]) — whether this version is older than the database's `min_version`: the update screen, which wins
+  // over maintenance (an old app must update before it can wait out maintenance). Nothing offline or before the first read, as for maintenance.
+  const update = useRequiredUpdate()
 
   // Apply accent colour from settings (falls back to #FF8C42 default)
   useAccentColour(settings.accentColour)
@@ -73,6 +101,15 @@ export function AppRoutes() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', settings.theme)
   }, [settings.theme])
+
+  // The theme and the accent are applied above the gate, here, before anything below returns: the maintenance screen draws in the user's own
+  // theme and accent as the app does (chunk 72's pre-read, 72-6; the prototype's Shell does the same).
+
+  // 1.2.1 (chunk 73) — the update screen replaces the whole app, navigation included, whatever the person is doing and whether or not anyone is signed
+  // in or the sign-in is still being read: an old app must never keep writing into a newer database. It is first, so it also comes before maintenance.
+  if (update.required) {
+    return <UpdateRequiredScreen appVersion={APP_VERSION} minVersion={update.minVersion} state={update.state} onUpdate={() => void update.update()} />
+  }
 
   if (loading) {
     return (
@@ -91,16 +128,17 @@ export function AppRoutes() {
     )
   }
 
-  if (!user) {
-    return (
-      <Routes>
-        <Route path="*" element={<LoginPage />} />
-      </Routes>
-    )
-  }
+  // 1.2.1 (chunk 72) — maintenance on and this account not exempt: a full screen that replaces the whole app, navigation included, and the sign-in
+  // page too while nobody is signed in (there is no account to exempt before sign-in; Adam, 2026-10-30, TASKS question 6, DECISIONS 255). The shell
+  // below is not mounted meanwhile, and it opens again by itself, where the address was, when `useAppStatus` reads maintenance off.
+  if (user && gate === 'maintenance') return <MaintenanceScreen />
+
+  if (!user) return <SignedOutEntry maintenance={gate === 'maintenance'} />
 
   return (
     <div className="flex flex-col h-dvh">
+      {/* An exempt account works as usual with the strip on top (SPEC: "styled as the old RELOAD banner was"): in this column, above the screen. */}
+      {gate === 'strip' && <MaintenanceStrip />}
       <SyncManager />
       <main className="flex-1 overflow-y-auto min-h-0">
         <Routes>
@@ -133,6 +171,8 @@ export function AppRoutes() {
           <Route path="/meso/:mesocycleId/priorities"   element={<MesoPrioritiesPage />}   />
           <Route path="/library"  element={<LibraryPage />}  />
           <Route path="/settings" element={<SettingsPage />} />
+          {/* 1.2.1 (chunk 71) — one release's notes, opened from Settings' WHAT'S NEW; the notes ship with the app. */}
+          <Route path="/settings/whats-new/:version" element={<ReleaseNotesPage />} />
           {/* Unconditional route — CoachPage itself renders the locked
               placeholder for every account except the gated one, so
               opening /coach directly still resolves to *something*
@@ -146,6 +186,9 @@ export function AppRoutes() {
       </main>
       <Toast />
       <Nav />
+      {/* 1.2.1 (chunk 71) — the running version's notes, once per phone, over the first signed-in screen (DECISIONS 256): it is mounted
+          here, in the signed-in shell, so it never opens over the login page. It decides for itself whether the version is new here. */}
+      <AfterUpdateSheet />
     </div>
   )
 }

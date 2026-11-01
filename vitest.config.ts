@@ -14,5 +14,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}'],
+    // The app's version for every test file, as the build's define gives it (vitest.setup.ts says why).
+    setupFiles: ['./vitest.setup.ts'],
   },
 })

@@ -4,6 +4,7 @@
 // does for the hook alone: a note typed and two chips tapped on the screen end as the `v2_sessions` patch (online), as the queued upsert (offline), a session whose every set was
 // skipped still completes as `skipped`, and the success clears what the phone kept for the session (63, G46). The screen's parity with the old one's payload is `FinishScreen.test.tsx`'s.
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from '../../lib/queryClient'

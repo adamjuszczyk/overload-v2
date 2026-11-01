@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { render, cleanup, fireEvent, screen, within } from '@testing-library/react'
 import { captureRender } from '../../testing/captureRender'
 import { exerciseOf, plannedSet, renderCard } from './cardHarness.testutil'

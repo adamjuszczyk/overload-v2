@@ -22,7 +22,13 @@ import { fetchRunProgramExercises, removeRunProgramExercise } from './runProgram
 // deload-rules override is no longer read or written (16b). The column stays"):
 // it holds whatever an earlier version stored, nothing selects it, and a run
 // whose program stored an override simply follows Settings.
-const PROGRAM_COLUMNS = 'id, user_id, name, schedule, created_at, updated_at, kind, planning_type, schedule_type'
+//
+// Chunk 74 (1.2.1 item 8a): `deleted_at` joins the list now that migration 048 is live where
+// this code runs. A named list fails the WHOLE read (400 / 42703) when one of its columns is
+// missing, where `*` simply returned less (RULES, chunk 48): the list is probed against the
+// real PostgREST before it ships (scripts/probe-specs/048.json, and the whole list as one
+// select), and production gets the column only through the release's migrations-first PR.
+const PROGRAM_COLUMNS = 'id, user_id, name, schedule, created_at, updated_at, kind, planning_type, schedule_type, deleted_at'
 
 type DbProgram = {
   id: string
@@ -41,6 +47,9 @@ type DbProgram = {
   // Absent until migration 027 — chunk 25's own field, same fallback. Reads
   // as 'weekday', 027's own column default.
   schedule_type?: ScheduleType
+  // Chunk 74 — migration 048's column: set when a saved program is deleted, null on every
+  // other row (no default, no backfill). A row read without it reads as not deleted.
+  deleted_at?: string | null
 }
 
 type DbWorkoutDay = {
@@ -108,6 +117,7 @@ function toProgram(row: DbProgram): Program {
     kind: row.kind ?? 'saved',
     planningType: row.planning_type ?? 'week_dependent',
     scheduleType: row.schedule_type ?? 'weekday',
+    deletedAt: row.deleted_at ?? null,
   }
 }
 
@@ -187,14 +197,42 @@ export async function fetchProgram(id: string): Promise<Program> {
 // own copy (kind = 'run') while a run is active — keeps using the
 // unfiltered fetchPrograms above; filtering that one too would make the
 // active run's own copy invisible to the very pages that edit it.
+//
+// Chunk 74 (1.2.1 item 8a; SPEC Programs · YOUR PROGRAMS, Facts to verify 1): a deleted saved
+// program (deleted_at set, the row stays) is in neither list. Two layers, one rule: the query
+// leaves marked rows out (`.is('deleted_at', null)`), and the mapped list goes through
+// `isListedSavedProgram` — the same predicate the planner's START sheet applies to the
+// unfiltered fetchPrograms, so the two lists can't part. fetchPrograms itself stays
+// unfiltered: CHANGE THE PROGRAM reads a deleted program's NAME through the run's
+// source_program_id, and the planner's route reads by id (and refuses a deleted one).
 export async function fetchSavedPrograms(): Promise<Program[]> {
   const { data, error } = await supabase
     .from('v2_programs')
     .select(PROGRAM_COLUMNS)
     .eq('kind', 'saved')
+    .is('deleted_at', null)
     .order('created_at', { ascending: false })
   if (error) throw error
-  return (data as DbProgram[]).map(toProgram)
+  return (data as DbProgram[]).map(toProgram).filter(isListedSavedProgram)
+}
+
+/**
+ * A saved program a person can still pick: kind 'saved' (an unset kind reads as saved, as `toProgram`
+ * reads it) and not deleted. The one test behind YOUR PROGRAMS, START's list there, and the planner's
+ * START sheet (chunk 74; 1.2.1 item 8a).
+ */
+export function isListedSavedProgram(program: Pick<Program, 'kind' | 'deletedAt'>): boolean {
+  return (program.kind ?? 'saved') === 'saved' && !program.deletedAt
+}
+
+// DELETE a saved program (chunk 74; migration 048's `v2_delete_saved_program(p_program_id uuid) returns void`; SPEC Rules 2: deletes need
+// a connection, so this is never queued). The refusals are the database's, read by the screen from the error it throws (PostgREST 12 answers
+// 400 with `OL001` maintenance / `OL002` a program with a running program, and 500 with `P0002` not found: read `error.code`, never the
+// status). The function is idempotent — a second call keeps the first mark — and refuses a run's copy. Nothing here deletes a row: the
+// program stays, with `deleted_at` set, and its runs keep pointing at it.
+export async function deleteSavedProgram(id: string): Promise<void> {
+  const { error } = await supabase.rpc('v2_delete_saved_program', { p_program_id: id })
+  if (error) throw error
 }
 
 // The two types a new program is created with (SPEC Programs and runs [1.2], Creating a program (16a): "the New program sheet asks for

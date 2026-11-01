@@ -10,6 +10,7 @@ import { usePrograms, useWorkoutDays, useUpdateProgramName } from '../programs/u
 import { useMesos } from '../programs/useMesos'
 import { useProgramHasSchedule } from '../programs/useProgramHasSchedule'
 import { NO_SCHEDULE_START_REASON } from '../programs/hasSchedule'
+import { isListedSavedProgram } from '../programs/programService'
 import StartProgramSheet from '../programs/StartProgramSheet'
 import { detectSharedWeekdayWorkouts, useSplitSharedWeekdayWorkouts, type SharedWeekdayGroup } from './usePlanner'
 import { CAPTION, HEADING, MONO, Spinner, ruleAbove, ruleBelow } from './plannerChrome'
@@ -34,6 +35,9 @@ import StepVolume from './StepVolume'
 // Reached only against a `kind = 'saved'` program (the PROGRAMS tab's YOUR PROGRAMS list and its New program sheet since chunk 65). A run's copy is
 // refused (chunk 33, SPEC Programs and runs [P1.1]; PP5's words since chunk 68): a running program's schedule and workouts are fixed for the run
 // (its deload rules are Settings', since chunk 48), and the rest of what Plan's program tab used to edit happens in the week.
+// A deleted saved program (chunk 74; 1.2.1 item 8a, DECISIONS 260) is refused the same way when its address is opened: "This program was
+// deleted." The route reads `usePrograms()`, which is unfiltered (a run's copy has to be found by id), so the refusal reads the program's own
+// `deletedAt`; the START sheet's list below goes through `isListedSavedProgram`, the same test YOUR PROGRAMS' list does.
 //
 // Starting needs a schedule (chunk 33, G39): START is disabled while the program has no scheduled workout, with the reason under it
 // (programs/hasSchedule.ts is the one check, shared with the PROGRAMS tab's START sheet and Plan's no-schedule line). Display choice, provisional
@@ -51,6 +55,8 @@ const STEPS: { id: Step; label: string }[] = [
 const NOT_FOUND_TITLE = 'Program not found'
 const RUN_COPY_TITLE = "This is the current program's copy"
 const RUN_COPY_LINE = 'It opens from Plan instead: plan its weeks there, or use EDIT PROGRAM in Programs.'
+// SPEC Screens → Programs · YOUR PROGRAMS [8a]: "A deleted program opened by its address ... is refused like a run's copy: 'This program was deleted.'"
+const DELETED_TITLE = 'This program was deleted.'
 
 function offline(): boolean {
   return typeof navigator !== 'undefined' && navigator.onLine === false
@@ -127,6 +133,9 @@ export default function PlannerPage() {
   // A run's copy: no step, no editor — the refusal and the way back (chunk 33, SPEC Programs and runs [P1.1]; PP5).
   if (isRunCopy) return <StateScreen title={RUN_COPY_TITLE} line={RUN_COPY_LINE} onBack={() => navigate('/program')} />
 
+  // A deleted program (chunk 74): the row stays, so the id still finds it — the planner never opens it (DECISIONS 260).
+  if (program.deletedAt) return <StateScreen title={DELETED_TITLE} onBack={() => navigate('/program')} />
+
   async function saveName() {
     const trimmed = nameValue.trim()
     if (trimmed && trimmed !== program!.name) {
@@ -136,7 +145,8 @@ export default function PlannerPage() {
   }
 
   const activeMeso = mesosRead.data?.find((m) => m.status === 'active') ?? null
-  const savedPrograms = programs.filter((p) => (p.kind ?? 'saved') === 'saved')
+  // START's list: the saved programs a person can still pick — YOUR PROGRAMS' own test (chunk 74), so a deleted program isn't offered.
+  const savedPrograms = programs.filter(isListedSavedProgram)
   // START waits for the answers it needs, and stays off while a program has no scheduled workout (the reason shows under it only once that is
   // known).
   const startDisabled = hasSchedule !== true || mesosRead.data === undefined

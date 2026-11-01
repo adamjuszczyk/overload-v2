@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 
 // exerciseService.ts imports the real Supabase client at module load time
 // (supabase.ts throws if env vars are missing, and would otherwise hit the

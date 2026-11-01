@@ -4,8 +4,9 @@ import { createFakeSupabase } from '../plan/fakeWeekPlanDb.testutil'
 // Chunk 66: a finished program's history from stored rows, through the REAL reader (`fetchAllWeekPlansForMeso`, the one Plan reads a run's weeks
 // with and the finished program screen reads them with) and the real mapper behind it, into `buildProgramHistory`. `programHistory.test.ts` builds
 // the app's types by hand; the screen test mocks the reader. This is where a column the history depends on is shown to arrive: the exercise's name
-// (the join), `superset_block_id` (on the joined program exercise), `is_warmup`, `stage_kind` and `parent_week_plan_set_id` (the set rows), and the
-// week row's own `position`. The rows are the shape PostgREST returns (snake_case, children nested), written by hand.
+// (the join), `is_warmup`, `stage_kind` and `parent_week_plan_set_id` (the set rows), and the week row's own `position`; and one it no longer
+// draws (`superset_block_id`, on the joined program exercise: chunk 76). The rows are the shape PostgREST returns (snake_case, children nested),
+// written by hand.
 
 let fake = createFakeSupabase([])
 vi.mock('../../lib/supabase', () => ({
@@ -40,10 +41,11 @@ const planRow = (id: string, weekNumber: number, sets: unknown[], exercises: unk
 })
 
 describe('the history of rows as the database stores them', () => {
-  it('names, superset places, warmups, set counts and set kinds come through the reader\'s own mapping, and a stage row is not a set', async () => {
+  it('names, warmups, set counts and set kinds come through the reader\'s own mapping, a stage row is not a set, and a stored superset is not drawn', async () => {
     // Week 1: Lat Pulldown (3 sets) and Seated Cable Row (1 warmup, 2 sets) in one superset, then Straight-Arm Pulldown (2 sets).
     // Week 2: Lat Pulldown's set 3 is a dropset with one stage row; Straight-Arm Pulldown is gone. The week rows list their exercises in the
-    // week's own order (the program exercises' own positions, 99, are not it).
+    // week's own order (the program exercises' own positions, 99, are not it). Both weeks' rows hold a stored superset block ('blk-1', on the
+    // joined program exercise): since chunk 76 (SPEC 1.2.1 [20], DECISIONS 193 (a)) the rows say nothing of it, whatever the reader brings.
     const w1 = 'wp-1'
     const w2 = 'wp-2'
     fake = createFakeSupabase([
@@ -70,13 +72,13 @@ describe('the history of rows as the database stores them', () => {
 
     const rows = (week: number) => h.weeks.find((w) => w.week === week)!.workouts[0].rows.map((r) => [r.number, r.name, r.meta, r.state])
     expect(rows(1)).toEqual([
-      ['01', 'Lat Pulldown', 'A1 · 3 SETS', 'same'],
-      ['02', 'Seated Cable Row', 'A2 · 1 WARMUP · 2 SETS', 'same'],
+      ['01', 'Lat Pulldown', '3 SETS', 'same'],
+      ['02', 'Seated Cable Row', '1 WARMUP · 2 SETS', 'same'],
       ['03', 'Straight-Arm Pulldown', '2 SETS', 'same'],
     ])
     expect(rows(2)).toEqual([
-      ['01', 'Lat Pulldown', 'A1 · 3 SETS · 1 DROPSET', 'changed'],
-      ['02', 'Seated Cable Row', 'A2 · 1 WARMUP · 2 SETS', 'same'],
+      ['01', 'Lat Pulldown', '3 SETS · 1 DROPSET', 'changed'],
+      ['02', 'Seated Cable Row', '1 WARMUP · 2 SETS', 'same'],
       ['—', 'Straight-Arm Pulldown', 'REMOVED', 'removed'],
     ])
     expect(h.weeks[1].changes.map((c) => `${c.sign} ${c.text} (${c.where})`)).toEqual(['~ Lat Pulldown set 3 is now a dropset (PULL 1)', '− Straight-Arm Pulldown removed (PULL 1)'])

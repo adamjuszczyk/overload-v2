@@ -6,6 +6,7 @@
 // sessions). A place is kept; null and a row cached before this shipped (no key) read as null. The LOG write's own Dexie row
 // is chunk 58a's and is not here.
 import { describe, it, expect, vi, afterEach } from 'vitest'
+vi.hoisted(() => vi.stubGlobal('__APP_VERSION__', '1.2.1')) // chunk 73: the sync queue reads the app's version before it sends
 import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
