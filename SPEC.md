@@ -338,7 +338,7 @@ Unknowns about the existing app. These are not choices: TASKS checks each one an
 
 ## Next-version notes (later)
 
-These go into the next-version notes at setup, with their detail. They are not built.
+**Moved into `NEXT.md` at the 1.2.1 close (2026-11-02), with their detail; `NEXT.md` is where they are kept and where the next brief starts.** The text below is as it stood when 1.2.1 was specced. They are not built.
 
 - **[7] CHANGE THE PROGRAM from the viewed week.** Worked out so far:
   - rest, tempo, unit, supersets and the warmup routine are stored once per run, so they can't start at a later week

@@ -1,13 +1,15 @@
 # RULES.md
 
 ## Index
-Read this index, then the sections marked ALWAYS, then only the sections your brief names. Sections are in file order. Rules are never pruned; a rule discovered during a build is added the session it is found. The BUILD.md 2.1 sections were aligned with BUILD.md's own text on 2026-10-30 (the setup's second docs PR); where they and BUILD.md still disagree, BUILD.md wins.
+Read this index, then the sections marked ALWAYS, then only the sections your brief names. Sections are in file order. Rules are never pruned; a rule discovered during a build is added the session it is found. The BUILD.md sections were aligned with BUILD.md 2.1's own text on 2026-10-30 and brought to **BUILD.md 2.2** at the 1.2.1 close (2026-11-02: Usage, Verification by chunk type, The build loop, Staging, Pages for me); where they and BUILD.md still disagree, BUILD.md wins.
 - **ALWAYS** Escalation — what is brought to Adam, never decided.
 - **ALWAYS** Reviewer rules — how a review is done and recorded.
 - **ALWAYS** Verification by chunk type — DATA and LIGHT.
-- **ALWAYS** Usage — reads, tests, turns, the report's cost line, limits.
+- **ALWAYS** Usage — reads, tests, turns, the report's running time (agents never estimate cost; the coordinator reads the meter), limits.
 - **ALWAYS** Decision cards — the format a stop takes.
-- **ALWAYS** The build loop — roles, where chunks go, the loop, running without Adam, the stop rules (BUILD.md 2.1, step 4, for agents who never read BUILD.md).
+- **ALWAYS** The build loop — roles, where chunks go, the loop, running without Adam, the stop rules (BUILD.md 2.2, step 4, for agents who never read BUILD.md).
+- Staging — re-seeds (BUILD.md 2.2, step 5): needed by the coordinator and any agent that writes on staging.
+- Pages for me — the pages Adam works from (BUILD.md 2.2, step 5): needed by the coordinator and the release reviewer.
 - Standing rules — BUILD.md's standing rules and SPEC rules made standing.
 - Models — the tiers and efforts per role.
 - Checks that lied — checks that passed while wrong; re-seed checks.
@@ -63,7 +65,8 @@ Also, from 1.2's reviewer rules (kept):
 
 ## Verification by chunk type
 - DATA: one break proof per place that writes data; staging check; database fingerprint only for migrations touching existing rows.
-- LIGHT: one break per call pattern; no per-chunk staging check.
+- LIGHT: one break per call pattern; no per-chunk staging check. At a batch's last merge, the batch's screen captures are re-taken on the merged code and compared with the committed ones (parallel branches can leave a sibling's pictures stale: LEARNINGS L28; React `useId` ids are noise).
+- The prototype's smoke test (`npx vitest run test --root .` from `prototype/`) runs at every merge that changes a module the prototype renders (L28: its "1.2 today" state drifted when chunk 77 rewrote the preview; its build didn't catch it).
 - No mutation sweeps.
 
 How (1.2's practice, kept): every rule is asserted at the call site or screen that uses it, with fixtures that tell the right data source from the wrong one (the status row vs a cached one, `deleted_at` vs `kind`, the queue's delete vs the server's row, the week in force vs the run copy's schedule); a break proof changes the asserted payload, watches the test fail, and restores from a `cp` backup, never `git checkout --`; a migration is proven on the replay as the signed-in role with pg-safeupdate loaded and by its effect on staging; the reviewer re-runs every break and adds one only where a writer has none; fixture dates are derived from weekdays with the queue printed; a LIGHT chunk writes nothing new (SPEC 1.2.1 Rules 7), and one that adds a request, a column or a queue item is a DATA question (a decision card); what a chunk's verification would not catch is written in TASKS.md and read by its reviewer.
@@ -74,9 +77,9 @@ How (1.2's practice, kept): every rule is asserted at the call site or screen th
 - Narrow reads: grep, line ranges, touched files only.
 - Batch tool calls.
 - Quiet test output.
-- Every chunk report ends with its cost, its running time and the running totals.
+- Every chunk report ends with its running time (and its context figure). **Agents never estimate their cost:** their guesses ran about half the real figure (LEARNINGS L26). The coordinator reads the meter (`get_session`, `usage.cost_usd`, which counts every agent it starts) before and after each chunk and records the dollars, the hours and the running totals; the weekly % is meter dollars ÷ the dollars per 1% (`scripts/cost-table.md`), with Adam's usage page at a build's start and end (L18).
 
-Also: a chunk over 2M context stops and reports (a stop rule); the cost line gives the context figure and the cost-weighted total (re-reads 0.1, writes 2, output 5), and the coordinator writes the weekly % before and after each chunk next to them (DECISIONS 267; chunk 70 measures what 1% is in cost-weighted terms, BUILD.md Bootstrap); reviewers read this file's index and ALWAYS sections plus the sections their brief names, and from CONTEXT.md only the sections the chunk touches plus "Where the build is"; never resume a long-running agent, start a fresh one from a short summary; a usage-limit stop of the coordinator is resumed by its own scheduled task (CONTEXT.md, "Resuming after a limit"), never by Adam. The 1.2 usage rules below still hold, except their "full suite at the end of every chunk", which BUILD.md replaces with one full suite before the release (every script in `scripts/` still runs at every chunk boundary).
+Also: a chunk over 2M context stops and reports (a stop rule); reviewers read this file's index and ALWAYS sections plus the sections their brief names, and from CONTEXT.md only the sections the chunk touches plus "Where the build is"; never resume a long-running agent, start a fresh one from a short summary; a usage-limit stop of the coordinator is resumed by its own scheduled task (CONTEXT.md, "Resuming after a limit"), never by Adam. The 1.2 usage rules below still hold, except their "full suite at the end of every chunk", which BUILD.md replaces with one full suite before the release (every script in `scripts/` still runs at every chunk boundary).
 
 ## Decision cards
 The coordinator stops with a decision card: self-contained, in plain words, so Adam can paste it into Chat. One ask per item; decisions and to-dos listed separately, ordered by what they block. Only blocking questions stop the build; non-blocking ones wait and come as one batch at the release. A builder or reviewer raises what it may not decide (Escalation above) in its report, in the same shape, and the coordinator carries it.
@@ -97,13 +100,13 @@ Evidence: DECISIONS.md [entry numbers].
 Adam discusses in Chat and replies to the coordinator with the answers; the coordinator records them in DECISIONS.md (BUILD.md 2.1's entry format, in that file's header) and, when an answer changes behaviour or wording, in SPEC.md. DECISIONS.md is a record, not an inbox.
 
 ## The build loop (BUILD.md 2.1, step 4)
-**Roles.** The coordinator is the one session Adam starts: it starts every builder and reviewer, merges, keeps one line per chunk, tracks cost, writes decision cards, and never reviews code itself. A builder (`.claude/agents/builder.md`) is one per chunk, fresh: it builds on a branch and reports briefly with its cost. A reviewer is fresh, started by the coordinator after the builder reports: a DATA chunk gets its own full reviewer (`reviewer-data.md`); for LIGHT chunks the coordinator runs the builders for 2–3 of them, then one reviewer (`reviewer-light.md`) checks all their diffs and tests together; a batch holds only chunks that don't depend on each other, and they merge in TASKS.md order. Subagents can't start subagents, so the coordinator does all the starting. Every brief names the exact files and RULES.md sections the agent needs.
+**Roles.** The coordinator is the one session Adam starts: it starts every builder and reviewer, merges, keeps one line per chunk, tracks cost, writes decision cards, and never reviews code itself. A builder (`.claude/agents/builder.md`) is one per chunk, fresh: it builds on a branch and reports briefly with its running time. A reviewer is fresh, started by the coordinator after the builder reports: a DATA chunk gets its own full reviewer (`reviewer-data.md`); for LIGHT chunks the coordinator runs the builders for 2–3 of them, then one reviewer (`reviewer-light.md`) checks all their diffs and tests together; a batch holds only chunks that don't depend on each other, and they merge in TASKS.md order. Subagents can't start subagents, so the coordinator does all the starting. Every brief names the exact files and RULES.md sections the agent needs.
 
 **Where chunks go.** Overload has real users: builders branch off `staging`; every chunk merges into `staging` through a squash-merged PR; nothing touches the default branch (`master`) until the release; never stack branches.
 
-**The loop.** (1) The coordinator starts the builder with the chunk, the files and the RULES.md sections it needs; the builder ends with a commit beginning `chunk N complete` and a short report with its cost. (2) The coordinator starts the reviewer (or batches LIGHT chunks first). (3) The reviewer checks against the chunk's verification and scope, runs every script, and reports. (4) The coordinator merges (the squash-merged PR; the reviewer reports merge-ready, it never merges), updates CONTEXT.md, and moves on without ending its turn. The coordinator never starts a chunk that has an open question in DECISIONS.md; it builds another chunk meanwhile. After any stop, the coordinator checks the branch for what was already committed and continues from there. The coordinator writes every record (CONTEXT.md's line, the reviewer's report as HISTORY.md's long form, DECISIONS.md's tests owed and flagged migrations, RULES.md's rules discovered, LEARNINGS.md's lessons); builders and reviewers write none of these files.
+**The loop.** (1) The coordinator reads the meter, then starts the builder with the chunk, the files and the RULES.md sections it needs; the builder ends with a commit beginning `chunk N complete` and a short report with its running time. (2) The coordinator starts the reviewer (or batches LIGHT chunks first; at a batch's last merge the reviewer re-takes the batch's captures on the merged code, L28). **While a review runs, the next chunk's builder starts beside it** when the two share no files (L29). (3) The reviewer checks against the chunk's verification and scope, runs every script, and reports. (4) The coordinator merges (the squash-merged PR; the reviewer reports merge-ready, it never merges), reads the meter, **records the chunk's dollars and hours against the estimate (the 30% rule) and only then starts anything new** (L21), updates CONTEXT.md, and moves on without ending its turn. The coordinator never starts a chunk that has an open question in DECISIONS.md; it builds another chunk meanwhile. After any stop, the coordinator checks the branch for what was already committed and continues from there. The coordinator writes every record (CONTEXT.md's line, the reviewer's report as HISTORY.md's long form, DECISIONS.md's tests owed and flagged migrations, RULES.md's rules discovered, LEARNINGS.md's lessons); builders and reviewers write none of these files.
 
-**Running without Adam.** The build runs until something is waiting on him or the budget is reached; no day or night modes. He gets one line per chunk, and a summary whenever he messages the coordinator. Limit stops resume by themselves (CONTEXT.md, "Resuming after a limit"); he never sends "continue".
+**Running without Adam.** The build runs until something is waiting on him or the budget is reached; no day or night modes. **Full speed always:** the coordinator doesn't slow down near a usage limit; if Adam wants to keep part of his week, he slows or stops the build himself with a message (L20, L27). He gets one line per chunk, and a summary whenever he messages the coordinator. **A push notification** (`PushNotification`) for every decision card and to-do (its first line), every limit stop ("limit until HH:MM") and the build's end; none for ordinary merges (L22). **Limit stops resume by themselves** (L15): at its start the coordinator creates an hourly scheduled task bound to its own session (`create_trigger`, `initiation: own_followup`, no new session on fire) whose prompt reads `get_session`'s `rate_limit_info` first and ends the turn at once while a limit holds, otherwise continues the build; it deletes the task at the build's end or when it stops on a card. Adam never sends "continue".
 
 **Stop rules.**
 - Budget reached: finish the chunk in progress, then stop and ask.
@@ -116,6 +119,19 @@ Adam discusses in Chat and replies to the coordinator with the answers; the coor
 **When Adam changes his mind mid-build:** it goes into the next-version notes as `later`, unless re-chunking now is cheaper than building the wrong thing; re-chunking means back to TASKS.
 
 **Before the release** (BUILD.md step 5): agents check everything a screenshot or query can decide against SPEC.md and the prototype, including that the built screens match the prototype; tests owed are cleared in one tests-only run, then one full suite; Adam's vibe check on staging (like, dislike, confused; dislikes go to the next version unless one stops the app being used, which gets one fix pass); every non-blocking question comes to him as one batch.
+
+## Staging (BUILD.md 2.2, step 5)
+- **Re-seeding is the agents' job,** through the staging scripts, never a paste of Adam's. **Until the starter's staging scripts exist, the coordinator raises a re-seed as a to-do card the moment it's needed** (with a push notification), and the chunk whose staging check needs it waits for it (LEARNINGS L17; 1.2.1's chunk 70).
+- Staging stays between builds until the starter's scripts can create, seed and delete it (BUILD.md 2.2, Bootstrap).
+- A re-seed while maintenance is on is refused whole (`OL001`): maintenance off first.
+
+## Pages for me (BUILD.md 2.2, step 5)
+The vibe-check tour, the release checklist and any procedure Adam runs by hand reach him as **pages** (LEARNINGS L30).
+- **The markdown in the repo is the record** (`docs/`), written by the agents.
+- **The coordinator publishes the page itself** when setup found it can; if it can't, it brings the markdown to the Chat advisor, which builds the page.
+- **Commands are copied into the page by script,** never retyped, and the page is checked against the repo's current state (nothing already done shown as still to do).
+- **A page that collects Adam's answers or ticks saves them where Claude can read them,** so "check the page" works.
+- A procedure page: Windows cmd commands with copy buttons, an Expect box and a "Stop if" box per step, tick-boxes with progress, fields that fill placeholders like commit ids; the folder to run from and any timing constraint at the top. What's on Adam is only what needs production access or his consent.
 
 ## Standing rules
 BUILD.md 2.1's, for every build:
